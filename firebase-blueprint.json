@@ -1,0 +1,42 @@
+{
+  "entities": {
+    "Transaction": {
+      "title": "Transaction",
+      "description": "A financial transaction (income or expense)",
+      "type": "object",
+      "properties": {
+        "amount": { "type": "number", "description": "The amount of the transaction" },
+        "category": { "type": "string", "description": "Category (e.g., Food, Rent, Salary)" },
+        "date": { "type": "string", "format": "date-time", "description": "ISO date string" },
+        "description": { "type": "string", "description": "Optional note" },
+        "type": { "type": "string", "enum": ["income", "expense"], "description": "Type of transaction" },
+        "userId": { "type": "string", "description": "Owner UID" }
+      },
+      "required": ["amount", "category", "date", "type", "userId"]
+    },
+    "Goal": {
+      "title": "Goal",
+      "description": "A financial goal (savings, debt, investment)",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Goal name" },
+        "targetAmount": { "type": "number", "description": "Target amount to reach" },
+        "currentAmount": { "type": "number", "description": "Current progress" },
+        "type": { "type": "string", "enum": ["savings", "debt", "investment"], "description": "Goal type" },
+        "userId": { "type": "string", "description": "Owner UID" },
+        "deadline": { "type": "string", "format": "date", "description": "Target date" }
+      },
+      "required": ["name", "targetAmount", "currentAmount", "type", "userId"]
+    }
+  },
+  "firestore": {
+    "/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Collection of user transactions"
+    },
+    "/goals/{goalId}": {
+      "schema": "Goal",
+      "description": "Collection of user financial goals"
+    }
+  }
+}

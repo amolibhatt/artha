@@ -1,0 +1,89 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: transactions
+    // Document ID: auto-generated
+    // Fields:
+    //   - amount: number (required, > 0)
+    //   - category: string (required, 1-50 chars)
+    //   - date: string (required, ISO 8601)
+    //   - description: string (optional, 0-200 chars)
+    //   - type: string (required, 'income' | 'expense')
+    //   - userId: string (required, matches auth.uid)
+    //
+    // Collection: goals
+    // Document ID: auto-generated
+    // Fields:
+    //   - name: string (required, 1-50 chars)
+    //   - targetAmount: number (required, > 0)
+    //   - currentAmount: number (required, >= 0)
+    //   - type: string (required, 'savings' | 'debt' | 'investment')
+    //   - userId: string (required, matches auth.uid)
+    //   - deadline: string (optional, ISO 8601)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    function isValidTransaction(data) {
+      return data.keys().hasAll(['amount', 'category', 'date', 'type', 'userId']) &&
+             data.amount is number && data.amount > 0 &&
+             data.category is string && data.category.size() >= 1 && data.category.size() <= 50 &&
+             isValidDateString(data.date) &&
+             data.type in ['income', 'expense'] &&
+             data.userId == request.auth.uid &&
+             (!('description' in data) || (data.description is string && data.description.size() <= 200));
+    }
+
+    function isValidGoal(data) {
+      return data.keys().hasAll(['name', 'targetAmount', 'currentAmount', 'type', 'userId']) &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 50 &&
+             data.targetAmount is number && data.targetAmount > 0 &&
+             data.currentAmount is number && data.currentAmount >= 0 &&
+             data.type in ['savings', 'debt', 'investment'] &&
+             data.userId == request.auth.uid &&
+             (!('deadline' in data) || data.deadline == null || isValidDateString(data.deadline));
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+    match /transactions/{transactionId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && isValidTransaction(request.resource.data);
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid && isValidTransaction(request.resource.data);
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+
+    match /goals/{goalId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && isValidGoal(request.resource.data);
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid && isValidGoal(request.resource.data);
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+  }
+}

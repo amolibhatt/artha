@@ -1,0 +1,21 @@
+{
+  "short_name": "Artha",
+  "name": "Artha AI",
+  "icons": [
+    {
+      "src": "https://picsum.photos/seed/compass-gold/192/192",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "https://picsum.photos/seed/compass-gold/512/512",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#f5f5f0",
+  "display": "standalone",
+  "theme_color": "#1c1917",
+  "description": "Premium AI Financial Companion"
+}
