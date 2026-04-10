@@ -50,7 +50,12 @@ service cloud.firestore {
     // Domain Validators
     // ===============================================================
     function isValidTransaction(data) {
-      return data.keys().hasAll(['amount', 'category', 'date', 'type', 'userId']) &&
+      let requiredFields = ['amount', 'category', 'date', 'type', 'userId'];
+      let optionalFields = ['description'];
+      let allFields = requiredFields.concat(optionalFields);
+      
+      return data.keys().hasAll(requiredFields) &&
+             data.keys().hasOnly(allFields) &&
              data.amount is number && data.amount > 0 &&
              data.category is string && data.category.size() >= 1 && data.category.size() <= 50 &&
              isValidDateString(data.date) &&
@@ -60,13 +65,19 @@ service cloud.firestore {
     }
 
     function isValidGoal(data) {
-      return data.keys().hasAll(['name', 'targetAmount', 'currentAmount', 'type', 'userId']) &&
+      let requiredFields = ['name', 'targetAmount', 'currentAmount', 'type', 'userId'];
+      let optionalFields = ['deadline', 'monthlyContribution'];
+      let allFields = requiredFields.concat(optionalFields);
+      
+      return data.keys().hasAll(requiredFields) &&
+             data.keys().hasOnly(allFields) &&
              data.name is string && data.name.size() >= 1 && data.name.size() <= 50 &&
              data.targetAmount is number && data.targetAmount > 0 &&
              data.currentAmount is number && data.currentAmount >= 0 &&
              data.type in ['savings', 'debt', 'investment'] &&
              data.userId == request.auth.uid &&
-             (!('deadline' in data) || data.deadline == null || isValidDateString(data.deadline));
+             (!('deadline' in data) || data.deadline == null || isValidDateString(data.deadline)) &&
+             (!('monthlyContribution' in data) || data.monthlyContribution == null || data.monthlyContribution is number);
     }
 
     // ===============================================================

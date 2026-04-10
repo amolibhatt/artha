@@ -24,7 +24,13 @@ import {
   Calendar,
   Info,
   Trash2,
-  Clock
+  List,
+  Zap,
+  ArrowDownRight,
+  AlertCircle,
+  AlertTriangle,
+  Settings2,
+  X
 } from 'lucide-react';
 import { 
   Tooltip, 
@@ -37,7 +43,65 @@ import { motion, AnimatePresence } from 'motion/react';
 import { getFinancialAdvice } from './services/geminiService';
 import { StrategyInsights } from './components/StrategyInsights';
 
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean, error: Error | null }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error("Uncaught error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-brutal-black flex items-center justify-center p-6">
+          <div className="max-w-md w-full bg-gallery-white p-12 brutal-border brutal-shadow space-y-10 text-center">
+            <div className="w-20 h-20 bg-rose-500 text-gallery-white brutal-border flex items-center justify-center mx-auto brutal-shadow">
+              <ShieldCheck className="w-10 h-10" />
+            </div>
+            <div className="space-y-4">
+              <h2 className="text-6xl font-display uppercase text-brutal-black leading-none">System Error</h2>
+              <p className="text-xs font-mono font-bold text-stone-500 uppercase tracking-widest leading-relaxed">
+                Critical failure in capital flow processing. Session terminated.
+              </p>
+            </div>
+            <div className="bg-stone-100 p-8 brutal-border text-left overflow-auto max-h-40">
+              <code className="text-[11px] font-mono text-brutal-black break-all">
+                {this.state.error?.message || "Unknown Error"}
+              </code>
+            </div>
+            <button 
+              onClick={() => window.location.reload()}
+              className="w-full bg-brutal-black text-neon-green py-6 brutal-border brutal-shadow-hover transition-all font-display text-2xl uppercase"
+            >
+              Reboot Session
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 export default function App() {
+  return (
+    <ErrorBoundary>
+      <MainApp />
+    </ErrorBoundary>
+  );
+}
+
+function MainApp() {
+  const [activeTab, setActiveTab] = useState<'home' | 'history' | 'insights' | 'goals'>('home');
+  const [showBudgetAlert, setShowBudgetAlert] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -46,6 +110,10 @@ export default function App() {
   const [showGoalModal, setShowGoalModal] = useState(false);
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
   const [showMobileTip, setShowMobileTip] = useState(false);
+  const [monthlyBudget, setMonthlyBudget] = useState(60000);
+  const [showBudgetModal, setShowBudgetModal] = useState(false);
+  const [tempBudget, setTempBudget] = useState(60000);
+  const [filter, setFilter] = useState<'All' | 'Expenses' | 'Income'>('All');
 
   useEffect(() => {
     // Show mobile tip if on mobile and not standalone
@@ -135,6 +203,91 @@ export default function App() {
 
   const balance = totalIncome - totalExpenses;
 
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const spentToday = transactions
+    .filter(t => t.type === 'expense' && new Date(t.date).getTime() >= today.getTime())
+    .reduce((acc, t) => acc + t.amount, 0);
+
+  const spentThisMonth = transactions
+    .filter(t => {
+      const d = new Date(t.date);
+      return t.type === 'expense' && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
+    })
+    .reduce((acc, t) => acc + t.amount, 0);
+
+  const leftToSpend = Math.max(0, monthlyBudget - spentThisMonth);
+  const budgetPercentage = (spentThisMonth / monthlyBudget) * 100;
+  const monthlySavingsRate = totalIncome > 0 ? ((totalIncome - totalExpenses) / totalIncome * 100) : 0;
+
+  // CFO Calculations
+  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  const remainingDays = daysInMonth - today.getDate() + 1;
+  const dailyBurnTarget = leftToSpend / remainingDays;
+  
+  const mandatoryExpenses = transactions
+    .filter(t => t.type === 'expense' && t.isMandatory)
+    .reduce((acc, t) => acc + t.amount, 0);
+  
+  const discretionaryExpenses = transactions
+    .filter(t => t.type === 'expense' && !t.isMandatory)
+    .reduce((acc, t) => acc + t.amount, 0);
+
+  const todayTransactions = transactions
+    .filter(t => new Date(t.date).getTime() >= today.getTime());
+
+  const historySummary = transactions.reduce((acc, t) => {
+    if (t.type === 'income') acc.earned += t.amount;
+    else acc.spent += t.amount;
+    acc.net = acc.earned - acc.spent;
+    return acc;
+  }, { spent: 0, earned: 0, net: 0 });
+
+  const historyCategoryData = transactions
+    .filter(t => t.type === 'expense')
+    .reduce((acc: any[], t) => {
+      const existing = acc.find(i => i.name === t.category);
+      if (existing) {
+        existing.value += t.amount;
+      } else {
+        acc.push({ name: t.category, value: t.amount });
+      }
+      return acc;
+    }, [])
+    .sort((a, b) => b.value - a.value);
+
+  const totalExpense = historyCategoryData.reduce((acc, i) => acc + i.value, 0);
+
+  const groupedTransactions = transactions
+    .filter(t => {
+      if (filter === 'Expenses') return t.type === 'expense';
+      if (filter === 'Income') return t.type === 'income';
+      return true;
+    })
+    .reduce((acc: Record<string, Transaction[]>, t) => {
+      const date = new Date(t.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+      if (!acc[date]) acc[date] = [];
+      acc[date].push(t);
+      return acc;
+    }, {});
+
+  const getCategoryIcon = (category: string) => {
+    switch (category) {
+      case 'Food & Dining': return <Zap className="w-5 h-5" />;
+      case 'Shopping': return <TrendingUp className="w-5 h-5" />;
+      case 'Transport': return <Compass className="w-5 h-5" />;
+      case 'Bills & Utilities': return <ShieldCheck className="w-5 h-5" />;
+      case 'Investment': return <Sparkles className="w-5 h-5" />;
+      case 'Salary': return <TrendingUp className="w-5 h-5" />;
+      default: return <Zap className="w-5 h-5" />;
+    }
+  };
+
+  const totalSavedTowardGoals = goals.reduce((acc, g) => acc + g.currentAmount, 0);
+  const totalGoalTarget = goals.reduce((acc, g) => acc + g.targetAmount, 0);
+  const totalGoalProgress = totalGoalTarget > 0 ? (totalSavedTowardGoals / totalGoalTarget) * 100 : 0;
+
   const categoryData = transactions
     .filter(t => t.type === 'expense')
     .reduce((acc: any[], t) => {
@@ -166,389 +319,293 @@ export default function App() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-stone-50 flex flex-col items-center justify-center p-4">
+      <div className="min-h-screen bg-brand-bg flex flex-col items-center justify-center p-6 relative overflow-hidden">
+        {/* Subtle background gradients */}
+        <div className="absolute top-0 left-0 w-full h-full opacity-30 pointer-events-none">
+          <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-brand-accent/5 rounded-full blur-[120px] -translate-y-1/2 translate-x-1/2" />
+          <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-brand-primary/5 rounded-full blur-[120px] translate-y-1/2 -translate-x-1/2" />
+        </div>
+        
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="max-w-md w-full text-center space-y-8"
+          className="max-w-md w-full text-center space-y-12 relative z-10"
         >
           <div className="flex justify-center">
-            <div className="p-4 bg-stone-900 rounded-full shadow-xl">
-              <Compass className="w-12 h-12 text-white" />
+            <div className="w-20 h-20 bg-brand-primary flex items-center justify-center rounded-2xl shadow-2xl">
+              <Compass className="w-10 h-10 text-brand-surface" />
             </div>
           </div>
-          <div className="space-y-2">
-            <h1 className="text-4xl font-bold tracking-tight text-stone-900">Artha AI</h1>
-            <p className="text-stone-500">Your premium financial companion. Track goals, log expenses, and grow your wealth with AI.</p>
+          <div className="space-y-4">
+            <h1 className="text-5xl font-serif italic text-brand-primary tracking-tight">FinTrack</h1>
+            <p className="text-brand-primary/40 font-mono text-[10px] font-bold uppercase tracking-[0.4em]">Strategic Wealth Protocol</p>
           </div>
-          <button
-            onClick={signIn}
-            className="w-full flex items-center justify-center gap-3 bg-stone-900 text-white py-4 px-6 rounded-xl font-medium hover:bg-stone-800 transition-all shadow-lg hover:shadow-xl active:scale-[0.98]"
-          >
-            <LogIn className="w-5 h-5" />
-            Continue with Google
-          </button>
+          <div className="space-y-6">
+            <button
+              onClick={signIn}
+              className="w-full flex items-center justify-center gap-4 bg-brand-primary text-brand-surface py-5 px-8 rounded-xl font-bold text-xs uppercase tracking-[0.2em] hover:bg-brand-primary/90 transition-all shadow-xl active:scale-[0.98]"
+            >
+              <LogIn className="w-4 h-4" />
+              Initialize Session
+            </button>
+            <p className="text-[10px] text-brand-primary/30 font-medium leading-relaxed px-8">
+              Secure, data-driven capital management for the modern strategist.
+            </p>
+          </div>
         </motion.div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-stone-50 text-stone-900 font-sans pb-20">
+    <div className="min-h-screen bg-brand-bg text-brand-primary font-sans pb-32">
       {/* Navbar */}
-      <nav className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-stone-200 px-4 py-3">
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 bg-stone-900 rounded-lg">
-              <Compass className="w-5 h-5 text-white" />
-            </div>
-            <span className="text-xl font-bold tracking-tight">Artha</span>
-          </div>
+      <nav className="sticky top-0 z-40 bg-brand-surface/80 backdrop-blur-md border-b border-brand-border px-6 py-5">
+        <div className="max-w-5xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-4">
+            <div className="w-10 h-10 bg-brand-primary flex items-center justify-center rounded-lg shadow-sm">
+              <Compass className="w-6 h-6 text-brand-surface" />
+            </div>
+            <div>
+              <span className="text-xl font-serif italic text-brand-primary tracking-tight">FinTrack</span>
+              <p className="text-[8px] text-brand-accent font-bold uppercase tracking-widest leading-none mt-0.5">Strategic Audit Active</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-6">
             <div className="hidden sm:flex flex-col items-end">
-              <span className="text-sm font-medium">{user.displayName}</span>
-              <span className="text-xs text-stone-500">{user.email}</span>
+              <span className="text-xs font-bold text-brand-primary uppercase tracking-wide">{user.displayName}</span>
+              <span className="text-[9px] text-brand-primary/40 font-medium">{user.email}</span>
             </div>
             <button 
               onClick={logout}
-              className="p-2 hover:bg-stone-100 rounded-full transition-colors text-stone-500 hover:text-stone-900"
+              className="w-10 h-10 flex items-center justify-center rounded-lg border border-brand-border hover:bg-brand-bg transition-all text-brand-primary/40 hover:text-brand-primary"
               title="Logout"
             >
-              <LogOut className="w-5 h-5" />
+              <LogOut className="w-4 h-4" />
             </button>
           </div>
         </div>
       </nav>
 
-      <main className="max-w-7xl mx-auto px-4 py-8 space-y-8">
-        {/* Header Section */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-          <div className="space-y-1">
-            <h2 className="text-3xl font-bold text-stone-900">Dashboard</h2>
-            <p className="text-sm text-stone-500">Welcome back, {user.displayName?.split(' ')[0]}</p>
-          </div>
-          <div className="flex gap-3">
-            <button 
-              onClick={() => setShowAddModal(true)}
-              className="flex items-center gap-2 bg-stone-900 text-white px-6 py-3 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-stone-800 transition-all shadow-lg active:scale-95 group"
-            >
-              <Plus className="w-4 h-4 transition-transform group-hover:rotate-90" />
-              Add Transaction
-            </button>
-          </div>
-        </div>
-
-        {/* Summary Grid */}
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 sm:gap-6">
-          <SummaryCard 
-            title="Financial Runway" 
-            amount={totalExpenses > 0 ? (balance / (totalExpenses / 30)) : 0} 
-            icon={<Clock className="w-6 h-6 text-stone-900" />}
-            className="bg-white border border-stone-200"
-            isCritical={totalExpenses > 0 && (balance / (totalExpenses / 30)) < 30}
-            isWarning={totalExpenses > 0 && (balance / (totalExpenses / 30)) < 90}
-            tooltip="Survival Metric: How many days you can survive if income stops today. Target: 180+ days."
-          />
-          <SummaryCard 
-            title="Monthly Savings" 
-            amount={totalIncome - totalExpenses} 
-            icon={<PiggyBank className="w-6 h-6 text-emerald-600" />}
-            className="bg-emerald-50/50 border border-emerald-100"
-            isWarning={(totalIncome - totalExpenses) < totalIncome * 0.2}
-            isCritical={(totalIncome - totalExpenses) <= 0}
-            subLabel={`${totalIncome > 0 ? ((totalIncome - totalExpenses) / totalIncome * 100).toFixed(0) : 0}% Rate`}
-            tooltip={`Monthly Surplus: Income minus Expenses. Current Savings Rate: ${totalIncome > 0 ? ((totalIncome - totalExpenses) / totalIncome * 100).toFixed(1) : 0}%. Target: 30%+`}
-          />
-          <SummaryCard 
-            title="Capital Reserved" 
-            amount={totalSavings} 
-            icon={<Target className="w-6 h-6 text-blue-600" />}
-            className="bg-blue-50/50 border border-blue-100"
-            tooltip="Goal-Oriented Wealth: Sum of progress across all Savings and Investment goals."
-          />
-          <SummaryCard 
-            title="Monthly Burn" 
-            amount={totalExpenses} 
-            icon={<TrendingDown className="w-6 h-6 text-rose-600" />}
-            className="bg-rose-50/50 border border-rose-100"
-            isCritical={totalExpenses > totalIncome * 0.7}
-            tooltip="Monthly Expenses: Total outflow. If this exceeds 70% of income, leakage is critical."
-          />
-          <SummaryCard 
-            title="Daily Allowance" 
-            amount={Math.max(0, (balance - goals.reduce((acc, g) => acc + (g.monthlyContribution || 0), 0)) / 30)} 
-            icon={<Sparkles className="w-6 h-6 text-amber-500" />}
-            className="bg-stone-900 text-white border-none col-span-2 lg:col-span-1"
-            isWarning={balance < goals.reduce((acc, g) => acc + (g.monthlyContribution || 0), 0)}
-            tooltip="Daily Discretionary Allowance: Your safe daily spending limit after accounting for goals."
-          />
-        </div>
-
-        {/* Strategic Allocation Summary */}
-        <div className="bg-stone-900 p-8 rounded-[3rem] text-white overflow-hidden relative">
-          <div className="absolute top-0 right-0 w-96 h-96 bg-white/5 rounded-full -mr-48 -mt-48 blur-3xl" />
-          <div className="absolute bottom-0 left-0 w-64 h-64 bg-indigo-500/10 rounded-full -ml-32 -mb-32 blur-3xl" />
-          
-          <div className="relative z-10 grid grid-cols-1 md:grid-cols-4 gap-12 items-center">
-            <div className="md:col-span-1 space-y-2">
-              <h3 className="text-2xl font-bold tracking-tight">Strategic Allocation</h3>
-              <p className="text-xs text-stone-400 font-medium leading-relaxed">Your capital is being deployed across three primary vectors. Optimization requires minimizing leakage.</p>
-            </div>
-            
-            <div className="md:col-span-3 grid grid-cols-1 sm:grid-cols-3 gap-8">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-stone-500">Operating Burn</span>
-                  <span className="text-[10px] font-bold text-rose-400">{totalIncome > 0 ? ((totalExpenses / totalIncome) * 100).toFixed(0) : 0}%</span>
-                </div>
-                <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
-                  <motion.div 
-                    initial={{ width: 0 }}
-                    animate={{ width: `${totalIncome > 0 ? (totalExpenses / totalIncome) * 100 : 0}%` }}
-                    className="h-full bg-rose-500"
-                  />
-                </div>
-                <p className="text-lg font-bold tracking-tight">{formatCurrency(totalExpenses)}</p>
-              </div>
-
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-stone-500">Capital Reserve</span>
-                  <span className="text-[10px] font-bold text-emerald-400">{totalIncome > 0 ? (((totalIncome - totalExpenses) / totalIncome) * 100).toFixed(0) : 0}%</span>
-                </div>
-                <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
-                  <motion.div 
-                    initial={{ width: 0 }}
-                    animate={{ width: `${totalIncome > 0 ? ((totalIncome - totalExpenses) / totalIncome) * 100 : 0}%` }}
-                    className="h-full bg-emerald-500"
-                  />
-                </div>
-                <p className="text-lg font-bold tracking-tight">{formatCurrency(totalIncome - totalExpenses)}</p>
-              </div>
-
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-stone-500">Goal Momentum</span>
-                  <span className="text-[10px] font-bold text-blue-400">Targeting</span>
-                </div>
-                <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
-                  <motion.div 
-                    initial={{ width: 0 }}
-                    animate={{ width: '100%' }}
-                    className="h-full bg-blue-500 opacity-50"
-                  />
-                </div>
-                <p className="text-lg font-bold tracking-tight">{formatCurrency(totalSavings)}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* CFO Strategic Analysis Section */}
-        <StrategyInsights 
-          transactions={transactions} 
-          goals={goals} 
-          balance={balance}
-          totalIncome={totalIncome}
-          totalSavings={totalSavings}
-        />
-
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* Left Column: Charts & Advice */}
-          <div className="lg:col-span-8 space-y-8">
-            {/* Visual Analytics */}
-            <div className="bg-white p-10 rounded-[3rem] border border-stone-100 shadow-sm space-y-10">
-              <div className="flex items-center justify-between">
-                <div className="space-y-1">
-                  <h3 className="text-xl font-bold flex items-center gap-3 text-stone-900 tracking-tight">
-                    <PieChartIcon className="w-5 h-5 text-stone-400" />
-                    Expense Breakdown
-                  </h3>
-                  <p className="text-[10px] text-stone-400 font-bold uppercase tracking-[0.2em]">Capital Leakage Audit</p>
-                </div>
+      <main className="max-w-4xl mx-auto px-6 py-10 md:py-16 space-y-10 md:space-y-16">
+        {activeTab === 'home' && (
+          <div className="space-y-10 md:space-y-12">
+            {/* Strategic Command Center */}
+            <section className="bg-brand-primary text-brand-surface rounded-3xl overflow-hidden shadow-2xl relative">
+              <div className="absolute top-0 right-0 w-full h-full opacity-10 pointer-events-none overflow-hidden">
+                <div className="absolute -top-24 -right-24 w-96 h-96 bg-brand-accent rounded-full blur-[100px]" />
               </div>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-16 items-center">
-                <div className="h-[320px] w-full relative">
-                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Total Burn</span>
-                    <span className="text-2xl font-bold text-stone-900 tracking-tighter">{formatCurrency(totalExpenses)}</span>
-                  </div>
-                  {categoryData.length > 0 ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={categoryData}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={85}
-                          outerRadius={115}
-                          paddingAngle={8}
-                          dataKey="value"
-                          stroke="none"
-                        >
-                          {categoryData.map((_entry: any, index: number) => (
-                            <Cell 
-                              key={`cell-${index}`} 
-                              fill={COLORS[index % COLORS.length]} 
-                              className="hover:opacity-80 transition-opacity cursor-pointer outline-none"
-                            />
-                          ))}
-                        </Pie>
-                        <Tooltip 
-                          contentStyle={{ 
-                            borderRadius: '24px', 
-                            border: 'none', 
-                            boxShadow: '0 25px 50px -12px rgba(0,0,0,0.15)',
-                            fontSize: '12px',
-                            padding: '12px 16px',
-                            backgroundColor: '#1c1917',
-                            color: '#fff'
-                          }}
-                          itemStyle={{ color: '#fff' }}
-                          formatter={(value: number) => formatCurrency(value)}
-                        />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="h-full flex items-center justify-center text-stone-400 italic text-sm">
-                      No expense data to display
-                    </div>
-                  )}
+              <div className="p-5 md:p-12 space-y-4 md:space-y-10 relative z-10">
+                <div className="space-y-1">
+                  <p className="text-[9px] font-bold text-brand-surface/40 uppercase tracking-[0.3em] font-mono">Safe to Spend</p>
+                  <h2 className="text-4xl sm:text-6xl md:text-8xl font-serif italic tracking-tight leading-none break-words">
+                    {formatCurrency(leftToSpend)}
+                  </h2>
                 </div>
-                
-                <div className="space-y-6">
-                  {categoryData.map((item: any, index: number) => (
-                    <div key={item.name} className="flex items-center justify-between group cursor-default">
-                      <div className="flex items-center gap-4">
-                        <div className="w-3 h-3 rounded-full shadow-sm" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
-                        <span className="text-sm font-bold text-stone-600 group-hover:text-stone-900 transition-colors tracking-tight">{item.name}</span>
-                      </div>
-                      <div className="flex items-center gap-6">
-                        <span className="text-[11px] font-bold text-stone-300 group-hover:text-stone-400 transition-colors">
-                          {((item.value / totalExpenses) * 100).toFixed(0)}%
-                        </span>
-                        <span className="text-sm font-bold text-stone-900 tabular-nums">{formatCurrency(item.value)}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
 
-          {/* Right Column: Goals & Recent Transactions */}
-          <div className="lg:col-span-4 space-y-8">
-            {/* Goals Section */}
-            <div className="bg-white p-8 rounded-3xl border border-stone-100 shadow-sm space-y-6">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-bold flex items-center gap-3 text-stone-900">
-                  <Target className="w-5 h-5 text-stone-400" />
-                  Goals
-                </h3>
+                <div className="grid grid-cols-2 gap-y-5 md:gap-y-8 gap-x-8 pt-6 md:pt-8 border-t border-brand-surface/10">
+                  <div className="space-y-1">
+                    <p className="text-[9px] font-bold text-brand-surface/30 uppercase tracking-widest">Spent Today</p>
+                    <p className="text-sm md:text-xl font-medium text-rose-400">{formatCurrency(spentToday)}</p>
+                  </div>
+                  <div className="space-y-1 text-right">
+                    <p className="text-[9px] font-bold text-brand-surface/30 uppercase tracking-widest">Spent This Month</p>
+                    <p className="text-sm md:text-xl font-medium text-brand-surface/90">{formatCurrency(spentThisMonth)}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-[9px] font-bold text-brand-surface/30 uppercase tracking-widest">Monthly Budget</p>
+                    <p className="text-sm md:text-xl font-medium text-brand-surface/60">{formatCurrency(monthlyBudget)}</p>
+                  </div>
+                  <div className="space-y-1 text-right">
+                    <p className="text-[9px] font-bold text-brand-surface/30 uppercase tracking-widest">Days Remaining</p>
+                    <p className="text-sm md:text-xl font-medium text-brand-accent">{remainingDays} Days Left</p>
+                  </div>
+                </div>
+
                 <button 
-                  onClick={() => {
-                    setEditingGoal(null);
-                    setShowGoalModal(true);
-                  }}
-                  className="text-xs bg-stone-100 hover:bg-stone-200 px-3 py-1.5 rounded-lg transition-colors font-medium"
+                  onClick={() => { setTempBudget(monthlyBudget); setShowBudgetModal(true); }}
+                  className="absolute top-4 right-4 w-8 h-8 md:w-10 md:h-10 flex items-center justify-center rounded-lg md:rounded-xl bg-brand-surface/10 hover:bg-brand-surface/20 transition-all text-brand-surface z-20"
                 >
-                  + Add
+                  <Settings2 className="w-3.5 h-3.5 md:w-4 md:h-4" />
                 </button>
               </div>
-              <div className="space-y-4">
-                {goals.length > 0 ? (
-                  goals.map(goal => (
-                    <GoalItem 
-                      key={goal.id}
-                      goal={goal} 
-                      onEdit={() => {
-                        setEditingGoal(goal);
-                        setShowGoalModal(true);
-                      }}
-                    />
-                  ))
-                ) : (
-                  <div className="space-y-4">
-                    <GoalItem goal={{ name: 'Emergency Fund', currentAmount: 120000, targetAmount: 300000, type: 'savings', userId: '', deadline: '2026-12-31' }} isDemo />
-                    <GoalItem goal={{ name: 'Home Loan', currentAmount: 1200000, targetAmount: 4500000, type: 'debt', userId: '', deadline: '2035-06-30' }} isDemo />
-                    <p className="text-[10px] text-center text-stone-400 uppercase tracking-widest">Demo Data • Add your own goals</p>
+            </section>
+
+            {/* Strategic Insights */}
+            <div className="w-full">
+              {/* CFO Insight Card */}
+              <div className="bg-brand-accent/5 border border-brand-accent/10 rounded-2xl p-6 md:p-8 space-y-3 md:space-y-4">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 md:w-8 md:h-8 bg-brand-accent/10 rounded-lg flex items-center justify-center">
+                    <TrendingUp className="w-3 h-3 md:w-4 md:h-4 text-brand-accent" />
                   </div>
-                )}
+                  <p className="text-[9px] md:text-[10px] font-bold uppercase tracking-widest text-brand-accent">CFO Insight</p>
+                </div>
+                <p className="text-sm md:text-base text-brand-primary/80 leading-relaxed font-medium">
+                  {budgetPercentage < 50 
+                    ? "You're spending less than planned. Consider moving some surplus into your long-term goals."
+                    : budgetPercentage > 90 
+                    ? "Spending is high this month. Try to limit non-essential purchases for the next few days."
+                    : "Your spending is perfectly on track. Keep this momentum to hit your monthly savings target."}
+                </p>
               </div>
             </div>
 
-            {/* Recent Transactions */}
-            <div className="bg-white p-10 rounded-[3rem] border border-stone-100 shadow-sm space-y-8">
-              <div className="flex items-center justify-between">
+            {/* Strategic Targets */}
+            <section className="space-y-6 md:space-y-8">
+              <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
                 <div className="space-y-1">
-                  <h3 className="text-xl font-bold flex items-center gap-3 text-stone-900 tracking-tight">
-                    <ArrowRight className="w-5 h-5 text-stone-400" />
-                    Recent Activity
-                  </h3>
-                  <p className="text-[10px] text-stone-400 font-bold uppercase tracking-[0.2em]">Capital Flow History</p>
+                  <h3 className="text-xl md:text-2xl font-serif italic text-brand-primary">Strategic Targets</h3>
+                  <p className="text-[9px] md:text-[10px] text-brand-primary/40 font-bold uppercase tracking-[0.2em]">Long-term Capital Allocation</p>
                 </div>
-                <button className="text-[10px] font-bold uppercase tracking-widest text-stone-400 hover:text-stone-900 transition-colors">View All</button>
-              </div>
-              <div className="space-y-2">
-                {transactions.length > 0 ? (
-                  transactions.slice(0, 8).map(t => (
-                    <motion.div 
-                      key={t.id} 
-                      whileHover={{ x: 4 }}
-                      className="flex items-center justify-between p-4 hover:bg-stone-50 rounded-3xl transition-all group/item border border-transparent hover:border-stone-100"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className={cn(
-                          "w-12 h-12 rounded-2xl flex items-center justify-center shadow-sm transition-transform group-hover/item:scale-110",
-                          t.type === 'income' ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"
-                        )}>
-                          {t.type === 'income' ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />}
-                        </div>
-                        <div>
-                          <p className="text-sm font-bold text-stone-900 tracking-tight">{t.description || t.category}</p>
-                          <div className="flex items-center gap-2">
-                            <p className="text-[10px] text-stone-400 font-bold uppercase tracking-widest">{t.category}</p>
-                            <span className="text-[10px] text-stone-200">•</span>
-                            <p className="text-[10px] text-stone-400 font-bold uppercase tracking-widest">{new Date(t.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</p>
-                          </div>
-                        </div>
+                
+                <div className="flex items-center gap-8">
+                  <div className="hidden sm:block text-right space-y-1">
+                    <p className="text-[9px] font-bold text-brand-primary/30 uppercase tracking-widest">Aggregate Progress</p>
+                    <div className="flex items-center gap-3 justify-end">
+                      <p className="text-lg font-serif italic text-brand-primary">{totalGoalProgress.toFixed(1)}%</p>
+                      <div className="w-24 h-1 bg-brand-bg rounded-full overflow-hidden">
+                        <div className="h-full bg-brand-accent" style={{ width: `${totalGoalProgress}%` }} />
                       </div>
-                      <div className="flex items-center gap-4">
-                        <span className={cn(
-                          "text-sm font-bold tabular-nums",
-                          t.type === 'income' ? "text-emerald-600" : "text-stone-900"
-                        )}>
-                          {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
-                        </span>
-                        <button 
-                          onClick={async () => {
-                            try {
-                              await deleteDoc(doc(db, 'transactions', t.id!));
-                            } catch (error) {
-                              handleFirestoreError(error, OperationType.DELETE, 'transactions');
-                            }
-                          }}
-                          className="p-2 opacity-0 group-hover/item:opacity-100 transition-opacity text-stone-300 hover:text-rose-600"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </motion.div>
-                  ))
-                ) : (
-                  <div className="py-12 text-center space-y-2">
-                    <div className="w-12 h-12 bg-stone-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                      <Clock className="w-6 h-6 text-stone-200" />
                     </div>
-                    <p className="text-sm font-bold text-stone-400 uppercase tracking-widest">No Recent Activity</p>
-                    <p className="text-xs text-stone-300">Log your first transaction to see history.</p>
                   </div>
-                )}
+                  <button 
+                    onClick={() => { setEditingGoal(null); setShowGoalModal(true); }}
+                    className="px-4 md:px-5 py-2 md:py-2.5 bg-brand-primary text-brand-surface rounded-lg text-[9px] md:text-[10px] font-bold uppercase tracking-widest hover:bg-brand-primary/90 transition-all flex items-center gap-2 shadow-xl"
+                  >
+                    <Plus className="w-3 md:w-3.5 h-3 md:h-3.5" />
+                    Add Target
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+                {goals.map(goal => (
+                  <GoalItem 
+                    key={goal.id} 
+                    goal={goal} 
+                    transactions={transactions}
+                    onEdit={() => { setEditingGoal(goal); setShowGoalModal(true); }} 
+                  />
+                ))}
+              </div>
+            </section>
+          </div>
+        )}
+
+        {activeTab === 'history' && (
+          <div className="space-y-16">
+            <div className="flex items-center justify-between">
+              <h2 className="text-8xl font-display uppercase text-brutal-black tracking-tighter leading-none">History</h2>
+              <div className="p-4 bg-neon-green brutal-border">
+                <Compass className="w-8 h-8 text-brutal-black" />
               </div>
             </div>
+
+            {/* Summary Card */}
+            <div className="bg-brand-surface rounded-2xl border border-brand-border shadow-sm overflow-hidden grid grid-cols-3 divide-x divide-brand-border">
+              <div className="p-8 text-center space-y-1.5">
+                <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest">Spent</p>
+                <p className="text-2xl font-serif italic text-brand-primary tabular-nums">{formatCurrency(historySummary.spent)}</p>
+              </div>
+              <div className="p-8 text-center space-y-1.5">
+                <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest">Earned</p>
+                <p className="text-2xl font-serif italic text-brand-accent tabular-nums">{formatCurrency(historySummary.earned)}</p>
+              </div>
+              <div className="p-8 text-center space-y-1.5">
+                <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest">Net Flow</p>
+                <p className={cn(
+                  "text-2xl font-serif italic tabular-nums",
+                  historySummary.net >= 0 ? "text-brand-accent" : "text-rose-500"
+                )}>
+                  {historySummary.net >= 0 ? '+' : ''}{formatCurrency(historySummary.net)}
+                </p>
+              </div>
+            </div>
+
+
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-8">
+              <div className="space-y-1">
+                <h2 className="text-3xl font-serif italic text-brand-primary">Audit Log</h2>
+                <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-[0.3em]">Capital Flow History</p>
+              </div>
+              <div className="flex bg-brand-surface p-1 rounded-xl border border-brand-border shadow-sm">
+                {['All', 'Expenses', 'Income'].map(f => (
+                  <button 
+                    key={f} 
+                    onClick={() => setFilter(f as any)}
+                    className={cn(
+                      "px-6 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all",
+                      filter === f ? "bg-brand-primary text-brand-surface shadow-md" : "text-brand-primary/40 hover:bg-brand-bg"
+                    )}
+                  >
+                    {f}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Transaction List */}
+            <div className="space-y-10">
+              {Object.entries(groupedTransactions).map(([date, items]) => (
+                <div key={date} className="space-y-6">
+                  <div className="flex items-center gap-4">
+                    <h4 className="text-[10px] font-bold text-brand-primary/30 uppercase tracking-[0.3em]">{date}</h4>
+                    <div className="h-px flex-1 bg-brand-border" />
+                  </div>
+                  <div className="space-y-3">
+                    {items.map(t => (
+                      <div key={t.id} className="bg-brand-surface p-6 border border-brand-border rounded-2xl shadow-sm hover:shadow-md transition-all flex items-center justify-between group">
+                        <div className="flex items-center gap-5">
+                          <div className="w-12 h-12 bg-brand-bg rounded-xl flex items-center justify-center text-brand-primary/40 group-hover:bg-brand-primary group-hover:text-brand-surface transition-all">
+                            {getCategoryIcon(t.category)}
+                          </div>
+                          <div className="space-y-0.5">
+                            <p className="text-sm font-bold text-brand-primary uppercase tracking-wide">{t.description}</p>
+                            <div className="flex items-center gap-3">
+                              <span className="text-[9px] font-bold text-brand-primary/30 uppercase tracking-widest">{t.category}</span>
+                              {t.isMandatory && (
+                                <span className="px-1.5 py-0.5 bg-brand-primary/5 text-brand-primary/40 text-[7px] font-bold uppercase tracking-widest rounded">Mandatory</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className={cn(
+                            "text-xl font-serif italic tabular-nums",
+                            t.type === 'income' ? "text-brand-accent" : "text-brand-primary"
+                          )}>
+                            {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
+                          </p>
+                          <p className="text-[9px] font-bold text-brand-primary/20 uppercase tracking-widest mt-0.5">
+                            {new Date(t.date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
+
+        {activeTab === 'insights' && (
+          <div className="space-y-10">
+            <div className="space-y-1">
+              <h2 className="text-3xl font-serif italic text-brand-primary">Strategic Audit</h2>
+              <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-[0.3em]">AI Capital Intelligence</p>
+            </div>
+            <StrategyInsights 
+              transactions={transactions} 
+              goals={goals} 
+              balance={balance}
+              totalIncome={totalIncome}
+              totalSavings={totalSavings}
+            />
+          </div>
+        )}
       </main>
 
       {/* Add Transaction Modal */}
@@ -573,28 +630,104 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Mobile Bottom Nav */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-lg border-t border-stone-200 px-12 py-3 flex justify-around items-center sm:hidden z-40 pb-safe">
-        <button className="flex flex-col items-center gap-1 text-stone-900">
-          <Home className="w-6 h-6" />
-          <span className="text-[10px] font-bold uppercase tracking-widest">Dashboard</span>
-        </button>
-        <button 
-          onClick={() => setShowAddModal(true)}
-          className="bg-stone-900 text-white p-4 rounded-2xl -mt-10 shadow-lg shadow-stone-900/20 active:scale-90 transition-transform"
-        >
-          <Plus className="w-6 h-6" />
-        </button>
-        <button 
-          onClick={() => {
-            setEditingGoal(null);
-            setShowGoalModal(true);
-          }}
-          className="flex flex-col items-center gap-1 text-stone-400">
-          <Target className="w-6 h-6" />
-          <span className="text-[10px] font-bold uppercase tracking-widest">Goals</span>
-        </button>
-      </div>
+      {/* Budget Modal */}
+      <AnimatePresence>
+        {showBudgetModal && (
+          <div className="fixed inset-0 bg-brand-primary/40 backdrop-blur-sm z-50 flex items-center justify-center p-6">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-brand-surface w-full max-w-md rounded-3xl shadow-2xl p-8 space-y-8 border border-brand-border"
+            >
+              <div className="space-y-1">
+                <h3 className="text-2xl font-serif italic text-brand-primary">Limit</h3>
+                <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-[0.3em]">Define Monthly Protocol</p>
+              </div>
+
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest">Monthly Budget</label>
+                  <div className="relative">
+                    <span className="absolute left-5 top-1/2 -translate-y-1/2 text-brand-primary/40 font-serif italic text-xl">₹</span>
+                    <input 
+                      type="number"
+                      value={tempBudget}
+                      onChange={(e) => setTempBudget(Number(e.target.value))}
+                      className="w-full bg-brand-bg border border-brand-border rounded-xl py-6 pl-12 pr-6 font-serif italic text-4xl focus:ring-2 focus:ring-brand-primary/5 transition-all outline-none"
+                      placeholder="60000"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-3 pt-4">
+                <button 
+                  onClick={() => {
+                    setMonthlyBudget(tempBudget);
+                    setShowBudgetModal(false);
+                  }}
+                  className="w-full py-5 bg-brand-primary text-brand-surface rounded-xl font-bold text-xs uppercase tracking-[0.2em] hover:bg-brand-primary/90 transition-all shadow-xl"
+                >
+                  Save Protocol
+                </button>
+                <button 
+                  onClick={() => setShowBudgetModal(false)}
+                  className="w-full py-3 text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest hover:text-brand-primary transition-all"
+                >
+                  Cancel
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Bottom Navigation */}
+      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-brand-surface/90 backdrop-blur-md border-t border-brand-border pb-safe">
+        <div className="max-w-md mx-auto grid grid-cols-3 items-center py-4 px-6">
+          <button
+            onClick={() => setActiveTab('home')}
+            className={cn(
+              "flex flex-col items-center gap-1.5 transition-all",
+              activeTab === 'home' ? "text-brand-primary" : "text-brand-primary/30"
+            )}
+          >
+            <Compass className={cn("w-5 h-5", activeTab === 'home' && "fill-brand-primary/10")} />
+            <span className="text-[9px] font-bold uppercase tracking-widest">Strategy</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('history')}
+            className={cn(
+              "flex flex-col items-center gap-1.5 transition-all",
+              activeTab === 'history' ? "text-brand-primary" : "text-brand-primary/30"
+            )}
+          >
+            <TrendingUp className={cn("w-5 h-5", activeTab === 'history' && "fill-brand-primary/10")} />
+            <span className="text-[9px] font-bold uppercase tracking-widest">Audit</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('insights')}
+            className={cn(
+              "flex flex-col items-center gap-1.5 transition-all",
+              activeTab === 'insights' ? "text-brand-primary" : "text-brand-primary/30"
+            )}
+          >
+            <Sparkles className={cn("w-5 h-5", activeTab === 'insights' && "fill-brand-primary/10")} />
+            <span className="text-[9px] font-bold uppercase tracking-widest">Intelligence</span>
+          </button>
+        </div>
+      </nav>
+
+      {/* Sticky Action Button */}
+      <button 
+        onClick={() => setShowAddModal(true)}
+        className="fixed bottom-24 right-6 w-12 h-12 bg-brand-primary text-brand-surface rounded-full shadow-2xl flex items-center justify-center hover:scale-105 active:scale-95 transition-all z-50 border border-brand-surface/10"
+      >
+        <Plus className="w-6 h-6" />
+      </button>
 
       {/* Mobile Install Tip */}
       <AnimatePresence>
@@ -603,20 +736,20 @@ export default function App() {
             initial={{ y: 100 }}
             animate={{ y: 0 }}
             exit={{ y: 100 }}
-            className="fixed bottom-20 left-4 right-4 bg-stone-900 text-white p-4 rounded-2xl z-50 shadow-2xl flex items-center justify-between sm:hidden"
+            className="fixed bottom-20 left-4 right-4 bg-brand-primary text-brand-surface p-4 rounded-2xl z-50 shadow-2xl flex items-center justify-between sm:hidden"
           >
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-white/10 rounded-xl">
-                <Sparkles className="w-5 h-5 text-amber-400" />
+              <div className="p-2 bg-brand-surface/10 rounded-xl">
+                <Sparkles className="w-5 h-5 text-brand-accent" />
               </div>
               <div>
                 <p className="text-xs font-bold">Add to Home Screen</p>
-                <p className="text-[10px] text-stone-400">Use FinTrack like a real app!</p>
+                <p className="text-[10px] text-brand-surface/60">Use FinTrack like a real app!</p>
               </div>
             </div>
             <button 
               onClick={() => setShowMobileTip(false)}
-              className="text-xs font-bold bg-white/10 px-3 py-1.5 rounded-lg"
+              className="text-[10px] font-bold bg-brand-surface/10 px-3 py-1.5 rounded-lg uppercase tracking-widest"
             >
               Got it
             </button>
@@ -627,212 +760,96 @@ export default function App() {
   );
 }
 
-function SummaryCard({ title, amount, icon, className, tooltip, isWarning, isCritical, subLabel }: { 
-  title: string, 
-  amount: number, 
-  icon: React.ReactNode, 
-  className?: string, 
-  tooltip?: string,
-  isWarning?: boolean,
-  isCritical?: boolean,
-  subLabel?: string
-}) {
-  const isDark = className?.includes('bg-stone-900');
+function GoalItem({ goal, transactions, isDemo, onEdit }: { goal: Goal, transactions: Transaction[], isDemo?: boolean, onEdit?: () => void }) {
+  const [simulationValue, setSimulationValue] = useState(goal.monthlyContribution || 0);
+  const progress = Math.min((goal.currentAmount / goal.targetAmount) * 100, 100);
+  const remaining = Math.max(0, goal.targetAmount - goal.currentAmount);
   
+  // Calculate this month's contribution velocity
+  const now = new Date();
+  const thisMonthContribution = transactions
+    .filter(t => {
+      const tDate = new Date(t.date);
+      return tDate.getMonth() === now.getMonth() && 
+             tDate.getFullYear() === now.getFullYear() &&
+             t.type === 'expense' &&
+             t.description.toLowerCase().includes(goal.name.toLowerCase());
+    })
+    .reduce((acc, t) => acc + t.amount, 0);
+
+  const monthsToGoal = simulationValue > 0 ? remaining / simulationValue : Infinity;
+  const freedomDate = monthsToGoal !== Infinity 
+    ? new Date(new Date().setMonth(new Date().getMonth() + Math.ceil(monthsToGoal)))
+    : null;
+
   return (
     <motion.div 
       whileHover={{ y: -4 }}
       className={cn(
-        "p-6 rounded-[2rem] space-y-4 transition-all duration-300 border relative overflow-hidden", 
-        isDark ? "bg-stone-900 border-stone-800 shadow-xl shadow-stone-900/20" : "bg-white border-stone-100 shadow-sm hover:shadow-xl hover:shadow-stone-200/50",
-        isWarning && "bg-amber-50/50 border-amber-100",
-        isCritical && "bg-rose-50/50 border-rose-100",
-        className
+        "flex flex-col p-6 md:p-8 bg-brand-surface border border-brand-border rounded-3xl shadow-sm hover:shadow-xl transition-all group relative overflow-hidden",
+        isDemo && "opacity-50 grayscale"
       )}
     >
-      {isCritical && (
-        <motion.div 
-          animate={{ opacity: [0.1, 0.3, 0.1] }}
-          transition={{ duration: 2, repeat: Infinity }}
-          className="absolute inset-0 bg-rose-500 pointer-events-none"
-        />
-      )}
-      
-      <div className="flex items-center justify-between relative z-10">
-        <div className="flex items-center gap-2">
-          <div className={cn(
-            "p-2.5 rounded-2xl transition-colors",
-            isDark ? "bg-white/10 text-stone-400" : "bg-stone-50 text-stone-600"
-          )}>
-            {React.isValidElement(icon) ? React.cloneElement(icon as React.ReactElement<any>, { className: 'w-4 h-4' }) : icon}
-          </div>
-          <span className={cn(
-            "text-[10px] font-bold uppercase tracking-[0.2em]", 
-            isDark ? "text-stone-400" : isCritical ? "text-rose-600" : isWarning ? "text-amber-600" : "text-stone-500"
-          )}>
-            {title}
-          </span>
-        </div>
-        {tooltip && (
-          <div className="group/tooltip relative">
-            <Info className={cn("w-3.5 h-3.5 cursor-help", isDark ? "text-stone-500" : "text-stone-300")} />
-            <div className="absolute bottom-full right-0 mb-3 w-64 p-4 bg-stone-900 text-white text-[11px] leading-relaxed rounded-2xl opacity-0 group-hover/tooltip:opacity-100 transition-all duration-200 pointer-events-none z-50 shadow-2xl border border-white/10 backdrop-blur-xl">
-              {tooltip}
-              <div className="absolute top-full right-4 -mt-1 border-8 border-transparent border-t-stone-900" />
+      <div className="flex justify-between items-start mb-8" onClick={onEdit}>
+        <div className="space-y-3 cursor-pointer">
+          <div className="flex items-center gap-3">
+            <h4 className="text-xl md:text-2xl font-serif italic text-brand-primary leading-none">{goal.name}</h4>
+            <div className="px-2 py-0.5 bg-brand-primary/5 text-brand-primary/40 rounded-md border border-brand-primary/10">
+              <p className="text-[8px] font-bold uppercase tracking-widest">{goal.type}</p>
             </div>
           </div>
-        )}
-      </div>
-      
-      <div className="space-y-1 relative z-10">
-        <div className="flex items-baseline justify-between gap-2">
-          <div className={cn(
-            "text-3xl font-bold tracking-tight", 
-            isDark ? "text-white" : isCritical ? "text-rose-700" : isWarning ? "text-amber-700" : "text-stone-900"
-          )}>
-            {title.toLowerCase().includes('runway') ? amount.toFixed(0) : formatCurrency(Math.abs(amount))}
-            {title.toLowerCase().includes('runway') && <span className="text-sm font-medium ml-1.5 opacity-40">days</span>}
-          </div>
-          {subLabel && (
-            <span className={cn(
-              "text-[11px] font-bold px-2 py-0.5 rounded-full",
-              isCritical ? "bg-rose-100 text-rose-600" : isWarning ? "bg-amber-100 text-amber-600" : "bg-emerald-100 text-emerald-600"
-            )}>
-              {subLabel}
-            </span>
-          )}
-        </div>
-        <div className="flex items-center justify-between pt-1">
-          {isCritical ? (
-            <p className="text-[9px] font-bold text-rose-500 uppercase tracking-widest flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
-              Critical Action Required
+          <div className="flex items-center gap-3">
+            <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-[0.2em]">
+              {formatCurrency(remaining)} TO GO
             </p>
-          ) : isWarning ? (
-            <p className="text-[9px] font-bold text-amber-500 uppercase tracking-widest flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-              Efficiency Risk
-            </p>
-          ) : (
-            <p className={cn("text-[9px] font-bold uppercase tracking-widest opacity-40", isDark ? "text-stone-400" : "text-stone-500")}>
-              Optimal Performance
-            </p>
-          )}
-        </div>
-      </div>
-    </motion.div>
-  );
-}
-
-function GoalItem({ goal, isDemo, onEdit }: { goal: Goal, isDemo?: boolean, onEdit?: () => void }) {
-  const normalizedType = (goal.type as any) === 'sip' ? 'investment' : (goal.type as any) === 'loan' ? 'debt' : goal.type;
-  const progress = Math.min((goal.currentAmount / goal.targetAmount) * 100, 100);
-  const remaining = goal.targetAmount - goal.currentAmount;
-  
-  const getIcon = () => {
-    switch (normalizedType) {
-      case 'savings': return <PiggyBank className="w-5 h-5" />;
-      case 'debt': return <Landmark className="w-5 h-5" />;
-      case 'investment': return <TrendingUp className="w-5 h-5" />;
-      default: return <Target className="w-5 h-5" />;
-    }
-  };
-
-  const getStatus = () => {
-    if (progress >= 100) return { label: 'Achieved', color: 'text-emerald-600 bg-emerald-50' };
-    if (progress >= 75) return { label: 'Near Target', color: 'text-blue-600 bg-blue-50' };
-    if (progress >= 25) return { label: 'Progressing', color: 'text-amber-600 bg-amber-50' };
-    return { label: 'Initial Phase', color: 'text-stone-500 bg-stone-100' };
-  };
-
-  const status = getStatus();
-
-  const getProjection = () => {
-    if (!goal.monthlyContribution || goal.monthlyContribution <= 0 || progress >= 100) return null;
-    const months = Math.ceil(remaining / goal.monthlyContribution);
-    const date = new Date();
-    date.setMonth(date.getMonth() + months);
-    return date.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
-  };
-
-  const projection = getProjection();
-
-  return (
-    <motion.div 
-      whileHover={{ scale: 1.02 }}
-      className={cn(
-        "p-8 rounded-[2.5rem] border border-stone-100 bg-white shadow-sm hover:shadow-2xl hover:shadow-stone-200/50 transition-all group relative overflow-hidden",
-        isDemo && "opacity-60 grayscale"
-      )}
-    >
-      <div className="flex justify-between items-start mb-8 relative z-10">
-        <div className="flex gap-5">
-          <div className={cn(
-            "w-14 h-14 rounded-3xl flex items-center justify-center shadow-inner",
-            normalizedType === 'savings' ? "bg-indigo-50 text-indigo-600" : 
-            normalizedType === 'debt' ? "bg-stone-900 text-white" : "bg-blue-50 text-blue-600"
-          )}>
-            {getIcon()}
-          </div>
-          <div className="space-y-1.5">
-            <h4 className="text-xl font-bold text-stone-900 tracking-tight">{goal.name}</h4>
-            <div className="flex items-center gap-3">
-              <span className={cn("text-[10px] px-3 py-1 rounded-full font-bold uppercase tracking-widest", status.color)}>
-                {status.label}
-              </span>
-              {projection && (
-                <span className="text-[10px] text-stone-400 font-bold uppercase tracking-widest">
-                  Est. {projection}
-                </span>
-              )}
-            </div>
+            {thisMonthContribution > 0 && (
+              <div className="flex items-center gap-1 text-brand-accent">
+                <TrendingUp className="w-3 h-3" />
+                <span className="text-[9px] font-bold uppercase tracking-wider">+{formatCurrency(thisMonthContribution)} MTD</span>
+              </div>
+            )}
           </div>
         </div>
-        {!isDemo && onEdit && (
-          <button 
-            onClick={onEdit}
-            className="p-3 hover:bg-stone-50 rounded-2xl transition-all text-stone-300 hover:text-stone-900 border border-transparent hover:border-stone-100"
-          >
-            <Plus className="w-5 h-5 rotate-45" />
-          </button>
-        )}
-      </div>
-      
-      <div className="space-y-6 relative z-10">
-        <div className="flex justify-between items-end">
-          <div className="space-y-1">
-            <p className="text-[10px] text-stone-400 font-bold uppercase tracking-[0.2em]">
-              {normalizedType === 'debt' ? 'Principal Paid' : 'Capital Reserved'}
-            </p>
-            <span className="text-2xl font-bold text-stone-900 tracking-tighter">{formatCurrency(goal.currentAmount)}</span>
-          </div>
-          <div className="text-right space-y-1">
-            <p className="text-[10px] text-stone-400 font-bold uppercase tracking-[0.2em]">
-              {normalizedType === 'debt' ? 'Total Loan' : 'Target'}
-            </p>
-            <span className="text-sm font-bold text-stone-400">{formatCurrency(goal.targetAmount)}</span>
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          <div className="h-2 w-full bg-stone-50 rounded-full overflow-hidden border border-stone-100">
+        <div className="text-right space-y-2">
+          <p className="text-2xl md:text-3xl font-serif italic text-brand-primary leading-none">{progress.toFixed(0)}%</p>
+          <div className="h-1.5 w-24 md:w-32 bg-brand-bg rounded-full overflow-hidden">
             <motion.div 
               initial={{ width: 0 }}
               animate={{ width: `${progress}%` }}
-              className={cn(
-                "h-full rounded-full transition-all duration-1000",
-                normalizedType === 'savings' ? "bg-indigo-500" : 
-                normalizedType === 'debt' ? "bg-stone-900" : "bg-blue-500"
-              )}
+              className="h-full bg-brand-accent shadow-[0_0_10px_rgba(16,185,129,0.3)]"
             />
           </div>
-          <div className="flex justify-between items-center">
-            <span className="text-[10px] font-bold text-stone-400 uppercase tracking-[0.3em]">
-              {progress.toFixed(0)}% Complete
-            </span>
-            <span className="text-[10px] font-bold text-stone-900 uppercase tracking-[0.3em]">
-              {formatCurrency(remaining)} To Freedom
-            </span>
+        </div>
+      </div>
+
+      {/* Strategic Simulation Lever */}
+      <div className="mt-auto pt-6 border-t border-brand-border space-y-6">
+        <div className="flex justify-between items-end">
+          <div className="space-y-1">
+            <p className="text-[9px] font-bold text-brand-primary/30 uppercase tracking-widest">Monthly Allocation</p>
+            <p className="text-xl md:text-2xl font-serif italic text-brand-primary leading-none tabular-nums">{formatCurrency(simulationValue)}</p>
+          </div>
+          <div className="text-right space-y-1">
+            <p className="text-[9px] font-bold text-brand-primary/30 uppercase tracking-widest">Projected Maturity</p>
+            <p className="text-lg md:text-xl font-serif italic text-brand-accent leading-none">
+              {freedomDate ? freedomDate.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : 'N/A'}
+            </p>
+          </div>
+        </div>
+        
+        <div className="relative group/slider">
+          <input 
+            type="range"
+            min="0"
+            max={Math.max(100000, simulationValue * 2)}
+            step="1000"
+            value={simulationValue}
+            onChange={(e) => setSimulationValue(parseInt(e.target.value))}
+            className="w-full h-1 bg-brand-bg rounded-full appearance-none cursor-pointer accent-brand-primary"
+          />
+          <div className="flex justify-between mt-3 text-[8px] font-bold text-brand-primary/20 uppercase tracking-[0.2em]">
+            <span>Conservative</span>
+            <span>Aggressive</span>
           </div>
         </div>
       </div>
@@ -897,142 +914,135 @@ function GoalModal({ onClose, userId, goal }: { onClose: () => void, userId: str
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/40 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-brand-primary/40 backdrop-blur-sm">
       <motion.div 
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden"
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 20 }}
+        className="bg-brand-surface w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden border border-brand-border"
       >
-        <div className="p-6 border-b border-stone-100 flex justify-between items-center">
-          <h3 className="text-xl font-bold">{goal ? 'Edit Goal' : 'New Goal'}</h3>
-          <button onClick={onClose} className="text-stone-400 hover:text-stone-900">
+        <div className="p-8 border-b border-brand-border flex justify-between items-center bg-brand-bg">
+          <div className="space-y-1">
+            <h3 className="text-2xl font-serif italic text-brand-primary">{goal ? 'Modify' : 'Initialize'}</h3>
+            <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-[0.3em]">Capital Allocation Protocol</p>
+          </div>
+          <button onClick={onClose} className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-brand-primary/5 transition-all text-brand-primary/40">
             <Plus className="w-6 h-6 rotate-45" />
           </button>
         </div>
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Goal Name</label>
-            <input 
-              autoFocus
-              type="text" 
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Emergency Fund, Home Loan"
-              className="w-full bg-stone-50 border-none rounded-xl py-3 px-4 text-sm focus:ring-2 focus:ring-stone-900 transition-all"
-              required
-            />
-          </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Target Amount</label>
-              <input 
-                type="number" 
-                value={targetAmount}
-                onChange={(e) => setTargetAmount(e.target.value)}
-                placeholder="0"
-                className="w-full bg-stone-50 border-none rounded-xl py-3 px-4 text-sm focus:ring-2 focus:ring-stone-900 transition-all"
-                required
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Monthly Contribution</label>
-              <input 
-                type="number" 
-                value={monthlyContribution}
-                onChange={(e) => setMonthlyContribution(e.target.value)}
-                placeholder="0"
-                className="w-full bg-stone-50 border-none rounded-xl py-3 px-4 text-sm focus:ring-2 focus:ring-stone-900 transition-all"
-              />
-            </div>
-          </div>
+        <form onSubmit={handleSubmit} className="p-8 space-y-8 relative z-10">
+          {!showConfirmDelete ? (
+            <div className="space-y-8">
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-[0.2em]">Goal Designation</label>
+                  <input 
+                    required
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="w-full bg-brand-bg border border-brand-border rounded-xl py-4 px-5 text-sm font-bold uppercase focus:ring-2 focus:ring-brand-primary/5 transition-all outline-none"
+                    placeholder="e.g. RETIREMENT"
+                  />
+                </div>
 
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Current Progress</label>
-            <input 
-              type="number" 
-              value={currentAmount}
-              onChange={(e) => setCurrentAmount(e.target.value)}
-              placeholder="0"
-              className="w-full bg-stone-50 border-none rounded-xl py-3 px-4 text-sm focus:ring-2 focus:ring-stone-900 transition-all"
-            />
-          </div>
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-[0.2em]">Target Amount</label>
+                    <div className="relative">
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-brand-primary/40 font-serif italic">₹</span>
+                      <input 
+                        required
+                        type="number"
+                        value={targetAmount}
+                        onChange={(e) => setTargetAmount(e.target.value)}
+                        className="w-full bg-brand-bg border border-brand-border rounded-xl py-4 pl-8 pr-5 text-sm font-mono focus:ring-2 focus:ring-brand-primary/5 transition-all outline-none"
+                        placeholder="500000"
+                      />
+                    </div>
+                  </div>
 
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Goal Type</label>
-            <div className="flex gap-2">
-              {(['savings', 'debt', 'investment'] as GoalType[]).map((t) => (
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-[0.2em]">Monthly Contribution</label>
+                    <div className="relative">
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-brand-primary/40 font-serif italic">₹</span>
+                      <input 
+                        required
+                        type="number"
+                        value={monthlyContribution}
+                        onChange={(e) => setMonthlyContribution(e.target.value)}
+                        className="w-full bg-brand-bg border border-brand-border rounded-xl py-4 pl-8 pr-5 text-sm font-mono focus:ring-2 focus:ring-brand-primary/5 transition-all outline-none"
+                        placeholder="10000"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-[0.2em]">Classification</label>
+                  <div className="flex bg-brand-bg p-1 rounded-xl border border-brand-border">
+                    {(['savings', 'debt', 'investment'] as GoalType[]).map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setType(t)}
+                        className={cn(
+                          "flex-1 py-2.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all",
+                          type === t 
+                            ? "bg-brand-primary text-brand-surface shadow-md" 
+                            : "text-brand-primary/40 hover:bg-brand-primary/5"
+                        )}
+                      >
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-4">
                 <button
-                  key={t}
-                  type="button"
-                  onClick={() => setType(t)}
-                  className={cn(
-                    "flex-1 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all border",
-                    type === t 
-                      ? "bg-stone-900 text-white border-stone-900 shadow-md" 
-                      : "bg-white text-stone-400 border-stone-200 hover:border-stone-400"
-                  )}
-                >
-                  {t}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Target Date (Optional)</label>
-            <input 
-              type="date" 
-              value={deadline}
-              onChange={(e) => setDeadline(e.target.value)}
-              className="w-full bg-stone-50 border-none rounded-xl py-3 px-4 text-sm focus:ring-2 focus:ring-stone-900 transition-all"
-            />
-          </div>
-
-          <div className="pt-2 space-y-3">
-            {!showConfirmDelete ? (
-              <>
-                <button 
+                  type="submit"
                   disabled={isSubmitting}
-                  className="w-full bg-stone-900 text-white py-3.5 rounded-xl font-medium hover:bg-stone-800 transition-all shadow-lg disabled:opacity-50 active:scale-95"
+                  className="w-full bg-brand-primary text-brand-surface py-5 rounded-xl font-bold text-xs uppercase tracking-[0.2em] hover:bg-brand-primary/90 transition-all shadow-xl disabled:opacity-50 active:scale-[0.98]"
                 >
-                  {isSubmitting ? 'Saving...' : goal ? 'Update Goal' : 'Create Goal'}
+                  {isSubmitting ? 'Processing' : goal ? 'Commit Changes' : 'Initialize Target'}
                 </button>
                 {goal && (
                   <button 
                     type="button"
                     onClick={() => setShowConfirmDelete(true)}
                     disabled={isSubmitting}
-                    className="w-full bg-rose-50 text-rose-600 py-3.5 rounded-xl font-medium hover:bg-rose-100 transition-all disabled:opacity-50"
+                    className="w-full text-rose-500 py-2 text-[10px] font-bold uppercase tracking-[0.2em] hover:text-rose-600 transition-all disabled:opacity-50"
                   >
-                    Delete Goal
+                    Terminate Goal
                   </button>
                 )}
-              </>
-            ) : (
-              <div className="bg-rose-50 p-4 rounded-2xl space-y-3 border border-rose-100">
-                <p className="text-xs text-rose-800 font-medium text-center">Are you sure you want to delete this goal? This action cannot be undone.</p>
-                <div className="flex gap-3">
-                  <button 
-                    type="button"
-                    onClick={() => setShowConfirmDelete(false)}
-                    className="flex-1 bg-white text-stone-600 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest border border-stone-200 hover:bg-stone-50 transition-all"
-                  >
-                    Cancel
-                  </button>
-                  <button 
-                    type="button"
-                    onClick={handleDelete}
-                    disabled={isSubmitting}
-                    className="flex-1 bg-rose-600 text-white py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-rose-700 transition-all shadow-md disabled:opacity-50"
-                  >
-                    {isSubmitting ? '...' : 'Confirm'}
-                  </button>
-                </div>
               </div>
-            )}
-          </div>
+            </div>
+          ) : (
+            <div className="bg-rose-500/5 p-8 rounded-2xl border border-rose-500/20 space-y-8">
+              <p className="text-sm text-rose-600 font-bold uppercase tracking-wide text-center leading-relaxed">Confirm Goal Termination? This action will purge all associated target data.</p>
+              <div className="flex flex-col gap-3">
+                <button 
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={isSubmitting}
+                  className="w-full bg-rose-500 text-white py-4 rounded-xl font-bold text-xs uppercase tracking-[0.2em] hover:bg-rose-600 transition-all shadow-lg disabled:opacity-50"
+                >
+                  {isSubmitting ? '...' : 'Confirm Purge'}
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setShowConfirmDelete(false)}
+                  className="w-full py-3 text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest hover:text-brand-primary transition-all"
+                >
+                  Abort
+                </button>
+              </div>
+            </div>
+          )}
         </form>
       </motion.div>
     </div>
@@ -1044,6 +1054,7 @@ function TransactionModal({ onClose, userId, transactions }: { onClose: () => vo
   const [category, setCategory] = useState('Food & Dining');
   const [description, setDescription] = useState('');
   const [type, setType] = useState<'income' | 'expense'>('expense');
+  const [isMandatory, setIsMandatory] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
 
@@ -1098,6 +1109,7 @@ function TransactionModal({ onClose, userId, transactions }: { onClose: () => vo
         type,
         date: new Date().toISOString(),
         userId,
+        isMandatory: type === 'expense' ? isMandatory : false,
       });
 
       // Update goals if category matches
@@ -1134,45 +1146,48 @@ function TransactionModal({ onClose, userId, transactions }: { onClose: () => vo
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/40 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-brand-primary/40 backdrop-blur-sm">
       <motion.div 
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden"
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 20 }}
+        className="bg-brand-surface w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden border border-brand-border"
       >
-        <div className="p-6 border-b border-stone-100 flex justify-between items-center">
-          <h3 className="text-xl font-bold">Quick Log</h3>
-          <button onClick={onClose} className="text-stone-400 hover:text-stone-900">
+        <div className="p-8 border-b border-brand-border flex justify-between items-center bg-brand-bg">
+          <div className="space-y-1">
+            <h3 className="text-2xl font-serif italic text-brand-primary">Quick Log</h3>
+            <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-[0.3em]">Capital Flow Entry</p>
+          </div>
+          <button onClick={onClose} className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-brand-primary/5 transition-all text-brand-primary/40">
             <Plus className="w-6 h-6 rotate-45" />
           </button>
         </div>
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+        <form onSubmit={handleSubmit} className="p-8 space-y-8 relative z-10">
           {/* Smart Templates Row */}
-          <div className="space-y-2">
-            <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Frequent Merchants</label>
+          <div className="space-y-3">
+            <label className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-[0.2em]">Frequent Merchants</label>
             <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
               {smartTemplates.slice(0, 5).map((t) => (
                 <button
                   key={t.name}
                   type="button"
                   onClick={() => applyTemplate(t)}
-                  className="flex-shrink-0 px-3 py-1.5 bg-stone-50 border border-stone-100 rounded-lg text-[10px] font-bold text-stone-600 hover:bg-stone-100 transition-all active:scale-95"
+                  className="flex-shrink-0 px-4 py-2 bg-brand-bg border border-brand-border rounded-lg text-[9px] font-bold text-brand-primary/60 hover:bg-brand-primary hover:text-brand-surface transition-all active:scale-95 uppercase tracking-wider"
                 >
                   {t.name}
                 </button>
               ))}
-              {smartTemplates.length === 0 && <span className="text-[10px] text-stone-300 italic">No history yet</span>}
+              {smartTemplates.length === 0 && <span className="text-[10px] text-brand-primary/20 italic">Awaiting history...</span>}
             </div>
           </div>
 
-          <div className="flex bg-stone-100 p-1 rounded-xl">
+          <div className="flex bg-brand-bg p-1 rounded-xl border border-brand-border">
             <button 
               type="button"
               onClick={() => setType('expense')}
               className={cn(
-                "flex-1 py-2 rounded-lg text-sm font-medium transition-all",
-                type === 'expense' ? "bg-white shadow-sm text-rose-600" : "text-stone-500"
+                "flex-1 py-3 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all",
+                type === 'expense' ? "bg-brand-primary text-brand-surface shadow-md" : "text-brand-primary/40"
               )}
             >
               Expense
@@ -1181,28 +1196,47 @@ function TransactionModal({ onClose, userId, transactions }: { onClose: () => vo
               type="button"
               onClick={() => setType('income')}
               className={cn(
-                "flex-1 py-2 rounded-lg text-sm font-medium transition-all",
-                type === 'income' ? "bg-white shadow-sm text-emerald-600" : "text-stone-500"
+                "flex-1 py-3 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all",
+                type === 'income' ? "bg-brand-primary text-brand-surface shadow-md" : "text-brand-primary/40"
               )}
             >
               Income
             </button>
           </div>
 
-          <div className="space-y-4">
-            <div className="space-y-1.5 relative">
-              <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Merchant / Description</label>
+          {type === 'expense' && (
+            <div className="flex items-center justify-between bg-brand-bg p-5 rounded-2xl border border-brand-border">
+              <div className="space-y-0.5">
+                <p className="text-[10px] font-bold text-brand-primary uppercase tracking-widest">Mandatory Expense</p>
+                <p className="text-[9px] text-brand-primary/40 font-medium uppercase">Fixed costs / Essentials</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsMandatory(!isMandatory)}
+                className={cn(
+                  "w-10 h-10 rounded-xl transition-all flex items-center justify-center border",
+                  isMandatory ? "bg-brand-primary text-brand-surface border-brand-primary" : "bg-brand-surface border-brand-border"
+                )}
+              >
+                {isMandatory && <ShieldCheck className="w-5 h-5" />}
+              </button>
+            </div>
+          )}
+
+          <div className="space-y-6">
+            <div className="space-y-2 relative">
+              <label className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-[0.2em]">Merchant / Description</label>
               <input 
                 autoFocus
                 type="text" 
                 value={description}
                 onChange={(e) => handleDescriptionChange(e.target.value)}
-                placeholder="Where did you spend?"
-                className="w-full bg-stone-50 border-none rounded-xl py-3 px-4 text-sm focus:ring-2 focus:ring-stone-900 transition-all"
+                placeholder="WHERE DID YOU SPEND?"
+                className="w-full bg-brand-bg border border-brand-border rounded-xl py-4 px-5 text-sm font-bold uppercase focus:ring-2 focus:ring-brand-primary/5 transition-all outline-none"
                 required
               />
               {suggestions.length > 0 && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-stone-100 rounded-xl shadow-xl z-10 overflow-hidden">
+                <div className="absolute top-full left-0 right-0 mt-2 bg-brand-surface border border-brand-border rounded-xl shadow-xl z-20 overflow-hidden">
                   {suggestions.map(s => (
                     <button
                       key={s}
@@ -1211,7 +1245,7 @@ function TransactionModal({ onClose, userId, transactions }: { onClose: () => vo
                         const t = smartTemplates.find(x => x.name === s);
                         if (t) applyTemplate(t);
                       }}
-                      className="w-full text-left px-4 py-2 text-xs hover:bg-stone-50 transition-colors border-b border-stone-50 last:border-none"
+                      className="w-full text-left px-5 py-3.5 text-[10px] font-bold uppercase tracking-wide hover:bg-brand-bg transition-colors border-b border-brand-border last:border-none"
                     >
                       {s}
                     </button>
@@ -1220,27 +1254,27 @@ function TransactionModal({ onClose, userId, transactions }: { onClose: () => vo
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Amount</label>
+            <div className="grid grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-[0.2em]">Amount</label>
                 <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400 font-medium">₹</span>
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-brand-primary/40 font-serif italic">₹</span>
                   <input 
                     type="number" 
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
                     placeholder="0.00"
-                    className="w-full bg-stone-50 border-none rounded-xl py-3 pl-8 pr-4 text-sm focus:ring-2 focus:ring-stone-900 transition-all"
+                    className="w-full bg-brand-bg border border-brand-border rounded-xl py-4 pl-8 pr-5 text-sm font-mono focus:ring-2 focus:ring-brand-primary/5 transition-all outline-none"
                     required
                   />
                 </div>
               </div>
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Category</label>
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-[0.2em]">Category</label>
                 <select 
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
-                  className="w-full bg-stone-50 border-none rounded-xl py-3 px-4 text-sm focus:ring-2 focus:ring-stone-900 transition-all appearance-none"
+                  className="w-full bg-brand-bg border border-brand-border rounded-xl py-4 px-5 text-[10px] font-bold uppercase tracking-widest focus:ring-2 focus:ring-brand-primary/5 transition-all outline-none appearance-none"
                 >
                   <option>Food & Dining</option>
                   <option>Shopping</option>
@@ -1262,14 +1296,9 @@ function TransactionModal({ onClose, userId, transactions }: { onClose: () => vo
 
           <button 
             disabled={isSubmitting}
-            className="w-full bg-stone-900 text-white py-4 rounded-xl font-medium hover:bg-stone-800 transition-all shadow-lg disabled:opacity-50 active:scale-95 flex items-center justify-center gap-2"
+            className="w-full bg-brand-primary text-brand-surface py-5 rounded-xl font-bold text-xs uppercase tracking-[0.2em] hover:bg-brand-primary/90 transition-all shadow-xl disabled:opacity-50 active:scale-[0.98]"
           >
-            {isSubmitting ? 'Logging...' : (
-              <>
-                <Sparkles className="w-4 h-4 text-amber-400" />
-                Log Transaction
-              </>
-            )}
+            {isSubmitting ? 'Processing' : 'Commit Transaction'}
           </button>
         </form>
       </motion.div>

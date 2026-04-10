@@ -9,6 +9,7 @@ export interface Transaction {
   description?: string;
   type: TransactionType;
   userId: string;
+  isMandatory?: boolean;
 }
 
 export interface Goal {

@@ -1,45 +1,60 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600;1,700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Playfair Display", serif;
+  --font-mono: "JetBrains Mono", monospace;
   
-  --color-stone-50: #fcfcfb;
-  --color-stone-100: #f5f5f4;
-  --color-stone-200: #e7e7e4;
-  --color-stone-300: #d6d6d2;
-  --color-stone-400: #a8a8a1;
-  --color-stone-500: #73736c;
-  --color-stone-600: #52524d;
-  --color-stone-700: #40403b;
-  --color-stone-800: #262624;
-  --color-stone-900: #171716;
-  --color-stone-950: #0a0a09;
+  --color-brand-primary: #111827;
+  --color-brand-accent: #059669;
+  --color-brand-bg: #F9FAFB;
+  --color-brand-surface: #FFFFFF;
+  --color-brand-border: #E5E7EB;
 }
 
 @layer base {
   body {
-    @apply bg-stone-50 text-stone-900 antialiased;
+    @apply bg-brand-bg text-brand-primary antialiased selection:bg-brand-accent/20 selection:text-brand-accent;
   }
 }
 
-@utility no-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-  &::-webkit-scrollbar {
-    display: none;
-  }
+@utility premium-card {
+  @apply bg-brand-surface border border-brand-border shadow-sm hover:shadow-md transition-all duration-300;
+}
+
+@utility premium-shadow {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
 }
 
 @utility pb-safe {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
-.glass {
-  @apply bg-white/70 backdrop-blur-md border border-white/20;
-}
-
-.card-shadow {
-  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.04);
+.markdown-body {
+  @apply space-y-6 text-brand-primary/80;
+  
+  h1, h2, h3 {
+    @apply font-serif italic text-brand-primary mt-10 mb-4 tracking-tight;
+  }
+  
+  h1 { @apply text-4xl; }
+  h2 { @apply text-3xl; }
+  h3 { @apply text-2xl; }
+  
+  p {
+    @apply leading-relaxed text-base;
+  }
+  
+  ul, ol {
+    @apply space-y-3 ml-6;
+  }
+  
+  li {
+    @apply list-disc text-base;
+  }
+  
+  strong {
+    @apply font-semibold text-brand-primary;
+  }
 }
