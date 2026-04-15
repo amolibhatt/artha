@@ -31,6 +31,14 @@
   padding-bottom: env(safe-area-inset-bottom);
 }
 
+@utility no-scrollbar {
+  &::-webkit-scrollbar {
+    display: none;
+  }
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 .markdown-body {
   @apply space-y-6 text-brand-primary/80;
   

@@ -10,6 +10,7 @@ export interface Transaction {
   type: TransactionType;
   userId: string;
   isMandatory?: boolean;
+  isRecurring?: boolean;
 }
 
 export interface Goal {
@@ -19,6 +20,16 @@ export interface Goal {
   currentAmount: number;
   monthlyContribution?: number;
   type: GoalType;
+  priority?: 'high' | 'medium' | 'low';
   userId: string;
   deadline?: string;
+  // Loan specific fields
+  interestRate?: number;
+  tenureMonths?: number;
+  startDate?: string;
+}
+
+export interface StressTestState {
+  incomeShock: number; // e.g., 0.8 for 20% drop
+  expenseShock: number; // e.g., 1.2 for 20% increase
 }
