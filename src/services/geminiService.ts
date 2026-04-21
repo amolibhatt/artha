@@ -1,9 +1,26 @@
 import { GoogleGenAI } from "@google/genai";
 import { Transaction, Goal } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+let aiInstance: GoogleGenAI | null = null;
+
+function getAI() {
+  if (!aiInstance) {
+    const key = process.env.GEMINI_API_KEY;
+    if (!key) {
+      console.warn("GEMINI_API_KEY is missing. AI insights will be disabled.");
+      return null;
+    }
+    aiInstance = new GoogleGenAI({ apiKey: key });
+  }
+  return aiInstance;
+}
 
 export async function getFinancialAdvice(transactions: Transaction[], goals: Goal[]) {
+  const ai = getAI();
+  if (!ai) {
+    return ["AI Strategic Advisory is currently offline. Please verify API configuration."];
+  }
+
   const prompt = `
 You are an elite, McKinsey-level financial strategist acting as my personal CFO.
 Analyze the following financial data and provide 3-4 sharp, structured, and opinionated insights.
@@ -26,14 +43,16 @@ Format the response as a JSON array of strings.
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-2.0-flash",
       contents: prompt,
       config: {
         responseMimeType: "application/json",
       }
     });
 
-    return JSON.parse(response.text || "[]") as string[];
+    const text = response.text;
+    if (!text) return [];
+    return JSON.parse(text) as string[];
   } catch (error) {
     console.error("Gemini Error:", error);
     return ["Focus on consistent SIP contributions to build long-term wealth.", "Try to reduce discretionary spending in high-expense categories.", "Consider making small prepayments towards your home loan to save on interest."];
