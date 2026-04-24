@@ -1,48 +1,61 @@
 import { GoogleGenAI } from "@google/genai";
 import { Transaction, Goal } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY as string });
+let aiInstance: GoogleGenAI | null = null;
+
+const getAI = () => {
+  if (!aiInstance) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error("GEMINI_API_KEY is not defined in the environment.");
+    }
+    aiInstance = new GoogleGenAI({ apiKey });
+  }
+  return aiInstance;
+};
 
 export const generateCFOStrategy = async (transactions: Transaction[], goals: Goal[]) => {
+  const genAI = getAI();
+  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+
   const prompt = `
-You are an elite, McKinsey-level financial strategist acting as my personal CFO. 
-Your tone is sharp, direct, and focused on "Financial Leakage" and "Capital Efficiency." 
-You do not give generic advice; you provide a high-pressure audit of my spending.
+# PERSONAL CFO PROTOCOL (MCKINSEY-LEVEL STRATEGY)
 
-# 🔹 CORE OPERATING PRINCIPLES
-1. Financial Leakage is a failure of strategy.
-2. Every dollar spent on "unnecessary" categories is a direct delay to my Freedom Date.
-3. Urgency is required: If my runway is low, your advice should be aggressive.
+## CONTEXT
+You are an elite, sharp, and structured financial strategist. Your job is to audit my capital flow and provide a sequence-over-parallel plan and cash-flow realism.
 
-# 🔹 DATA INPUTS
-Transactions: ${JSON.stringify(transactions)}
-Goals: ${JSON.stringify(goals)}
+## DATA INPUTS
+- Transactions: ${JSON.stringify(transactions)}
+- Goals: ${JSON.stringify(goals)}
 
-# 🔹 TASK
-Analyze the data and provide a structured financial audit:
+## CORE OPERATING PRINCIPLES
+1. Dynamic over static → Adapt to new income inputs.
+2. Sequence over parallel execution → Prioritize intelligently.
+3. Cash flow realism over theoretical optimization.
+4. Capital protection for short-term goals.
+5. Clear trade-offs instead of forced balance.
 
-1. LEAKAGE REPORT: Identify exactly where capital is being wasted. Flag discretionary spending as "Capital Leakage."
-2. SURVIVAL ANALYSIS: Analyze the "Financial Runway." If it's under 180 days, provide a "Stabilization Plan" to cut all non-essential burn.
-3. COST OF DELAY: Calculate how much my current spending habits are delaying my primary goals (e.g., "Your dining habit is delaying your Home Loan payoff by X months").
-4. AGGRESSIVE ALLOCATION: Provide a "War-Time" allocation model for cutting fat and a "Peace-Time" model for growth.
-5. HOME LOAN ARBITRAGE: Sharp analysis on prepayment vs. investment opportunity cost.
+## RESPONSE FORMAT (MANDATORY)
+1. **EXECUTIVE SUMMARY** (max 8 sharp, high-impact bullets)
+2. **FINANCIAL SNAPSHOT** (Runway, Burn Rate, Net Delta)
+3. **CURRENT ALLOCATION MODEL** (Based on latest income)
+4. **GOAL TIMELINES** (Realistic projection based on burn)
+5. **PHASE-WISE STRATEGY** (Stabilization → Acceleration → Optimization)
+6. **HOME LOAN STRATEGY** (Prepayment arbitrage vs Opportunity cost)
+7. **INVESTMENT ALLOCATION** (Specific vectors)
+8. **SCENARIO COMPARISON** (Conservative vs. Aggressive)
+9. **RISKS & ADJUSTMENTS**
 
-# 🔹 OUTPUT STRUCTURE (MANDATORY)
-1. EXECUTIVE AUDIT (8 sharp, high-pressure bullets)
-2. LEAKAGE ANALYSIS (Flag specific categories)
-3. RUNWAY & SURVIVAL STRATEGY
-4. GOAL PROJECTIONS & COST OF DELAY
-5. WAR-TIME ALLOCATION MODEL
-6. HOME LOAN & INVESTMENT ARBITRAGE
-7. RISKS & IMMEDIATE ADJUSTMENTS
+## TONE
+Sharp, structured, opinionated, consultant-level. Avoid generic advice. Focus on systems, trade-offs, and constraints.
+
+## MISSION
+Identify "Capital Leakage" (waste) and "Opportunity Cost." If my runway is low, provide a "War-Time" survival plan.
 `;
 
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: prompt,
-    });
-    return response.text;
+    const result = await model.generateContent(prompt);
+    return result.response.text();
   } catch (error) {
     console.error("Error generating CFO strategy:", error);
     throw error;

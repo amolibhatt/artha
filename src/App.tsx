@@ -254,8 +254,10 @@ function MainApp() {
     .filter(g => g.type === 'savings' || g.type === 'investment')
     .reduce((acc, g) => acc + g.currentAmount, 0);
   
-  // Estimate monthly burn (use current month if history is short, otherwise average)
-  const monthlyBurn = spentThisMonth > 0 ? spentThisMonth : (totalExpenses / Math.max(1, transactions.length / 30));
+  // Estimate monthly burn (Normalize to 30-day projection to avoid intra-month volatility)
+  const activeDailyPace = spentThisMonth / Math.max(1, today.getDate());
+  const projectedMonthlyBurn = activeDailyPace * 30;
+  const monthlyBurn = projectedMonthlyBurn > 0 ? projectedMonthlyBurn : (totalExpenses / Math.max(1, transactions.length / 30));
   const runwayMonths = monthlyBurn > 0 ? (liquidAssets / (monthlyBurn * stressTest.expenseShock)) : 0;
   
   const now = new Date();
@@ -296,7 +298,6 @@ function MainApp() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [showCommandCenter]);
 
-  const activeDailyPace = spentThisMonth / Math.max(1, today.getDate());
   const budgetDailyLimit = monthlyBudget / daysInMonth;
   const isAheadOfBudget = activeDailyPace < budgetDailyLimit;
   const budgetVariance = (budgetDailyLimit * today.getDate()) - spentThisMonth;
@@ -503,14 +504,13 @@ function MainApp() {
           </div>
           <div className="flex items-center gap-4 md:gap-6">
             <button 
+              type="button"
               onClick={async () => {
                 if (window.confirm('CRITICAL: FACTORY DATA PURGE. This will permanently ERASE all transactions and defined goals. This action is IRREVERSIBLE. Proceed with total purge?')) {
                   try {
                     const tSnap = await getDocs(query(collection(db, 'transactions'), where('userId', '==', user.uid)));
                     const gSnap = await getDocs(query(collection(db, 'goals'), where('userId', '==', user.uid)));
                     
-                    // Use recursive chunking if many docs, but for now 50 is fine.
-                    // We'll use a more robust promise approach to ensure all are gone.
                     const batch: Promise<void>[] = [];
                     
                     for (const docRef of tSnap.docs) {
@@ -522,13 +522,11 @@ function MainApp() {
                     
                     await Promise.all(batch);
                     
-                    // Hard reset local state
-                    setMonthlyBudget(0);
-                    setTransactions([]);
-                    setGoals([]);
-                    localStorage.clear();
+                    // Reset local storage
+                    localStorage.removeItem('monthlyBudget');
+                    localStorage.removeItem('stressTest');
                     
-                    // Force complete reload to clear any memory/cache
+                    // Force complete reload
                     window.location.reload();
                   } catch (e) {
                     console.error("Purge failed:", e);
@@ -773,11 +771,18 @@ function MainApp() {
                     <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-brand-accent font-mono leading-relaxed py-0.5">CFO Insight</p>
                   </div>
                   <p className="text-sm md:text-lg text-brand-primary/80 leading-relaxed font-sans font-medium uppercase tracking-wide relative z-10">
-                    "{budgetPercentage < 50 
-                      ? "You're spending less than planned. Consider moving some surplus into your long-term goals."
-                      : budgetPercentage > 90 
-                      ? "Spending is high this month. Try to limit non-essential purchases for the next few days."
-                      : "Your spending is perfectly on track. Keep this momentum to hit your monthly savings goal."}"
+                    "{goals.length > 0
+                      ? (budgetPercentage < 50 
+                          ? "You're spending less than planned. Consider moving some surplus into your long-term goals."
+                          : budgetPercentage > 90 
+                          ? "Spending is high this month. Try to limit non-essential purchases for the next few days."
+                          : "Your spending is perfectly on track. Keep this momentum to hit your monthly savings goal.")
+                      : (budgetPercentage < 50
+                          ? "Surplus capital detected. Establish a savings goal to optimize this liquidity."
+                          : budgetPercentage > 90
+                          ? "Liquidity is tightening. Audit non-essential outflows to stabilize capital reserves."
+                          : "Cash flow is balanced. Protocol recommends defining a financial target.")
+                    }"
                   </p>
                 </div>
 
@@ -820,21 +825,33 @@ function MainApp() {
                           {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
                         </p>
                         <button 
+                          type="button"
                           onClick={async (e) => {
+                            e.preventDefault();
                             e.stopPropagation();
                             if (window.confirm('PURGE ENTRY: Delete this transaction?')) {
                               try {
                                 if (t.id) {
+                                  // Relational Reversal: Decrement linked goal if applicable
+                                  if (t.linkedGoalId && t.type === 'expense') {
+                                    await updateDoc(doc(db, 'goals', t.linkedGoalId), {
+                                      currentAmount: increment(-t.amount)
+                                    });
+                                  }
                                   await deleteDoc(doc(db, 'transactions', t.id));
+                                } else {
+                                  console.error('Missing ID');
                                 }
                               } catch (error) {
+                                console.error('Recent activity delete failed:', error);
                                 handleFirestoreError(error, OperationType.DELETE, 'transactions');
                               }
                             }
                           }}
-                          className="p-2 text-brand-primary/5 hover:text-rose-500 transition-all rounded-lg hover:bg-rose-50 active:scale-95"
+                          className="p-3 text-rose-500/30 hover:text-rose-600 transition-all rounded-xl hover:bg-rose-500/10 active:scale-90 border border-transparent hover:border-rose-500/20"
+                          title="Delete Transaction"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-5 h-5" />
                         </button>
                       </div>
                     </div>
@@ -968,21 +985,33 @@ function MainApp() {
                             </p>
                           </div>
                           <button 
+                            type="button"
                             onClick={async (e) => {
+                              e.preventDefault();
                               e.stopPropagation();
                               if (window.confirm('PROTOCOL AUDIT: Are you certain you want to purge this capital flow entry?')) {
                                 try {
                                   if (t.id) {
+                                    // Relational Reversal
+                                    if (t.linkedGoalId && t.type === 'expense') {
+                                      await updateDoc(doc(db, 'goals', t.linkedGoalId), {
+                                        currentAmount: increment(-t.amount)
+                                      });
+                                    }
                                     await deleteDoc(doc(db, 'transactions', t.id));
+                                  } else {
+                                    console.error('Missing transaction ID');
                                   }
                                 } catch (error) {
+                                  console.error('Purge failed:', error);
                                   handleFirestoreError(error, OperationType.DELETE, 'transactions');
                                 }
                               }
                             }}
-                            className="p-2 text-brand-primary/10 hover:text-rose-500 transition-all rounded-lg hover:bg-rose-50 active:scale-90"
+                            className="p-3 text-rose-500/30 hover:text-rose-600 transition-all rounded-xl hover:bg-rose-500/10 active:scale-90 border border-transparent hover:border-rose-500/20"
+                            title="Purge Entry"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Trash2 className="w-5 h-5" />
                           </button>
                         </div>
                       </motion.div>
@@ -1009,6 +1038,7 @@ function MainApp() {
                         if (window.confirm('GOAL PURGE: Are you certain you want to wipe all goals? This action is irreversible.')) {
                           try {
                             const batch = goals.map(g => deleteDoc(doc(db, 'goals', g.id)));
+                            setGoals([]); // Force local state clear for immediate feedback
                             await Promise.all(batch);
                           } catch (err) {
                             console.error('Purge failed:', err);
@@ -1345,21 +1375,48 @@ function CommandCenter({
       let subcategory = 'Misc';
       const descLower = description.toLowerCase();
       
-      if (descLower.includes('food') || descLower.includes('swiggy') || descLower.includes('zomato')) {
+      if (descLower.includes('food') || descLower.includes('swiggy') || descLower.includes('zomato') || descLower.includes('dining') || descLower.includes('cafe')) {
         category = 'Food & Dining';
-        subcategory = 'Swiggy/Zomato';
-      } else if (descLower.includes('rent')) {
+        subcategory = 'Dining/Swiggy';
+      } else if (descLower.includes('rent') || descLower.includes('utilities') || descLower.includes('electricity') || descLower.includes('water')) {
         category = 'Housing';
-        subcategory = 'Rent';
-      } else if (descLower.includes('amazon') || descLower.includes('myntra') || descLower.includes('flipkart')) {
+        subcategory = 'Rent/Bills';
+      } else if (descLower.includes('amazon') || descLower.includes('myntra') || descLower.includes('flipkart') || descLower.includes('shopping')) {
         category = 'Shopping';
         subcategory = 'Amazon/Flipkart';
-      } else if (descLower.includes('uber') || descLower.includes('ola')) {
+      } else if (descLower.includes('uber') || descLower.includes('ola') || descLower.includes('petrol') || descLower.includes('fuel')) {
         category = 'Transport';
-        subcategory = 'Cab/Auto';
-      } else if (descLower.includes('salary')) {
+        subcategory = 'Cab/Fuel';
+      } else if (descLower.includes('salary') || descLower.includes('bonus')) {
         category = 'Employment';
         subcategory = 'Salary';
+      } else if (descLower.includes('sip') || descLower.includes('invest') || descLower.includes('stock') || descLower.includes('mutual')) {
+        category = 'Investments';
+        subcategory = 'SIP/Mutual Funds';
+      } else if (descLower.includes('debt') || descLower.includes('emi') || descLower.includes('loan') || descLower.includes('credit card')) {
+        category = 'Investments';
+        subcategory = 'Debt Repayment';
+      }
+
+      // Terminal Attribution Support
+      let linkedGoalId = null;
+      if (type === 'expense') {
+        const goalTypeMapTerminal: Record<string, string> = {
+          'Investments': 'investment',
+          'Housing': 'savings', // Assuming saving for home if not regular expense
+        };
+        const goalType = goalTypeMapTerminal[category] || (category === 'Investments' && descLower.includes('debt') ? 'debt' : null);
+        
+        if (goalType || true) { // Try matching for any expense in terminal
+          const matchedGoal = goals.find(g => 
+            descLower.includes(g.name.toLowerCase()) || 
+            g.name.toLowerCase().includes(descLower)
+          );
+          if (matchedGoal) {
+            linkedGoalId = matchedGoal.id;
+            await updateDoc(doc(db, 'goals', matchedGoal.id), { currentAmount: increment(amount) });
+          }
+        }
       }
 
       await addDoc(collection(db, 'transactions'), {
@@ -1373,6 +1430,7 @@ function CommandCenter({
         isMandatory: category === 'Housing' || category === 'Bills & Utilities',
         isRecurring: category === 'Housing',
         isAvoidable: false,
+        linkedGoalId
       });
 
       setSmartCommand('');
@@ -1385,57 +1443,64 @@ function CommandCenter({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-brand-primary/80 backdrop-blur-xl">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-brand-primary/80 backdrop-blur-xl">
       <motion.div 
         initial={{ opacity: 0, scale: 0.9, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         className="bg-brand-surface w-full max-w-2xl rounded-[3rem] shadow-[0_64px_128px_-24px_rgba(0,0,0,0.8)] overflow-hidden border border-white/10 flex flex-col"
       >
-        <div className="p-10 md:p-14 space-y-12">
-          {/* Hero Input Area */}
-          <div className="space-y-6">
-            <div className="flex justify-between items-end">
-              <div className="space-y-1">
-                <h3 className="text-3xl font-sans font-bold uppercase tracking-tight text-brand-primary">Terminal</h3>
-                <p className="text-[10px] text-brand-primary/30 font-bold uppercase tracking-[0.4em] font-mono">Real-time Capital Logging</p>
-              </div>
-              <button 
-                onClick={onClose}
-                className="text-[10px] font-bold text-brand-primary/20 hover:text-brand-primary uppercase tracking-[0.2em] transition-colors"
-              >
-                Close (ESC)
-              </button>
+        <div className={cn("p-10 md:p-14 space-y-12", activeTab !== 'terminal' && "pb-4")}>
+          {/* Header Area */}
+          <div className="flex justify-between items-end">
+            <div className="space-y-1">
+              <h3 className="text-3xl font-sans font-bold uppercase tracking-tight text-brand-primary">
+                {activeTab === 'terminal' ? 'Terminal' : activeTab === 'transaction' ? 'Manual Link' : activeTab === 'budget' ? 'Thresholds' : 'Strategic Goals'}
+              </h3>
+              <p className="text-[10px] text-brand-primary/30 font-bold uppercase tracking-[0.4em] font-mono">
+                {activeTab === 'terminal' ? 'Real-time Capital Logging' : 'Protocol Parameters'}
+              </p>
             </div>
-
-            <form onSubmit={handleSmartEntry} className="relative group">
-              <div className="absolute left-0 top-1/2 -translate-y-1/2 flex items-center gap-4">
-                <Terminal className={cn("w-8 h-8 transition-colors", isProcessing ? "text-brand-accent animate-pulse" : "text-brand-primary/10 group-focus-within:text-brand-accent")} />
-              </div>
-              <input 
-                ref={smartInputRef}
-                type="text"
-                value={smartCommand}
-                onChange={(e) => setSmartCommand(e.target.value)}
-                placeholder="EXECUTE: '500 COFFEE'..."
-                className="w-full bg-transparent border-b-2 border-brand-primary/5 py-10 pl-14 text-4xl md:text-6xl font-mono font-bold uppercase tracking-tighter placeholder:text-brand-primary/5 focus:border-brand-accent transition-all outline-none text-brand-primary"
-              />
-              {smartCommand && (
-                <div className="absolute right-0 top-1/2 -translate-y-1/2">
-                  <button 
-                    disabled={isProcessing}
-                    className="bg-brand-accent text-brand-surface px-6 py-3 rounded-xl font-bold text-[10px] uppercase tracking-widest shadow-lg shadow-brand-accent/20 active:scale-95 transition-all"
-                  >
-                    Commit
-                  </button>
-                </div>
-              )}
-            </form>
-            
-            <p className="text-[10px] text-brand-primary/20 font-bold uppercase tracking-widest leading-relaxed">
-              Log capital flows by typing <span className="text-brand-accent/40">Amount</span> + <span className="text-brand-accent/40">Source</span>. 
-              Tip: Press <span className="text-brand-primary px-1.5 py-0.5 bg-brand-bg rounded border border-brand-border">C</span> to summon from anywhere.
-            </p>
+            <button 
+              onClick={onClose}
+              className="text-[10px] font-bold text-brand-primary/20 hover:text-brand-primary uppercase tracking-[0.2em] transition-colors"
+            >
+              Close (ESC)
+            </button>
           </div>
+
+          {/* Conditional Input Area */}
+          {activeTab === 'terminal' && (
+            <div className="space-y-6">
+              <form onSubmit={handleSmartEntry} className="relative group">
+                <div className="absolute left-0 top-1/2 -translate-y-1/2 flex items-center gap-4">
+                  <Terminal className={cn("w-8 h-8 transition-colors", isProcessing ? "text-brand-accent animate-pulse" : "text-brand-primary/10 group-focus-within:text-brand-accent")} />
+                </div>
+                <input 
+                  ref={smartInputRef}
+                  type="text"
+                  value={smartCommand}
+                  onChange={(e) => setSmartCommand(e.target.value)}
+                  placeholder="PROMPT: '500 COFFEE'..."
+                  className="w-full bg-transparent border-b-2 border-brand-primary/5 py-6 md:py-10 pl-14 text-2xl md:text-6xl font-mono font-bold uppercase tracking-tighter placeholder:text-brand-primary/5 focus:border-brand-accent transition-all outline-none text-brand-primary"
+                />
+                {smartCommand && (
+                  <div className="absolute right-0 top-1/2 -translate-y-1/2">
+                    <button 
+                      disabled={isProcessing}
+                      className="bg-brand-accent text-brand-surface px-6 py-3 rounded-xl font-bold text-[10px] uppercase tracking-widest shadow-lg shadow-brand-accent/20 active:scale-95 transition-all"
+                    >
+                      Commit
+                    </button>
+                  </div>
+                )}
+              </form>
+              
+              <p className="text-[10px] text-brand-primary/20 font-bold uppercase tracking-widest leading-relaxed">
+                Log capital flows by typing <span className="text-brand-accent/40">Amount</span> + <span className="text-brand-accent/40">Source</span>. 
+                Tip: Press <span className="text-brand-primary px-1.5 py-0.5 bg-brand-bg rounded border border-brand-border">C</span> to summon from anywhere.
+              </p>
+            </div>
+          )}
 
           {/* Contextual Navigation */}
           <div className="flex gap-4 border-t border-brand-primary/5 pt-10">
@@ -1449,7 +1514,7 @@ function CommandCenter({
                 key={t.id}
                 onClick={() => setActiveTab(t.id as any)}
                 className={cn(
-                  "flex-1 p-6 rounded-2xl border transition-all flex flex-col gap-3 group text-left",
+                  "flex-1 p-4 md:p-6 rounded-2xl border transition-all flex flex-col gap-3 group text-left",
                   activeTab === t.id 
                     ? "bg-brand-primary border-brand-primary text-brand-surface shadow-xl scale-[1.02]" 
                     : "bg-brand-bg/50 border-brand-border text-brand-primary/40 hover:border-brand-primary/20"
@@ -1457,7 +1522,7 @@ function CommandCenter({
               >
                 <t.icon className={cn("w-5 h-5", activeTab === t.id ? "text-brand-accent" : "text-brand-primary/20")} />
                 <div>
-                  <p className={cn("text-[9px] font-bold uppercase tracking-widest", activeTab === t.id ? "text-brand-surface" : "text-brand-primary")}>{t.label}</p>
+                  <p className={cn("text-[8px] md:text-[9px] font-bold uppercase tracking-widest", activeTab === t.id ? "text-brand-surface" : "text-brand-primary")}>{t.label}</p>
                 </div>
               </button>
             ))}
@@ -1466,7 +1531,7 @@ function CommandCenter({
 
         {/* Action Content Area */}
         {activeTab !== 'terminal' && (
-          <div className="bg-brand-bg/30 border-t border-brand-primary/5 max-h-[50vh] overflow-y-auto no-scrollbar">
+          <div className="bg-brand-bg/30 border-t border-brand-primary/5 max-h-[60vh] overflow-y-auto no-scrollbar">
             {activeTab === 'transaction' && (
               <div className="p-0">
                 <TransactionForm onClose={onClose} userId={userId} transactions={transactions} goals={goals} />
@@ -1583,6 +1648,26 @@ function TransactionForm({ onClose, userId, transactions, goals }: { onClose: ()
     setIsSubmitting(true);
     setErrorMsg(null);
     try {
+      let linkedGoalId = null;
+      if (type === 'expense') {
+        const goalType = goalTypeMap[category === 'Investments' ? 'Investment' : category === 'Debt Repayment' ? 'Debt Repayment' : category];
+        const gQuery = query(collection(db, 'goals'), where('userId', '==', userId));
+        const gSnapshot = await getDocs(gQuery);
+        
+        const goalDoc = gSnapshot.docs.find(d => {
+          const gData = d.data();
+          const nameMatch = description.toLowerCase().includes(gData.name.toLowerCase()) ||
+                           gData.name.toLowerCase().includes(description.toLowerCase());
+          const typeMatch = gData.type === goalTypeMap[category];
+          return nameMatch || (goalType && typeMatch);
+        });
+
+        if (goalDoc) {
+          linkedGoalId = goalDoc.id;
+          await updateDoc(doc(db, 'goals', goalDoc.id), { currentAmount: increment(amountNum) });
+        }
+      }
+
       await addDoc(collection(db, 'transactions'), {
         amount: amountNum,
         category,
@@ -1594,24 +1679,9 @@ function TransactionForm({ onClose, userId, transactions, goals }: { onClose: ()
         isMandatory: type === 'expense' ? isMandatory : false,
         isRecurring: type === 'expense' ? isRecurring : false,
         isAvoidable: type === 'expense' ? isAvoidable : false,
+        linkedGoalId
       });
 
-      if (type === 'expense') {
-        const goalType = goalTypeMap[category === 'Investments' ? 'Investment' : category === 'Debt Repayment' ? 'Debt Repayment' : category];
-        if (goalType) {
-          const gQuery = query(collection(db, 'goals'), where('userId', '==', userId), where('type', '==', goalType));
-          const gSnapshot = await getDocs(gQuery);
-          if (!gSnapshot.empty) {
-            const goalDoc = gSnapshot.docs.find(d => 
-              description.toLowerCase().includes(d.data().name.toLowerCase()) ||
-              d.data().name.toLowerCase().includes(description.toLowerCase())
-            ) || gSnapshot.docs[0];
-            if (goalDoc) {
-              await updateDoc(doc(db, 'goals', goalDoc.id), { currentAmount: increment(amountNum) });
-            }
-          }
-        }
-      }
       onClose();
     } catch (error: any) {
       console.error('Save failed:', error);
@@ -1687,8 +1757,8 @@ function TransactionForm({ onClose, userId, transactions, goals }: { onClose: ()
           />
         </div>
 
-        <div className="grid grid-cols-5 gap-6">
-          <div className="col-span-2 space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
+          <div className="md:col-span-2 space-y-3">
             <label className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-[0.3em] font-mono">Quantum</label>
             <div className="relative group">
               <span className="absolute left-5 top-1/2 -translate-y-1/2 text-brand-primary/30 font-sans font-bold group-focus-within:text-brand-accent transition-colors">₹</span>
@@ -1702,13 +1772,13 @@ function TransactionForm({ onClose, userId, transactions, goals }: { onClose: ()
               />
             </div>
           </div>
-          <div className="col-span-3 space-y-3">
+          <div className="md:col-span-3 space-y-3">
             <label className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-[0.3em] font-mono">Classification</label>
-            <div className="flex flex-col sm:flex-row gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <select 
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
-                className="flex-1 h-[60px] bg-brand-surface border border-brand-border rounded-xl px-4 text-[10px] font-bold uppercase tracking-widest focus:ring-2 focus:ring-brand-accent/20 transition-all outline-none appearance-none"
+                className="w-full h-[56px] bg-brand-surface border border-brand-border rounded-xl px-4 text-[10px] font-bold uppercase tracking-widest focus:ring-2 focus:ring-brand-accent/20 transition-all outline-none appearance-none"
               >
                 {Object.keys(currentCategories).map(cat => (
                   <option key={cat} value={cat}>{cat}</option>
@@ -1717,7 +1787,7 @@ function TransactionForm({ onClose, userId, transactions, goals }: { onClose: ()
               <select 
                 value={subcategory}
                 onChange={(e) => setSubcategory(e.target.value)}
-                className="flex-1 h-[60px] bg-brand-surface border border-brand-border rounded-xl px-4 text-[10px] font-bold uppercase tracking-widest focus:ring-2 focus:ring-brand-accent/20 transition-all outline-none appearance-none"
+                className="w-full h-[56px] bg-brand-surface border border-brand-border rounded-xl px-4 text-[10px] font-bold uppercase tracking-widest focus:ring-2 focus:ring-brand-accent/20 transition-all outline-none appearance-none"
               >
                 {(currentCategories as any)[category]?.map((sub: string) => (
                   <option key={sub} value={sub}>{sub}</option>

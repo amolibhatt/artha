@@ -113,7 +113,7 @@ export function DebtOptimization({ goals }: DebtOptimizationProps) {
               <input 
                 type="range"
                 min="0"
-                max="100000"
+                max={Math.max(200000, (selectedLoan.targetAmount - selectedLoan.currentAmount) / 2)}
                 step="5000"
                 value={prepayment}
                 onChange={(e) => setPrepayment(parseInt(e.target.value))}

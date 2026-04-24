@@ -28,10 +28,21 @@ export function StrategyInsights({
   const [strategy, setStrategy] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastAuditSnapshot, setLastAuditSnapshot] = useState<{ balance: number, count: number } | null>(null);
 
   const totalExpenses = mandatoryExpenses + discretionaryExpenses;
   const fixedRatio = totalExpenses > 0 ? (mandatoryExpenses / totalExpenses) * 100 : 0;
   const discretionaryRatio = 100 - fixedRatio;
+
+  // Strategic Drift Detection
+  const isDriftDetected = React.useMemo(() => {
+    if (!lastAuditSnapshot || !strategy) return false;
+    const balanceDrift = Math.abs((balance - lastAuditSnapshot.balance) / (lastAuditSnapshot.balance || 1)) > 0.15;
+    const volumeDrift = Math.abs(transactions.length - lastAuditSnapshot.count) >= 3;
+    return balanceDrift || volumeDrift;
+  }, [balance, transactions.length, lastAuditSnapshot, strategy]);
+
+  const totalIncomeCalc = totalIncome; 
 
   // Capital Efficiency Score: (Income - Mandatory) / Income
   const efficiencyScore = totalIncome > 0 ? ((totalIncome - mandatoryExpenses) / totalIncome) * 100 : 0;
@@ -93,10 +104,16 @@ export function StrategyInsights({
   }, [transactions]);
 
   useEffect(() => {
+    if (transactions.length === 0 || goals.length === 0) {
+      setStrategy("");
+    }
+  }, [transactions.length, goals.length]);
+
+  useEffect(() => {
     if (transactions.length > 0 && !strategy && !isLoading && !error) {
       handleGenerate();
     }
-  }, [transactions.length, goals.length]);
+  }, [transactions.length, goals.length, strategy]);
 
   const handleGenerate = async () => {
     setIsLoading(true);
@@ -104,6 +121,7 @@ export function StrategyInsights({
     try {
       const result = await generateCFOStrategy(transactions, goals);
       setStrategy(result || "Unable to generate strategy at this time.");
+      setLastAuditSnapshot({ balance, count: transactions.length });
     } catch (err) {
       setError("Failed to generate strategy. Please try again.");
       console.error(err);
@@ -280,8 +298,26 @@ export function StrategyInsights({
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="relative z-10"
+              className="relative z-10 space-y-6"
             >
+              {isDriftDetected && (
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="bg-brand-accent/10 border border-brand-accent/20 p-4 rounded-2xl flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-3">
+                    <AlertCircle className="w-4 h-4 text-brand-accent" />
+                    <p className="text-[10px] font-bold text-brand-accent uppercase tracking-widest leading-none">Strategic Drift Detected: Capital vectors have shifted.</p>
+                  </div>
+                  <button 
+                    onClick={handleGenerate}
+                    className="text-[9px] font-bold text-brand-accent underline uppercase tracking-widest"
+                  >
+                    Refresh Audit
+                  </button>
+                </motion.div>
+              )}
               <div className="bg-brand-bg/50 p-8 md:p-10 rounded-2xl border border-brand-border relative overflow-hidden">
                 <div className="markdown-body relative z-10 text-brand-primary/80 leading-relaxed">
                   <Markdown>{strategy}</Markdown>
