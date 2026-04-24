@@ -29,7 +29,7 @@ service cloud.firestore {
                data.category is string && data.category.size() <= 64 &&
                isValidDateString(data.date) &&
                data.description is string && data.description.size() <= 256 &&
-               data.type in ['income', 'expense'] &&
+               data.type in ['income' , 'expense'] &&
                isOwner(data.userId);
       }
 

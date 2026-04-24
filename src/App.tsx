@@ -128,6 +128,30 @@ function MainApp() {
     const saved = localStorage.getItem('stressTest');
     return saved ? JSON.parse(saved) : { incomeShock: 1, expenseShock: 1 };
   });
+  const [transactionIdToConfirmDelete, setTransactionIdToConfirmDelete] = useState<string | null>(null);
+  const [showGoalPurgeConfirm, setShowGoalPurgeConfirm] = useState(false);
+  const [showTotalPurgeConfirm, setShowTotalPurgeConfirm] = useState(false);
+  const [isPurging, setIsPurging] = useState(false);
+
+  const handleDeleteTransaction = async (t: Transaction) => {
+    if (!t.id) return;
+    if (transactionIdToConfirmDelete === t.id) {
+      try {
+        if (t.linkedGoalId && t.type === 'expense') {
+          await updateDoc(doc(db, 'goals', t.linkedGoalId), {
+            currentAmount: increment(-t.amount)
+          });
+        }
+        await deleteDoc(doc(db, 'transactions', t.id));
+        setTransactionIdToConfirmDelete(null);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, 'transactions');
+        alert("Operation Failed: Deletion protocol rejected by database.");
+      }
+    } else {
+      setTransactionIdToConfirmDelete(t.id);
+    }
+  };
 
   useEffect(() => {
     localStorage.setItem('monthlyBudget', monthlyBudget.toString());
@@ -471,38 +495,46 @@ function MainApp() {
             <button 
               type="button"
               onClick={async () => {
-                if (window.confirm('CRITICAL: FACTORY DATA PURGE. This will permanently ERASE all transactions and defined goals. This action is IRREVERSIBLE. Proceed with total purge?')) {
+                if (showTotalPurgeConfirm) {
                   try {
+                    setIsPurging(true);
                     const tSnap = await getDocs(query(collection(db, 'transactions'), where('userId', '==', user.uid)));
                     const gSnap = await getDocs(query(collection(db, 'goals'), where('userId', '==', user.uid)));
                     
                     const batch: Promise<void>[] = [];
-                    
-                    for (const docRef of tSnap.docs) {
-                      batch.push(deleteDoc(doc(db, 'transactions', docRef.id)));
-                    }
-                    for (const docRef of gSnap.docs) {
-                      batch.push(deleteDoc(doc(db, 'goals', docRef.id)));
-                    }
+                    for (const docRef of tSnap.docs) { batch.push(deleteDoc(doc(db, 'transactions', docRef.id))); }
+                    for (const docRef of gSnap.docs) { batch.push(deleteDoc(doc(db, 'goals', docRef.id))); }
                     
                     await Promise.all(batch);
-                    
-                    // Reset local storage
                     localStorage.removeItem('monthlyBudget');
                     localStorage.removeItem('stressTest');
-                    
-                    // Force complete reload
                     window.location.reload();
                   } catch (e) {
-                    console.error("Purge failed:", e);
-                    alert("Purge sequence failed. Check network connection.");
+                    handleFirestoreError(e, OperationType.DELETE, 'global_purge');
+                    setIsPurging(false);
+                    setShowTotalPurgeConfirm(false);
                   }
+                } else {
+                  setShowTotalPurgeConfirm(true);
+                  setTimeout(() => setShowTotalPurgeConfirm(false), 5000); // Auto-abort after 5s
                 }
               }}
-              className="w-10 h-10 md:w-12 md:h-12 flex items-center justify-center rounded-xl border-2 border-rose-500/20 bg-rose-500/5 text-rose-500 hover:bg-rose-500 hover:text-white transition-all shadow-lg active:scale-90"
+              className={cn(
+                "w-10 h-10 md:w-12 md:h-12 flex items-center justify-center rounded-xl border-2 transition-all shadow-lg active:scale-90",
+                showTotalPurgeConfirm 
+                  ? "bg-rose-500 text-white border-rose-600 animate-pulse" 
+                  : "border-rose-500/20 bg-rose-500/5 text-rose-500 hover:bg-rose-500 hover:text-white"
+              )}
               title="FACTORY DATA PURGE"
+              disabled={isPurging}
             >
-              <Trash2 className="w-4 h-4 md:w-5 md:h-5" />
+              {isPurging ? (
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : showTotalPurgeConfirm ? (
+                <AlertTriangle className="w-5 h-5" />
+              ) : (
+                <Trash2 className="w-4 h-4 md:w-5 md:h-5" />
+              )}
             </button>
             <div className="hidden sm:flex flex-col items-end">
               <span className="text-xs font-bold text-brand-primary uppercase tracking-wide">{user.displayName}</span>
@@ -791,32 +823,24 @@ function MainApp() {
                         </p>
                         <button 
                           type="button"
-                          onClick={async (e) => {
+                          onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            if (window.confirm('PURGE ENTRY: Delete this transaction?')) {
-                              try {
-                                if (t.id) {
-                                  // Relational Reversal: Decrement linked goal if applicable
-                                  if (t.linkedGoalId && t.type === 'expense') {
-                                    await updateDoc(doc(db, 'goals', t.linkedGoalId), {
-                                      currentAmount: increment(-t.amount)
-                                    });
-                                  }
-                                  await deleteDoc(doc(db, 'transactions', t.id));
-                                } else {
-                                  console.error('Missing ID');
-                                }
-                              } catch (error) {
-                                console.error('Recent activity delete failed:', error);
-                                handleFirestoreError(error, OperationType.DELETE, 'transactions');
-                              }
-                            }
+                            handleDeleteTransaction(t);
                           }}
-                          className="p-3 text-rose-500/30 hover:text-rose-600 transition-all rounded-xl hover:bg-rose-500/10 active:scale-90 border border-transparent hover:border-rose-500/20"
+                          className={cn(
+                            "p-3 transition-all rounded-xl active:scale-90 border",
+                            transactionIdToConfirmDelete === t.id 
+                              ? "bg-rose-500 text-white border-rose-600 shadow-lg scale-110" 
+                              : "text-rose-500/30 hover:text-rose-600 hover:bg-rose-500/10 border-transparent hover:border-rose-500/20"
+                          )}
                           title="Delete Transaction"
                         >
-                          <Trash2 className="w-5 h-5" />
+                          {transactionIdToConfirmDelete === t.id ? (
+                            <span className="text-[8px] font-bold uppercase tracking-widest px-1">Confirm</span>
+                          ) : (
+                            <Trash2 className="w-5 h-5" />
+                          )}
                         </button>
                       </div>
                     </div>
@@ -951,32 +975,24 @@ function MainApp() {
                           </div>
                           <button 
                             type="button"
-                            onClick={async (e) => {
+                            onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              if (window.confirm('PROTOCOL AUDIT: Are you certain you want to purge this capital flow entry?')) {
-                                try {
-                                  if (t.id) {
-                                    // Relational Reversal
-                                    if (t.linkedGoalId && t.type === 'expense') {
-                                      await updateDoc(doc(db, 'goals', t.linkedGoalId), {
-                                        currentAmount: increment(-t.amount)
-                                      });
-                                    }
-                                    await deleteDoc(doc(db, 'transactions', t.id));
-                                  } else {
-                                    console.error('Missing transaction ID');
-                                  }
-                                } catch (error) {
-                                  console.error('Purge failed:', error);
-                                  handleFirestoreError(error, OperationType.DELETE, 'transactions');
-                                }
-                              }
+                              handleDeleteTransaction(t);
                             }}
-                            className="p-3 text-rose-500/30 hover:text-rose-600 transition-all rounded-xl hover:bg-rose-500/10 active:scale-90 border border-transparent hover:border-rose-500/20"
+                            className={cn(
+                              "p-3 transition-all rounded-xl active:scale-90 border",
+                              transactionIdToConfirmDelete === t.id 
+                                ? "bg-rose-500 text-white border-rose-600 shadow-lg scale-110" 
+                                : "text-rose-500/30 hover:text-rose-600 hover:bg-rose-500/10 border-transparent hover:border-rose-500/20"
+                            )}
                             title="Purge Entry"
                           >
-                            <Trash2 className="w-5 h-5" />
+                            {transactionIdToConfirmDelete === t.id ? (
+                              <span className="text-[8px] font-bold uppercase tracking-widest px-1">Confirm</span>
+                            ) : (
+                              <Trash2 className="w-5 h-5" />
+                            )}
                           </button>
                         </div>
                       </motion.div>
@@ -1000,19 +1016,28 @@ function MainApp() {
                   <div className="flex items-center gap-4">
                     <button 
                       onClick={async () => {
-                        if (window.confirm('GOAL PURGE: Are you certain you want to wipe all goals? This action is irreversible.')) {
+                        if (showGoalPurgeConfirm) {
                           try {
                             const batch = goals.map(g => deleteDoc(doc(db, 'goals', g.id)));
-                            setGoals([]); // Force local state clear for immediate feedback
                             await Promise.all(batch);
+                            setShowGoalPurgeConfirm(false);
                           } catch (err) {
-                            console.error('Purge failed:', err);
+                            handleFirestoreError(err, OperationType.DELETE, 'goals');
+                            alert("Goal Purge Failed.");
                           }
+                        } else {
+                          setShowGoalPurgeConfirm(true);
+                          setTimeout(() => setShowGoalPurgeConfirm(false), 3000);
                         }
                       }}
-                      className="px-4 py-3 bg-rose-500/10 text-rose-500 border border-rose-500/20 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-rose-500 hover:text-white transition-all shadow-sm"
+                      className={cn(
+                        "px-4 py-3 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all shadow-sm border",
+                        showGoalPurgeConfirm 
+                          ? "bg-rose-500 text-white border-rose-600 animate-pulse" 
+                          : "bg-rose-500/10 text-rose-500 border-rose-500/20 hover:bg-rose-500 hover:text-white"
+                      )}
                     >
-                      Clear Portfolio
+                      {showGoalPurgeConfirm ? 'Confirm Global Goal Wipe' : 'Clear Portfolio'}
                     </button>
                     <button 
                       onClick={() => {
