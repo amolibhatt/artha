@@ -59,7 +59,8 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     path
   }
   console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  // In subscription flows, throwing can crash the whole app loop. 
+  // We log clearly instead. Callers can throw manually if needed for logic flow.
 }
 
 export const signIn = async () => {

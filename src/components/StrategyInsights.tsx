@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 import { Sparkles, TrendingUp, AlertCircle, Loader2, ChevronRight, Plus, ShieldCheck, Compass, AlertTriangle } from 'lucide-react';
 import { Transaction, Goal } from '../types';
-import { generateCFOStrategy } from '../services/strategyService';
+import { generateCFOStrategy } from '../services/aiService';
 import { cn, formatCurrency } from '../lib/utils';
 
 interface StrategyInsightsProps {

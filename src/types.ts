@@ -13,6 +13,7 @@ export interface Transaction {
   isMandatory?: boolean;
   isRecurring?: boolean;
   isAvoidable?: boolean;
+  linkedGoalId?: string;
 }
 
 export interface Goal {

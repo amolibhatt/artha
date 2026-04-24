@@ -46,9 +46,12 @@ import {
   XAxis
 } from 'recharts';
 import { motion, AnimatePresence } from 'motion/react';
-import { getFinancialAdvice } from './services/geminiService';
-import { StrategyInsights } from './components/StrategyInsights';
-import { DebtOptimization } from './components/DebtOptimization';
+import { generateQuickInsights } from './services/aiService';
+import { useFinancialEngine } from './hooks/useFinancialEngine';
+
+// Lazy load heavy analytical components
+const StrategyInsights = React.lazy(() => import('./components/StrategyInsights').then(m => ({ default: m.StrategyInsights })));
+const DebtOptimization = React.lazy(() => import('./components/DebtOptimization').then(m => ({ default: m.DebtOptimization })));
 
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean, error: Error | null }> {
   constructor(props: { children: React.ReactNode }) {
@@ -199,90 +202,52 @@ function MainApp() {
     };
   }, [user]);
 
-  const totalIncome = transactions
-    .filter(t => t.type === 'income')
-    .reduce((acc, t) => acc + t.amount, 0);
+  const [insights, setInsights] = useState<string[]>([]);
+  useEffect(() => {
+    if (user && transactions.length > 5 && goals.length > 0) {
+      const fetchInsights = async () => {
+        try {
+          const data = await generateQuickInsights(transactions, goals);
+          setInsights(data);
+        } catch (e) {
+          console.error("Context-Aware Insight Failure:", e);
+        }
+      };
+      fetchInsights();
+    }
+  }, [user, transactions.length, goals.length]);
 
-  const adjustedIncome = totalIncome * stressTest.incomeShock;
-
-  const totalExpenses = transactions
-    .filter(t => t.type === 'expense')
-    .reduce((acc, t) => acc + t.amount, 0);
-
-  const adjustedExpenses = totalExpenses * stressTest.expenseShock;
-
-  const totalSavings = goals
-    .filter(g => g.type === 'savings' || g.type === 'investment')
-    .reduce((acc, g) => acc + g.currentAmount, 0);
-
-  const balance = adjustedIncome - adjustedExpenses;
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const spentToday = transactions
-    .filter(t => t.type === 'expense' && new Date(t.date).getTime() >= today.getTime())
-    .reduce((acc, t) => acc + t.amount, 0);
-
-  const spentThisMonth = transactions
-    .filter(t => {
-      const d = new Date(t.date);
-      return t.type === 'expense' && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
-    })
-    .reduce((acc, t) => acc + t.amount, 0);
-
-  const leftToSpend = Math.max(0, monthlyBudget - spentThisMonth);
-  const adjustedLeftToSpend = Math.max(0, monthlyBudget * stressTest.incomeShock - spentThisMonth * stressTest.expenseShock);
-  const budgetPercentage = (spentThisMonth / monthlyBudget) * 100;
-  const monthlySavingsRate = totalIncome > 0 ? ((totalIncome - totalExpenses) / totalIncome * 100) : 0;
-
-  // CFO Calculations
-  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
-  const remainingDays = daysInMonth - today.getDate() + 1;
-  const dailyBurnTarget = leftToSpend / remainingDays;
-  
-  const mandatoryExpenses = transactions
-    .filter(t => t.type === 'expense' && t.isMandatory)
-    .reduce((acc, t) => acc + t.amount, 0);
-  
-  const discretionaryExpenses = transactions
-    .filter(t => t.type === 'expense' && !t.isMandatory)
-    .reduce((acc, t) => acc + t.amount, 0);
-
-  // Runway Calculation
-  const liquidAssets = goals
-    .filter(g => g.type === 'savings' || g.type === 'investment')
-    .reduce((acc, g) => acc + g.currentAmount, 0);
-  
-  // Estimate monthly burn (Normalize to 30-day projection to avoid intra-month volatility)
-  const activeDailyPace = spentThisMonth / Math.max(1, today.getDate());
-  const projectedMonthlyBurn = activeDailyPace * 30;
-  const monthlyBurn = projectedMonthlyBurn > 0 ? projectedMonthlyBurn : (totalExpenses / Math.max(1, transactions.length / 30));
-  const runwayMonths = monthlyBurn > 0 ? (liquidAssets / (monthlyBurn * stressTest.expenseShock)) : 0;
-  
-  const now = new Date();
-  const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-  const daysUntilReset = lastDayOfMonth.getDate() - now.getDate();
-  const fixedRatio = totalExpenses > 0 ? (mandatoryExpenses / totalExpenses) * 100 : 0;
-
-  // 7-Day Sparkline Data
-  const last7Days = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() - (6 - i));
-    d.setHours(0, 0, 0, 0);
-    const amount = transactions
-      .filter(t => t.type === 'expense' && new Date(t.date).toDateString() === d.toDateString())
-      .reduce((acc, t) => acc + t.amount, 0);
-    return { day: d.toLocaleDateString('en-GB', { weekday: 'short' }), amount };
-  });
-
-  const avgDailySpend = last7Days.reduce((acc, d) => acc + d.amount, 0) / 7;
-  const recentTrend = last7Days[6].amount > avgDailySpend ? 'Increasing' : 'Stable';
+  const {
+    totalIncome,
+    totalExpenses,
+    mandatoryExpenses,
+    discretionaryExpenses,
+    spentThisMonth,
+    spentToday,
+    liquidAssets,
+    balance,
+    runwayMonths,
+    leftToSpend,
+    adjustedLeftToSpend,
+    budgetPercentage,
+    savingsEfficiency,
+    fixedRatio,
+    monthlyBurn,
+    activeDailyPace,
+    today,
+    daysInMonth,
+    last7Days,
+    avgDailySpend,
+    remainingDays
+  } = useFinancialEngine(transactions, goals, monthlyBudget, stressTest);
 
   // Predictive Analytics - Stress Test Synchronized
   const projectedMonthlySpend = (spentThisMonth + (avgDailySpend * remainingDays)) * stressTest.expenseShock;
   const projectedSavings = Math.max(0, (totalIncome * stressTest.incomeShock) - projectedMonthlySpend);
-  const savingsEfficiency = (totalIncome * stressTest.incomeShock) > 0 ? (projectedSavings / (totalIncome * stressTest.incomeShock)) * 100 : 0;
+  const now = today;
+  const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  const daysUntilReset = lastDayOfMonth.getDate() - now.getDate();
+  const recentTrend = last7Days[6].amount > avgDailySpend ? 'Increasing' : 'Stable';
 
   // Global Command Shortcut
   useEffect(() => {
@@ -1130,28 +1095,34 @@ function MainApp() {
         )}
 
         {activeTab === 'insights' && (
-          <div className="space-y-12">
-          <div className="space-y-1">
-            <h2 className="text-3xl font-sans font-bold uppercase tracking-tight text-brand-primary leading-tight py-1">Intelligence Suite</h2>
-            <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-[0.3em] leading-relaxed py-0.5">Advanced Capital Optimization</p>
-          </div>
-            
+          <React.Suspense fallback={
+            <div className="flex items-center justify-center py-20">
+              <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-brand-primary"></div>
+            </div>
+          }>
             <div className="space-y-12">
-              <StrategyInsights 
-                transactions={transactions} 
-                goals={goals} 
-                balance={balance}
-                totalIncome={totalIncome}
-                totalSavings={totalSavings}
-                mandatoryExpenses={mandatoryExpenses}
-                discretionaryExpenses={discretionaryExpenses}
-              />
+              <div className="space-y-1">
+                <h2 className="text-3xl font-sans font-bold uppercase tracking-tight text-brand-primary leading-tight py-1">Intelligence Suite</h2>
+                <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-[0.3em] leading-relaxed py-0.5">Advanced Capital Optimization</p>
+              </div>
               
-              <div className="pt-12 border-t border-brand-border">
-                <DebtOptimization goals={goals} />
+              <div className="space-y-12">
+                <StrategyInsights 
+                  transactions={transactions} 
+                  goals={goals} 
+                  balance={balance}
+                  totalIncome={totalIncome}
+                  totalSavings={liquidAssets}
+                  mandatoryExpenses={mandatoryExpenses}
+                  discretionaryExpenses={discretionaryExpenses}
+                />
+                
+                <div className="pt-12 border-t border-brand-border">
+                  <DebtOptimization goals={goals} />
+                </div>
               </div>
             </div>
-          </div>
+          </React.Suspense>
         )}
       </main>
 
