@@ -5,12 +5,14 @@ export interface Transaction {
   id?: string;
   amount: number;
   category: string;
+  subcategory?: string;
   date: string;
   description?: string;
   type: TransactionType;
   userId: string;
   isMandatory?: boolean;
   isRecurring?: boolean;
+  isAvoidable?: boolean;
 }
 
 export interface Goal {
