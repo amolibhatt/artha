@@ -1,8 +1,8 @@
-# Artha AI: Personal CFO & Strategic Wealth Engine
+# Artha AI: Personal CFO & Goal-Driven Wealth Engine
 
 **Artha AI** is a McKinsey-level financial strategist designed to transform raw transaction data into a high-octane capital allocation system. It moves beyond simple "budgeting" into the realm of dynamic cash flow optimization and capital protection.
 
-## 🏛 The Strategic Framework
+## 🏛 The Global Framework
 
 Artha operates on five core operating principles:
 1. **Dynamic over static**: Adapts instantly to new income and expense vectors.
@@ -13,7 +13,7 @@ Artha operates on five core operating principles:
 
 ## 🚀 Key Features
 
-### 1. Strategic Allocation Dashboard
+### 1. Capital Allocation Dashboard
 A high-level audit of your capital deployment across three primary vectors:
 *   **Operating Burn**: Real-time monitoring of lifestyle maintenance costs.
 *   **Capital Reserve**: Tracking the surplus required for long-term stability.
@@ -36,7 +36,7 @@ Dynamic tracking for Savings, Investments, and Debt Liquidation with automated p
 *   **Charts**: Recharts (D3-based)
 *   **Backend**: Node.js / Express (SPA optimized)
 *   **Database/Auth**: Firebase Firestore & Google Auth
-*   **AI Engine**: Google Gemini API (Strategic Analysis)
+*   **AI Engine**: Google Gemini API (Financial Analysis)
 
 ## 📦 Setup & Installation
 

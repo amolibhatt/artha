@@ -62,5 +62,17 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(JSON.stringify(errInfo));
 }
 
-export const signIn = () => signInWithPopup(auth, googleProvider);
+export const signIn = async () => {
+  try {
+    return await signInWithPopup(auth, googleProvider);
+  } catch (error: any) {
+    console.error('Firebase Auth Error:', error.code, error.message);
+    // Provide specific guidance for Vercel/Iframe environments
+    if (error.code === 'auth/unauthorized-domain') {
+      console.error('CRITICAL: This domain is not authorized in the Firebase Console.');
+    }
+    throw error;
+  }
+};
+
 export const logout = () => signOut(auth);

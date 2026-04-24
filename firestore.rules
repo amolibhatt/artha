@@ -1,100 +1,80 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    // ===============================================================
-    // Assumed Data Model
-    // ===============================================================
-    //
-    // Collection: transactions
-    // Document ID: auto-generated
-    // Fields:
-    //   - amount: number (required, > 0)
-    //   - category: string (required, 1-50 chars)
-    //   - date: string (required, ISO 8601)
-    //   - description: string (optional, 0-200 chars)
-    //   - type: string (required, 'income' | 'expense')
-    //   - userId: string (required, matches auth.uid)
-    //
-    // Collection: goals
-    // Document ID: auto-generated
-    // Fields:
-    //   - name: string (required, 1-50 chars)
-    //   - targetAmount: number (required, > 0)
-    //   - currentAmount: number (required, >= 0)
-    //   - type: string (required, 'savings' | 'debt' | 'investment')
-    //   - userId: string (required, matches auth.uid)
-    //   - deadline: string (optional, ISO 8601)
-    //
-    // ===============================================================
-
-    // ===============================================================
-    // Helper Functions
-    // ===============================================================
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
-    }
-
-    function isValidEmail(email) {
-      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
-    }
-
-    function isValidDateString(dateStr) {
-      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
     }
 
     // ===============================================================
-    // Domain Validators
+    // Helper Functions (Phase 3 Primitives)
     // ===============================================================
-    function isValidTransaction(data) {
-      let requiredFields = ['amount', 'category', 'date', 'type', 'userId'];
-      let optionalFields = ['description'];
-      let allFields = requiredFields.concat(optionalFields);
-      
-      return data.keys().hasAll(requiredFields) &&
-             data.keys().hasOnly(allFields) &&
-             data.amount is number && data.amount > 0 &&
-             data.category is string && data.category.size() >= 1 && data.category.size() <= 50 &&
-             isValidDateString(data.date) &&
-             data.type in ['income', 'expense'] &&
-             data.userId == request.auth.uid &&
-             (!('description' in data) || (data.description is string && data.description.size() <= 200));
-    }
-
-    function isValidGoal(data) {
-      let requiredFields = ['name', 'targetAmount', 'currentAmount', 'type', 'userId'];
-      let optionalFields = ['deadline', 'monthlyContribution'];
-      let allFields = requiredFields.concat(optionalFields);
-      
-      return data.keys().hasAll(requiredFields) &&
-             data.keys().hasOnly(allFields) &&
-             data.name is string && data.name.size() >= 1 && data.name.size() <= 50 &&
-             data.targetAmount is number && data.targetAmount > 0 &&
-             data.currentAmount is number && data.currentAmount >= 0 &&
-             data.type in ['savings', 'debt', 'investment'] &&
-             data.userId == request.auth.uid &&
-             (!('deadline' in data) || data.deadline == null || isValidDateString(data.deadline)) &&
-             (!('monthlyContribution' in data) || data.monthlyContribution == null || data.monthlyContribution is number);
-    }
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(uid) { return isSignedIn() && request.auth.uid == uid; }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function isValidDateString(dateStr) { return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$"); }
 
     // ===============================================================
-    // Rules
+    // Entity Rules (Architecture Audit)
     // ===============================================================
+
+    // 1. Transactions - The Flow Log
     match /transactions/{transactionId} {
-      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
-      allow create: if isAuthenticated() && isValidTransaction(request.resource.data);
-      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid && isValidTransaction(request.resource.data);
-      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      function isValidTransaction(data) {
+        return data.keys().hasAll(['amount', 'category', 'date', 'description', 'type', 'userId']) &&
+               data.amount is number && data.amount > 0 &&
+               data.category is string && data.category.size() <= 64 &&
+               isValidDateString(data.date) &&
+               data.description is string && data.description.size() <= 256 &&
+               data.type in ['income', 'expense'] &&
+               isOwner(data.userId);
+      }
+
+      // Pillar 6: UID Scoping & PII Protection
+      allow read: if isOwner(existing().userId);
+      allow create: if isValidTransaction(incoming());
+      
+      // Pillar 4: Tiered Identity Logic & Mutability
+      allow update: if isOwner(existing().userId) && 
+                      isValidTransaction(incoming()) && 
+                      incoming().userId == existing().userId && 
+                      incoming().date == existing().date; // Immutable date
+      
+      allow delete: if isOwner(existing().userId);
     }
 
+    // 2. Goals - Strategic Targets
     match /goals/{goalId} {
-      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
-      allow create: if isAuthenticated() && isValidGoal(request.resource.data);
-      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid && isValidGoal(request.resource.data);
-      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      function isValidGoal(data) {
+        return data.keys().hasAll(['name', 'targetAmount', 'currentAmount', 'type', 'userId']) &&
+               data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+               data.targetAmount is number && data.targetAmount >= 0 &&
+               data.currentAmount is number && data.currentAmount >= 0 &&
+               data.type in ['savings', 'debt', 'investment'] &&
+               isOwner(data.userId) &&
+               (!('priority' in data) || data.priority in ['low', 'medium', 'high']) &&
+               (!('interestRate' in data) || data.interestRate is number) &&
+               (!('tenureMonths' in data) || data.tenureMonths is number) &&
+               (!('monthlyContribution' in data) || data.monthlyContribution is number);
+      }
+
+      allow read: if isOwner(existing().userId);
+      allow create: if isValidGoal(incoming());
+      
+      // Pillar 4: Tiered Identity & Action-Based Updates
+      allow update: if isOwner(existing().userId) && 
+                      isValidGoal(incoming()) && 
+                      incoming().userId == existing().userId; 
+      
+      allow delete: if isOwner(existing().userId);
+    }
+    
+    // 3. User Prefs / Metadata
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
     }
   }
 }

@@ -119,7 +119,7 @@ export function StrategyInsights({
         <div className="bg-brand-surface p-6 md:p-8 border border-brand-border rounded-3xl shadow-sm space-y-3 md:space-y-4">
           <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest">Capital Efficiency</p>
           <div className="flex items-end gap-3">
-            <h4 className="text-3xl md:text-4xl font-serif italic text-brand-primary leading-none">{efficiencyScore.toFixed(0)}%</h4>
+            <h4 className="text-3xl md:text-4xl font-mono font-bold text-brand-primary leading-tight py-1">{efficiencyScore.toFixed(0)}%</h4>
             <div className={cn(
               "px-2 py-0.5 rounded text-[10px] font-bold uppercase",
               efficiencyScore > 40 ? "bg-brand-accent/10 text-brand-accent" : "bg-rose-500/10 text-rose-500"
@@ -127,13 +127,13 @@ export function StrategyInsights({
               {efficiencyScore > 40 ? 'High' : 'Low'}
             </div>
           </div>
-          <p className="text-[10px] text-brand-primary/40 leading-relaxed">Percentage of income remaining after mandatory commitments.</p>
+          <p className="text-[10px] text-brand-primary/40 leading-relaxed uppercase tracking-widest font-bold opacity-40">Efficiency Index</p>
         </div>
 
         <div className="bg-brand-surface p-6 md:p-8 border border-brand-border rounded-3xl shadow-sm space-y-3 md:space-y-4">
           <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest">Spending Velocity</p>
           <div className="flex items-end gap-3">
-            <h4 className="text-3xl md:text-4xl font-serif italic text-brand-primary leading-none">
+            <h4 className="text-3xl md:text-4xl font-mono font-bold text-brand-primary leading-tight py-1">
               {velocityAudit.change > 0 ? '+' : ''}{velocityAudit.change.toFixed(0)}%
             </h4>
             <div className={cn(
@@ -143,23 +143,23 @@ export function StrategyInsights({
               {velocityAudit.change <= 0 ? 'Stable' : 'Accelerating'}
             </div>
           </div>
-          <p className="text-[10px] text-brand-primary/40 leading-relaxed">Discretionary burn rate compared to previous month.</p>
+          <p className="text-[10px] text-brand-primary/40 leading-relaxed uppercase tracking-widest font-bold opacity-40">Velocity Index</p>
         </div>
 
         <div className="bg-brand-surface p-6 md:p-8 border border-brand-border rounded-3xl shadow-sm space-y-3 md:space-y-4 sm:col-span-2 md:col-span-1">
           <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest">Commitment Ratio</p>
-          <h4 className="text-3xl md:text-4xl font-serif italic text-brand-primary leading-none">{fixedRatio.toFixed(0)}%</h4>
+          <h4 className="text-3xl md:text-4xl font-mono font-bold text-brand-primary leading-tight py-1">{fixedRatio.toFixed(0)}%</h4>
           <div className="h-1 w-full bg-brand-bg rounded-full overflow-hidden">
             <div className="h-full bg-brand-primary" style={{ width: `${fixedRatio}%` }} />
           </div>
-          <p className="text-[10px] text-brand-primary/40 leading-relaxed">Portion of total spend locked in fixed obligations.</p>
+          <p className="text-[10px] text-brand-primary/40 leading-relaxed uppercase tracking-widest font-bold opacity-40">Fixed Obligation Index</p>
         </div>
       </div>
 
       {/* Recurring Commitment Audit */}
       <div className="bg-brand-surface p-6 md:p-12 border border-brand-border rounded-3xl shadow-sm space-y-8 md:space-y-10">
         <div className="space-y-2">
-          <h3 className="text-2xl md:text-3xl font-serif italic text-brand-primary">Commitment Audit</h3>
+          <h3 className="text-2xl md:text-3xl font-sans font-bold uppercase tracking-tight text-brand-primary">Commitment Audit</h3>
           <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-[0.3em]">Fixed vs. Discretionary Analysis</p>
         </div>
 
@@ -185,16 +185,16 @@ export function StrategyInsights({
                   <div className="w-2 h-2 rounded-full bg-brand-primary" />
                   <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest">Fixed (Mandatory)</p>
                 </div>
-                <p className="text-2xl font-serif italic text-brand-primary">{fixedRatio.toFixed(0)}%</p>
-                <p className="text-xs text-brand-primary/60">{formatCurrency(mandatoryExpenses)}</p>
+                <p className="text-2xl font-mono font-bold text-brand-primary">{fixedRatio.toFixed(0)}%</p>
+                <p className="text-xs text-brand-primary/60 font-mono">{formatCurrency(mandatoryExpenses)}</p>
               </div>
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 rounded-full bg-brand-accent/30" />
                   <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest">Discretionary</p>
                 </div>
-                <p className="text-2xl font-serif italic text-brand-primary">{discretionaryRatio.toFixed(0)}%</p>
-                <p className="text-xs text-brand-primary/60">{formatCurrency(discretionaryExpenses)}</p>
+                <p className="text-2xl font-mono font-bold text-brand-primary">{discretionaryRatio.toFixed(0)}%</p>
+                <p className="text-xs text-brand-primary/60 font-mono">{formatCurrency(discretionaryExpenses)}</p>
               </div>
             </div>
           </div>
@@ -210,13 +210,13 @@ export function StrategyInsights({
                 {topWaste.length > 0 ? topWaste.map(([cat, amt]) => (
                   <div key={cat} className="flex justify-between items-center">
                     <div className="space-y-0.5">
-                      <p className="text-xs font-bold text-brand-primary uppercase tracking-wide">{cat}</p>
-                      <p className="text-[10px] text-brand-primary/40 uppercase tracking-widest">Potential Optimization</p>
+                      <p className="text-sm font-sans font-bold uppercase tracking-tight text-brand-primary leading-tight py-0.5">{cat}</p>
+                      <p className="text-[10px] text-brand-primary/40 uppercase tracking-widest leading-relaxed py-0.25">Potential Optimization</p>
                     </div>
-                    <p className="text-sm font-serif italic text-brand-primary">{formatCurrency(amt)}</p>
+                    <p className="text-sm font-mono font-bold text-brand-primary">{formatCurrency(amt)}</p>
                   </div>
                 )) : (
-                  <p className="text-xs text-brand-primary/40 italic">No significant discretionary waste identified.</p>
+                  <p className="text-xs text-brand-primary/40 font-bold uppercase tracking-widest">No significant discretionary waste identified.</p>
                 )}
               </div>
             </div>
@@ -231,13 +231,13 @@ export function StrategyInsights({
                 {subscriptionAudit.length > 0 ? subscriptionAudit.map((sub) => (
                   <div key={sub.name} className="flex justify-between items-center">
                     <div className="space-y-0.5">
-                      <p className="text-xs font-bold text-brand-primary uppercase tracking-wide">{sub.name}</p>
-                      <p className="text-[10px] text-brand-primary/40 uppercase tracking-widest">{sub.frequency} Commitment</p>
+                      <p className="text-xs font-bold text-brand-primary uppercase tracking-wide leading-tight py-0.5">{sub.name}</p>
+                      <p className="text-[10px] text-brand-primary/40 uppercase tracking-widest leading-relaxed py-0.25">{sub.frequency} Commitment</p>
                     </div>
-                    <p className="text-sm font-serif italic text-brand-primary">{formatCurrency(sub.amount)}</p>
+                    <p className="text-sm font-mono font-bold text-brand-primary">{formatCurrency(sub.amount)}</p>
                   </div>
                 )) : (
-                  <p className="text-xs text-brand-primary/40 italic">No recurring subscriptions detected.</p>
+                  <p className="text-xs text-brand-primary/40 font-bold uppercase tracking-widest">No recurring subscriptions detected.</p>
                 )}
               </div>
             </div>
@@ -253,8 +253,8 @@ export function StrategyInsights({
               <Sparkles className="w-6 h-6 md:w-8 md:h-8 text-brand-primary" />
             </div>
             <div className="space-y-1">
-              <h3 className="text-2xl md:text-3xl font-serif italic text-brand-primary">Strategic Audit</h3>
-              <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-[0.3em]">Capital Optimization Engine</p>
+              <h3 className="text-2xl md:text-3xl font-sans font-bold uppercase tracking-tight text-brand-primary leading-tight py-1">Strategic Audit</h3>
+              <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-[0.3em] leading-relaxed py-0.5">Capital Optimization Engine</p>
             </div>
           </div>
           <button
@@ -272,7 +272,7 @@ export function StrategyInsights({
             <div className="py-20 flex flex-col items-center justify-center gap-6 relative z-10">
               <Loader2 className="w-12 h-12 animate-spin text-brand-primary/20" />
               <div className="text-center space-y-2">
-                <p className="text-lg font-serif italic text-brand-primary animate-pulse">Analyzing Capital Vectors</p>
+                <p className="text-lg font-sans font-bold uppercase tracking-tight text-brand-primary animate-pulse">Analyzing Capital Vectors</p>
                 <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-[0.2em]">Synthesizing market arbitrage opportunities</p>
               </div>
             </div>
@@ -295,7 +295,7 @@ export function StrategyInsights({
                   <ShieldCheck className="w-8 h-8 text-brand-primary/20" />
                 </div>
                 <div className="space-y-2">
-                  <p className="text-2xl font-serif italic text-brand-primary">System Ready</p>
+                  <p className="text-2xl font-sans font-bold uppercase tracking-tight text-brand-primary">System Ready</p>
                   <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-[0.2em]">Log transactions to enable capital efficiency analysis</p>
                 </div>
                 <button

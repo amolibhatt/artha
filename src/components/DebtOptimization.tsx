@@ -22,7 +22,7 @@ export function DebtOptimization({ goals }: DebtOptimizationProps) {
           <Landmark className="w-8 h-8 text-brand-primary/20" />
         </div>
         <div className="space-y-2">
-          <p className="text-xl font-serif italic text-brand-primary">No Debt Protocols Identified</p>
+          <p className="text-xl font-sans font-bold uppercase tracking-tight text-brand-primary">No Debt Protocols Identified</p>
           <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-widest">Add a debt-type goal to enable optimization</p>
         </div>
       </div>
@@ -73,8 +73,8 @@ export function DebtOptimization({ goals }: DebtOptimizationProps) {
     <div className="bg-brand-surface p-6 md:p-12 border border-brand-border rounded-3xl shadow-sm space-y-8 md:space-y-10">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-2">
-          <h3 className="text-2xl md:text-3xl font-serif italic text-brand-primary">Debt Architect</h3>
-          <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-[0.3em]">Interest Minimization Engine</p>
+          <h3 className="text-2xl md:text-3xl font-sans font-bold uppercase tracking-tight text-brand-primary leading-tight py-1">Debt Architect</h3>
+          <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-[0.3em] leading-relaxed py-0.5">Interest Minimization Engine</p>
         </div>
         
         <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
@@ -100,13 +100,13 @@ export function DebtOptimization({ goals }: DebtOptimizationProps) {
           <div className="space-y-8 md:space-y-10">
             <div className="space-y-6">
               <div className="flex justify-between items-end">
-                <div className="space-y-1">
+                <div className="space-y-2">
                   <p className="text-[10px] font-bold text-brand-primary/30 uppercase tracking-widest">Monthly Prepayment</p>
-                  <p className="text-2xl md:text-3xl font-serif italic text-brand-primary leading-none tabular-nums">{formatCurrency(prepayment)}</p>
+                  <p className="text-2xl md:text-3xl font-mono font-bold text-brand-primary leading-tight tabular-nums py-0.5">{formatCurrency(prepayment)}</p>
                 </div>
-                <div className="text-right space-y-1">
+                <div className="text-right space-y-2">
                   <p className="text-[10px] font-bold text-brand-primary/30 uppercase tracking-widest">Interest Saved</p>
-                  <p className="text-xl md:text-2xl font-serif italic text-brand-accent leading-none">{formatCurrency(impact.interestSaved)}</p>
+                  <p className="text-xl md:text-2xl font-mono font-bold text-brand-accent leading-tight py-0.5">{formatCurrency(impact.interestSaved)}</p>
                 </div>
               </div>
               
@@ -122,8 +122,8 @@ export function DebtOptimization({ goals }: DebtOptimizationProps) {
               
               <div className="flex items-center gap-3 p-4 bg-brand-bg/50 rounded-xl border border-brand-border">
                 <Zap className="w-4 h-4 text-brand-accent" />
-                <p className="text-[10px] font-bold text-brand-primary/60 uppercase tracking-widest">
-                  Tenure Reduction: <span className="text-brand-accent">{impact.monthsSaved} Months</span>
+                <p className="text-[10px] font-bold text-brand-primary/70 uppercase tracking-widest leading-relaxed">
+                  Tenure Reduction: <span className="text-brand-accent inline-block px-1">{impact.monthsSaved} Months</span>
                 </p>
               </div>
             </div>
@@ -133,42 +133,51 @@ export function DebtOptimization({ goals }: DebtOptimizationProps) {
                 <Info className="w-3 h-3 text-brand-primary/30" />
                 <p className="text-[10px] font-bold text-brand-primary/30 uppercase tracking-widest">Opportunity Cost Analysis</p>
               </div>
-              <p className="text-xs text-brand-primary/60 leading-relaxed">
-                Deploying <span className="font-bold text-brand-primary">{formatCurrency(prepayment)}</span> monthly saves <span className="font-bold text-brand-accent">{formatCurrency(impact.interestSaved)}</span> in interest. 
-                This is equivalent to a guaranteed <span className="font-bold text-brand-primary">{(selectedLoan.interestRate || 8.5)}%</span> post-tax return.
+              <p className="text-xs text-brand-primary/70 leading-relaxed">
+                Deploying <span className="font-bold text-brand-primary inline-block px-1">{formatCurrency(prepayment)}</span> monthly saves <span className="font-bold text-brand-accent inline-block px-1">{formatCurrency(impact.interestSaved)}</span> in interest. 
+                This is equivalent to a guaranteed <span className="font-bold text-brand-primary inline-block px-1">{(selectedLoan.interestRate || 8.5)}%</span> post-tax return.
               </p>
             </div>
           </div>
 
-            <div className="bg-brand-bg/50 p-6 md:p-8 rounded-2xl border border-brand-border flex flex-col justify-center space-y-6 md:space-y-8">
-              <div className="space-y-2 text-center">
-                <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest">Interest Trajectory</p>
-                <div className="flex items-center justify-center gap-4">
-                  <div className="text-center">
-                    <p className="text-[10px] text-brand-primary/30 uppercase font-bold">Original</p>
-                    <p className="text-base md:text-lg font-serif italic text-brand-primary/40 line-through">{formatCurrency(impact.totalInterestWithoutPrepayment)}</p>
+            <div className="bg-brand-bg/50 p-8 md:p-12 rounded-[2.5rem] border border-brand-border flex flex-col justify-center space-y-10 md:space-y-12 relative overflow-hidden group">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-brand-accent/5 rounded-full blur-3xl -mr-16 -mt-16 transition-all group-hover:scale-150" />
+              
+              <div className="space-y-4 text-center relative z-10">
+                <p className="text-[10px] font-bold text-brand-primary/30 uppercase tracking-[0.4em] font-mono">Interest Trajectory</p>
+                <div className="flex items-center justify-center gap-6">
+                  <div className="text-center space-y-2">
+                    <p className="text-[10px] text-brand-primary/20 uppercase font-bold tracking-widest whitespace-nowrap">Market Baseline</p>
+                    <p className="text-lg md:text-xl font-mono font-bold text-brand-primary/20 line-through tabular-nums">{formatCurrency(impact.totalInterestWithoutPrepayment)}</p>
                   </div>
-                  <ArrowRight className="w-4 h-4 text-brand-primary/20" />
-                  <div className="text-center">
-                    <p className="text-[10px] text-brand-accent uppercase font-bold">Optimized</p>
-                    <p className="text-xl md:text-2xl font-serif italic text-brand-primary">{formatCurrency(impact.totalInterestWithPrepayment)}</p>
+                  <div className="w-12 h-px bg-brand-primary/10 relative">
+                    <ArrowRight className="w-4 h-4 text-brand-primary/20 absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" />
+                  </div>
+                  <div className="text-center space-y-2">
+                    <p className="text-[10px] text-brand-accent uppercase font-bold tracking-widest whitespace-nowrap">Optimized State</p>
+                    <p className="text-2xl md:text-3xl font-mono font-bold text-brand-primary tabular-nums drop-shadow-sm leading-tight py-1">{formatCurrency(impact.totalInterestWithPrepayment)}</p>
                   </div>
                 </div>
               </div>
 
-            <div className="h-2 w-full bg-brand-bg rounded-full overflow-hidden flex">
-              <motion.div 
-                initial={{ width: 0 }}
-                animate={{ width: `${impact.totalInterestWithoutPrepayment > 0 ? (impact.totalInterestWithPrepayment / impact.totalInterestWithoutPrepayment) * 100 : 0}%` }}
-                className="h-full bg-brand-accent"
-              />
+              <div className="space-y-6 relative z-10">
+                <div className="h-3 w-full bg-brand-bg rounded-full overflow-hidden flex border border-brand-border/50 p-0.5">
+                  <motion.div 
+                    initial={{ width: 0 }}
+                    animate={{ width: `${impact.totalInterestWithoutPrepayment > 0 ? (impact.totalInterestWithPrepayment / impact.totalInterestWithoutPrepayment) * 100 : 0}%` }}
+                    className="h-full bg-brand-accent rounded-full shadow-[0_0_15px_rgba(16,185,129,0.3)]"
+                  />
+                </div>
+                <div className="flex justify-center flex-col items-center gap-2">
+                  <p className="text-4xl md:text-5xl font-mono font-bold text-brand-accent leading-tight py-2">
+                    {impact.totalInterestWithoutPrepayment > 0 
+                      ? (( (impact.totalInterestWithoutPrepayment - impact.totalInterestWithPrepayment) / impact.totalInterestWithoutPrepayment * 100 ).toFixed(0))
+                      : '0'}%
+                  </p>
+                  <p className="text-[10px] text-brand-primary/30 font-bold uppercase tracking-[0.3em] font-mono">Interest Reduction Reclaimed</p>
+                </div>
+              </div>
             </div>
-            <p className="text-[10px] text-center text-brand-primary/30 font-bold uppercase tracking-widest">
-              {impact.totalInterestWithoutPrepayment > 0 
-                ? (( (impact.totalInterestWithoutPrepayment - impact.totalInterestWithPrepayment) / impact.totalInterestWithoutPrepayment * 100 ).toFixed(0))
-                : '0'}% Interest Reduction
-            </p>
-          </div>
         </div>
       )}
     </div>
