@@ -131,18 +131,18 @@ export function StrategyInsights({
   };
 
   return (
-    <div className="space-y-12">
+    <div className="space-y-12 pb-24">
       {/* Efficiency & Velocity Dashboard */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
         <div className="bg-brand-surface p-6 md:p-8 border border-brand-border rounded-3xl shadow-sm space-y-4 relative overflow-hidden group">
-          <p className="data-label">Capital Efficiency</p>
+          <p className="data-label">Financial Efficiency</p>
           <div className="flex items-end justify-between relative z-10">
             <h4 className="text-3xl md:text-4xl font-mono font-bold text-brand-primary leading-none">{efficiencyScore.toFixed(0)}%</h4>
             <div className={cn(
               "px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border",
               efficiencyScore > 40 ? "bg-brand-accent/10 text-brand-accent border-brand-accent/20" : "bg-rose-500/10 text-rose-500 border-rose-500/20"
             )}>
-              {efficiencyScore > 40 ? 'High' : 'Low'}
+              {efficiencyScore > 40 ? 'Good' : 'Review'}
             </div>
           </div>
           <div className="h-1 w-full bg-brand-bg rounded-full overflow-hidden">
@@ -177,7 +177,7 @@ export function StrategyInsights({
         </div>
 
         <div className="bg-brand-surface p-6 md:p-8 border border-brand-border rounded-3xl shadow-sm space-y-4 relative overflow-hidden group">
-          <p className="data-label">Commitment Ratio</p>
+          <p className="data-label">Fixed Cost Ratio</p>
           <div className="flex items-end justify-between relative z-10">
             <h4 className="text-3xl md:text-4xl font-mono font-bold text-brand-primary leading-none">{fixedRatio.toFixed(0)}%</h4>
             <p className="data-label !text-brand-primary/20">Fixed</p>
@@ -196,8 +196,8 @@ export function StrategyInsights({
       <div className="bg-brand-surface p-8 md:p-16 border border-brand-border rounded-[2.5rem] shadow-sm space-y-12 md:space-y-16 relative overflow-hidden">
         <div className="absolute inset-0 opacity-[0.02] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#000 1px, transparent 1px)', backgroundSize: '20px 20px' }} />
         <div className="space-y-3 relative z-10">
-          <h3 className="section-header">Operational Vulnerability Audit</h3>
-          <p className="data-label">Structural Capital Leakage & Fixed Exposure Analysis</p>
+          <h3 className="section-header">Expense Audit</h3>
+          <p className="data-label">Analysing fixed costs and discretionary spending patterns</p>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 md:gap-20 relative z-10">
@@ -220,7 +220,7 @@ export function StrategyInsights({
               <div className="space-y-3">
                 <div className="flex items-center gap-3">
                   <div className="w-4 h-[2px] rounded-full bg-brand-primary" />
-                  <p className="data-label">Immutable Obligations</p>
+                  <p className="data-label">Fixed Costs</p>
                 </div>
                 <p className="text-4xl font-mono font-bold text-brand-primary tracking-tight tabular-nums">{fixedRatio.toFixed(0)}%</p>
                 <p className="data-label !text-brand-primary/40 uppercase tracking-widest">{formatCurrency(mandatoryExpenses)}</p>
@@ -228,7 +228,7 @@ export function StrategyInsights({
               <div className="space-y-3">
                 <div className="flex items-center gap-3">
                   <div className="w-4 h-[2px] rounded-full bg-brand-accent/40" />
-                  <p className="data-label">Liquid Discretionary</p>
+                  <p className="data-label">Flex Spending</p>
                 </div>
                 <p className="text-4xl font-mono font-bold text-brand-primary tracking-tight tabular-nums">{discretionaryRatio.toFixed(0)}%</p>
                 <p className="data-label !text-brand-primary/40 uppercase tracking-widest">{formatCurrency(discretionaryExpenses)}</p>
@@ -242,19 +242,19 @@ export function StrategyInsights({
               <div className="absolute top-0 right-0 w-24 h-24 bg-rose-500/5 rounded-full blur-3xl -mr-12 -mt-12 transition-all group-hover:scale-150" />
               <div className="flex items-center gap-4 relative z-10">
                 <AlertTriangle className="w-6 h-6 text-rose-500" />
-                <p className="data-label">Inefficiency Audit</p>
+                <p className="data-label">Savings Opportunities</p>
               </div>
               <div className="space-y-6 relative z-10">
                 {topWaste.length > 0 ? topWaste.map(([cat, amt]) => (
                   <div key={cat} className="flex justify-between items-center border-b border-brand-border/10 pb-4 last:border-0 last:pb-0">
                     <div className="space-y-1">
                       <p className="text-sm font-bold uppercase tracking-tight text-brand-primary leading-none">{cat}</p>
-                      <p className="data-label !text-[8.5px]">Optimization Target</p>
+                      <p className="data-label !text-[8.5px]">Potential for deduction</p>
                     </div>
                     <p className="text-sm font-mono font-bold text-rose-500">{formatCurrency(amt)}</p>
                   </div>
                 )) : (
-                  <p className="data-label !text-brand-primary/30">No significant efficiency leakage identified.</p>
+                  <p className="data-label !text-brand-primary/30">No significant flexible spending found.</p>
                 )}
               </div>
             </div>
@@ -263,19 +263,19 @@ export function StrategyInsights({
               <div className="absolute top-0 right-0 w-24 h-24 bg-brand-primary/5 rounded-full blur-3xl -mr-12 -mt-12 transition-all group-hover:scale-150" />
               <div className="flex items-center gap-4 relative z-10">
                 <ShieldCheck className="w-6 h-6 text-brand-accent/40" />
-                <p className="data-label">Subscription Protocol</p>
+                <p className="data-label">Subscription Audit</p>
               </div>
               <div className="space-y-6 relative z-10">
                 {subscriptionAudit.length > 0 ? subscriptionAudit.map((sub) => (
                   <div key={sub.name} className="flex justify-between items-center border-b border-brand-border/10 pb-4 last:border-0 last:pb-0">
                     <div className="space-y-1">
                       <p className="text-sm font-bold uppercase tracking-tight text-brand-primary leading-none truncate max-w-[120px]">{sub.name}</p>
-                      <p className="data-label !text-[8.5px]">Fixed Interval Burn</p>
+                      <p className="data-label !text-[8.5px]">Regular recurring cost</p>
                     </div>
                     <p className="text-sm font-mono font-bold text-brand-primary">{formatCurrency(sub.amount)}</p>
                   </div>
                 )) : (
-                  <p className="data-label !text-brand-primary/30">Zero subscription commitment detected.</p>
+                  <p className="data-label !text-brand-primary/30">No active subscriptions detected.</p>
                 )}
               </div>
             </div>
@@ -294,8 +294,8 @@ export function StrategyInsights({
               <Sparkles className="w-8 h-8 md:w-12 md:h-12 text-brand-accent animate-pulse" />
             </div>
             <div className="space-y-3">
-              <h3 className="text-4xl md:text-6xl font-sans font-bold uppercase tracking-tighter text-brand-surface leading-none">Strategic Synthesis</h3>
-              <p className="data-label !text-brand-surface/30">Neural Engine Audit v4.1.2 // Capital Allocation Meta-Analysis</p>
+              <h3 className="text-4xl md:text-6xl font-sans font-bold uppercase tracking-tighter text-brand-surface leading-none">AI Advisor</h3>
+              <p className="data-label !text-brand-surface/30">Intelligent Portfolio Analysis & Growth Strategy</p>
             </div>
           </div>
           <button
@@ -304,7 +304,7 @@ export function StrategyInsights({
             className="bg-brand-accent text-brand-primary px-10 md:px-14 py-6 md:py-8 rounded-[2rem] shadow-2xl hover:scale-105 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-4 font-bold text-xs md:text-sm uppercase tracking-[0.4em] w-full md:w-auto"
           >
             {isLoading ? <Loader2 className="w-6 h-6 animate-spin" /> : <TrendingUp className="w-6 h-6" />}
-            {isLoading ? 'Synthesizing...' : 'Run Audit'}
+            {isLoading ? 'Analysing...' : 'Generate Strategy'}
           </button>
         </div>
 
@@ -318,10 +318,10 @@ export function StrategyInsights({
                 </div>
               </div>
               <div className="text-center space-y-4">
-                <p className="text-3xl font-sans font-bold uppercase tracking-tight text-brand-surface animate-pulse">Analyzing Capital Vectors</p>
+                <p className="text-3xl font-sans font-bold uppercase tracking-tight text-brand-surface animate-pulse">Running Calculations</p>
                 <div className="flex items-center gap-3 justify-center opacity-30">
                   <div className="w-8 h-[1px] bg-white" />
-                  <p className="data-label !text-brand-surface">Mapping market arbitrage & systemic risks</p>
+                  <p className="data-label !text-brand-surface">Reviewing spending & goal timelines</p>
                   <div className="w-8 h-[1px] bg-white" />
                 </div>
               </div>
@@ -342,13 +342,13 @@ export function StrategyInsights({
                     <div className="w-8 h-8 rounded-lg bg-brand-accent/20 flex items-center justify-center">
                       <AlertCircle className="w-5 h-5 text-brand-accent" />
                     </div>
-                    <p className="data-label !text-brand-accent">Strategic Drift Identified: Real-telemetry diverging from initial audit baseline.</p>
+                    <p className="data-label !text-brand-accent">Data Change Detected: Your financial situation has updated.</p>
                   </div>
                   <button 
                     onClick={handleGenerate}
                     className="data-label !text-brand-accent underline hover:text-white transition-colors"
                   >
-                    Resynthesize
+                    Refresh Advice
                   </button>
                 </motion.div>
               )}
@@ -366,14 +366,14 @@ export function StrategyInsights({
                   <ShieldCheck className="w-12 h-12 text-brand-surface/10 group-hover/init:text-brand-accent transition-all" />
                 </div>
                 <div className="space-y-4">
-                  <p className="text-4xl font-sans font-bold uppercase tracking-tight text-brand-surface">Cold Engine State</p>
-                  <p className="data-label !text-brand-surface/20">Operationalize data input to enable strategic neural synthesis</p>
+                  <p className="text-4xl font-sans font-bold uppercase tracking-tight text-brand-surface">Strategy Offline</p>
+                  <p className="data-label !text-brand-surface/20">Add transactions to generate your personalized strategy</p>
                 </div>
                 <button
                   className="bg-brand-surface text-brand-primary px-12 py-5 rounded-2xl shadow-2xl font-bold text-xs uppercase tracking-[0.4em] mx-auto flex items-center gap-4 hover:scale-105 transition-all"
                 >
                   <Plus className="w-5 h-5" />
-                  Initialize Synthesis
+                  Request Advice
                 </button>
               </div>
             </div>

@@ -535,10 +535,10 @@ function MainApp() {
       {/* Top Header - Compact Technical Execution */}
       <header className="sticky top-0 z-40 bg-brand-surface/90 backdrop-blur-2xl border-b border-brand-border px-4 py-4 md:px-8 md:py-6">
         <div className="max-w-6xl mx-auto flex justify-between items-center">
-          <div className="flex items-center gap-4 group cursor-pointer">
+          <div className="flex items-center gap-4 group cursor-pointer" onClick={() => setActiveTab('home')}>
             <div className="relative">
               <div className="w-11 h-11 md:w-13 md:h-13 bg-brand-primary text-brand-surface rounded-xl flex items-center justify-center shadow-xl transform group-hover:rotate-6 transition-all duration-500">
-                <Compass className="w-6 h-6 md:w-7 md:h-7 text-brand-accent animate-spin-slow" />
+                <PiggyBank className="w-6 h-6 md:w-7 md:h-7 text-brand-accent transition-transform group-hover:scale-110" />
               </div>
               <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-brand-accent rounded-full border-2 border-brand-surface" />
             </div>
@@ -546,22 +546,22 @@ function MainApp() {
               <span className="text-xl md:text-2xl font-sans font-bold tracking-tight text-brand-primary leading-none block uppercase">Artha</span>
               <div className="flex items-center gap-1.5">
                 <div className="w-1 h-1 rounded-full bg-brand-accent animate-pulse" />
-                <p className="data-label !text-[9px]">Strategic Intelligence Platform</p>
+                <p className="data-label !text-[9px]">Your Personal CFO</p>
               </div>
             </div>
           </div>
           
           <div className="hidden lg:flex items-center gap-8">
             <div className="flex flex-col items-end">
-              <p className="data-label !text-brand-primary/40">Market Volatility</p>
-              <div className="flex items-center gap-1 text-rose-500 font-mono font-bold text-[10px]">
-                <TrendingDown className="w-3 h-3" />
-                <span>+2.45%</span>
+              <p className="data-label !text-brand-primary/40">Market Sentiment</p>
+              <div className="flex items-center gap-1 text-emerald-500 font-mono font-bold text-[10px]">
+                <TrendingUp className="w-3 h-3" />
+                <span>Steady</span>
               </div>
             </div>
             <div className="h-8 w-[1px] bg-brand-border" />
             <div className="flex flex-col items-end">
-              <p className="data-label !text-brand-primary/40">System Status</p>
+              <p className="data-label !text-brand-primary/40">Account Status</p>
               <div className={cn(
                 "px-2 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-widest border mt-1",
                 currentPhase === 'OPTIMIZATION' ? "bg-brand-accent/5 text-brand-accent border-brand-accent/20" : "bg-brand-primary/5 text-brand-primary/40 border-brand-primary/10"
@@ -590,7 +590,7 @@ function MainApp() {
             )}
           >
             <Home className={cn("w-5 h-5 transition-all duration-300", activeTab === 'home' ? "scale-110" : "group-hover:text-brand-primary/50")} />
-            <span className="text-[10px] font-bold uppercase tracking-wider">Matrix</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider">Dashboard</span>
             {activeTab === 'home' && (
               <motion.div layoutId="nav-glow" className="absolute -top-px left-1/2 -translate-x-1/2 w-8 h-0.5 bg-brand-accent shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
             )}
@@ -631,8 +631,8 @@ function MainApp() {
               activeTab === 'insights' ? "text-brand-primary" : "text-brand-primary/25"
             )}
           >
-            <Zap className={cn("w-5 h-5 transition-all duration-300", activeTab === 'insights' ? "scale-110" : "group-hover:text-brand-primary/50")} />
-            <span className="text-[10px] font-bold uppercase tracking-wider">Audit</span>
+            <Sparkles className={cn("w-5 h-5 transition-all duration-300", activeTab === 'insights' ? "scale-110" : "group-hover:text-brand-primary/50")} />
+            <span className="text-[10px] font-bold uppercase tracking-wider">Insights</span>
             {activeTab === 'insights' && (
               <motion.div layoutId="nav-glow" className="absolute -top-px left-1/2 -translate-x-1/2 w-8 h-0.5 bg-brand-accent shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
             )}
@@ -645,7 +645,7 @@ function MainApp() {
             )}
           >
             <Target className={cn("w-5 h-5 transition-all duration-300", activeTab === 'goals' ? "scale-110" : "group-hover:text-brand-primary/50")} />
-            <span className="text-[10px] font-bold uppercase tracking-wider">Portfolio</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider">Goals</span>
             {activeTab === 'goals' && (
               <motion.div layoutId="nav-glow" className="absolute -top-px left-1/2 -translate-x-1/2 w-8 h-0.5 bg-brand-accent shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
             )}
@@ -665,10 +665,10 @@ function MainApp() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-[1px] bg-brand-accent/30" />
-                  <p className="data-label">{now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} // Audit Session</p>
+                  <p className="data-label">{now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} // Morning Overview</p>
                 </div>
               </div>
-              <h1 className="section-header">Asset Position Review</h1>
+              <h1 className="section-header">Financial Position</h1>
             </motion.section>
 
             {/* Unified Strategic Dashboard */}
@@ -680,7 +680,7 @@ function MainApp() {
                 
                 <div className="p-6 md:p-10 space-y-8 relative z-10">
                   <div className="flex flex-col gap-2">
-                    <p className="data-label !text-brand-surface/40">Liquid Liquidity Threshold</p>
+                    <p className="data-label !text-brand-surface/40">Available to Spend</p>
                     <div className="flex justify-between items-end">
                       <h2 className={cn(
                         "text-5xl md:text-7xl font-display font-bold tracking-tight leading-none py-2",
@@ -701,15 +701,15 @@ function MainApp() {
                   </div>
 
                   <div className="grid grid-cols-3 gap-6 border-t border-white/10 pt-8">
-                    <div className="space-y-2">
-                      <p className="data-label !text-brand-surface/30">Survival Runway</p>
+                    <div className="space-y-4">
+                      <p className="data-label !text-brand-surface/30">Months of Buffer</p>
                       <div className="flex items-baseline gap-1.5">
                         <span className="text-2xl md:text-3xl font-mono font-bold text-brand-surface">{runwayMonths.toFixed(1)}</span>
                         <p className="data-label !text-brand-surface/20">Mo</p>
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <p className="data-label !text-brand-surface/30">Capital Yield</p>
+                      <p className="data-label !text-brand-surface/30">Savings Rate</p>
                       <div className="flex items-baseline gap-1.5">
                         <span className="text-2xl md:text-3xl font-mono font-bold text-brand-surface">{savingsEfficiency.toFixed(0)}</span>
                         <p className="data-label !text-brand-surface/20">%</p>
@@ -727,7 +727,7 @@ function MainApp() {
                 {monthlyBudget > 0 && (
                   <div className="px-6 md:px-10 pb-8 md:pb-10">
                     <div className="flex justify-between items-center mb-3">
-                      <p className="data-label !text-brand-surface/20">Resource Depletion Gradient</p>
+                      <p className="data-label !text-brand-surface/20">Monthly Budget Progress</p>
                       <p className="font-mono data-label !text-brand-accent">{budgetPercentage.toFixed(1)}%</p>
                     </div>
                     <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden p-[2px] border border-white/5">
@@ -744,7 +744,7 @@ function MainApp() {
                 )}
               </section>
 
-              {/* Strategic Threshold Audit */}
+              {/* Budget Tracking */}
               {monthlyBudget > 0 && (
                 <motion.div 
                   initial={{ opacity: 0, y: 10 }}
@@ -758,25 +758,25 @@ function MainApp() {
                         <Activity className="w-6 h-6" />
                       </div>
                       <div>
-                        <p className="data-label">Liquidity Audit</p>
-                        <p className="text-xl font-bold text-brand-primary mt-1 tracking-tight">Burn Rate Calibration</p>
+                        <p className="data-label">Spending Analysis</p>
+                        <p className="text-xl font-bold text-brand-primary mt-1 tracking-tight">Daily Spending Pace</p>
                       </div>
                     </div>
                     <div className={cn(
                       "px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider border shadow-sm",
                       isAheadOfBudget ? "text-brand-accent border-brand-accent/20 bg-brand-accent/5" : "text-rose-500 border-rose-500/20 bg-rose-500/5"
                     )}>
-                      {isAheadOfBudget ? 'OPTIMAL' : 'DEFICIT'}
+                      {isAheadOfBudget ? 'ON TRACK' : 'OVER BUDGET'}
                     </div>
                   </div>
                   
                   <div className="grid grid-cols-2 gap-6 relative z-10">
                     <div className="bg-brand-bg/50 p-5 rounded-2xl border border-brand-border/50 space-y-2">
-                      <p className="data-label">Budgeted Pace</p>
+                      <p className="data-label">Daily Limit</p>
                       <p className="text-2xl font-mono font-bold text-brand-primary">{formatCurrency(budgetDailyLimit)}</p>
                     </div>
                     <div className="bg-brand-bg/50 p-5 rounded-2xl border border-brand-border/50 space-y-2">
-                      <p className="data-label">Active Burn</p>
+                      <p className="data-label">Current Pace</p>
                       <p className={cn("text-2xl font-mono font-bold", isAheadOfBudget ? "text-brand-primary" : "text-rose-500")}>
                         {formatCurrency(activeDailyPace)}
                       </p>
@@ -803,7 +803,7 @@ function MainApp() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                       <div className="space-y-4">
                         <label className="data-label flex justify-between leading-none">
-                          Income Changes <span className="text-brand-accent">{((stressTest.incomeShock - 1) * 100).toFixed(0)}%</span>
+                          Income Projection <span className="text-brand-accent">{((stressTest.incomeShock - 1) * 100).toFixed(0)}%</span>
                         </label>
                         <input 
                           type="range" min="0.5" max="1.5" step="0.05" 
@@ -814,7 +814,7 @@ function MainApp() {
                       </div>
                       <div className="space-y-4">
                         <label className="data-label flex justify-between leading-none">
-                          Expense Changes <span className="text-rose-500">{((stressTest.expenseShock - 1) * 100).toFixed(0)}%</span>
+                          Expense Projection <span className="text-rose-500">{((stressTest.expenseShock - 1) * 100).toFixed(0)}%</span>
                         </label>
                         <input 
                           type="range" min="0.5" max="2" step="0.1" 
@@ -865,15 +865,15 @@ function MainApp() {
             {transactions.length > 0 && (
               <section className="space-y-6">
                 <div className="flex items-end justify-between px-1">
-                <div className="space-y-1">
-                  <h3 className="text-2xl md:text-3xl font-display font-bold uppercase tracking-tight text-brand-primary">Recent Activity</h3>
-                  <p className="data-label">Latest Audit Entry Ledger</p>
-                </div>
+                  <div className="space-y-1">
+                    <h3 className="text-2xl md:text-3xl font-display font-bold uppercase tracking-tight text-brand-primary">Transactions</h3>
+                    <p className="data-label">Recent entries from your ledger</p>
+                  </div>
                   <button 
                     onClick={() => setActiveTab('history')}
                     className="text-[10px] font-bold text-brand-accent uppercase tracking-wider transition-all"
                   >
-                    View Full Log
+                    View Ledger
                   </button>
                 </div>
                 <div className="space-y-3">
@@ -929,8 +929,8 @@ function MainApp() {
           <div className="space-y-6 md:space-y-10">
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
               <div className="space-y-1">
-                <h2 className="section-header">Audit Trail</h2>
-                <p className="data-label">Historical Capital Flow Synthesis</p>
+                <h2 className="section-header">Ledger</h2>
+                <p className="data-label">Comprehensive history of your money movement</p>
               </div>
               <button 
                 onClick={() => {
@@ -940,21 +940,21 @@ function MainApp() {
                 className="px-6 py-3 bg-brand-primary text-brand-surface rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-brand-primary/90 transition-all flex items-center gap-3 shadow-xl"
               >
                 <Plus className="w-4 h-4" />
-                Quick Log
+                Add Entry
               </button>
             </div>
 
               <div className="bg-brand-surface rounded-[2rem] border border-brand-border shadow-sm overflow-hidden grid grid-cols-3 divide-x divide-brand-border font-mono relative">
                 <div className="p-5 md:p-8 text-center space-y-2">
-                  <p className="data-label">Operational Outflow</p>
+                  <p className="data-label">Total Spent</p>
                   <p className="text-xl md:text-2xl font-bold text-brand-primary tabular-nums">{formatCurrency(historySummary.spent)}</p>
                 </div>
                 <div className="p-5 md:p-8 text-center space-y-2">
-                  <p className="data-label">Capital Injection</p>
+                  <p className="data-label">Total Earned</p>
                   <p className="text-xl md:text-2xl font-bold text-brand-accent tabular-nums">{formatCurrency(historySummary.earned)}</p>
                 </div>
                 <div className="p-5 md:p-8 text-center space-y-2">
-                  <p className="data-label">Net Delta</p>
+                  <p className="data-label">Net Flow</p>
                   <p className={cn(
                     "text-xl md:text-2xl font-bold tabular-nums",
                     historySummary.net >= 0 ? "text-brand-accent" : "text-rose-500"
@@ -966,8 +966,8 @@ function MainApp() {
 
               <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
                 <div className="space-y-1">
-                  <h2 className="section-header">Operational Log</h2>
-                  <p className="data-label">Immutable Capital History</p>
+                  <h2 className="section-header">All Entries</h2>
+                  <p className="data-label">Every transaction saved to Artha</p>
                 </div>
                 <div className="flex bg-brand-bg p-1.5 rounded-full border border-brand-border shadow-inner">
                   {['All', 'Expenses', 'Income'].map(f => (
@@ -1135,7 +1135,7 @@ function MainApp() {
                   <div className="absolute top-0 right-0 w-32 h-32 bg-brand-accent/10 rounded-full blur-[60px] -mr-16 -mt-16" />
                   <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div className="space-y-0.5">
-                      <p className="text-[9px] font-bold text-brand-surface/40 uppercase tracking-wider">Portfolio Maturity</p>
+                      <p className="text-[9px] font-bold text-brand-surface/40 uppercase tracking-wider">Total Progress</p>
                       <h3 className="text-3xl md:text-4xl font-mono font-bold text-brand-accent leading-none py-1">
                         {totalGoalTarget > 0 ? totalGoalProgress.toFixed(1) : "0"}%
                       </h3>
@@ -1430,7 +1430,7 @@ function GoalItem({ goal, transactions, isDemo, onEdit }: { goal: Goal, transact
         </div>
         <div className="text-right">
           <p className="text-3xl font-mono font-bold text-brand-primary tabular-nums leading-none">{progress.toFixed(0)}%</p>
-          <p className="data-label mt-2">Maturity</p>
+          <p className="data-label mt-2">Saved</p>
         </div>
       </div>
 
@@ -1446,11 +1446,11 @@ function GoalItem({ goal, transactions, isDemo, onEdit }: { goal: Goal, transact
       <div className="mt-auto pt-8 border-t border-brand-border space-y-8 relative z-10">
         <div className="flex justify-between items-end">
           <div className="space-y-3">
-            <p className="data-label">Periodic Allotment</p>
+            <p className="data-label">Monthly Addition</p>
             <p className="text-2xl md:text-3xl font-mono font-bold text-brand-primary leading-none tabular-nums">{formatCurrency(simulationValue)}</p>
           </div>
           <div className="text-right space-y-3">
-            <p className="data-label">Est. Freedom</p>
+            <p className="data-label">Estimated Completion</p>
             <p className="text-lg md:text-xl font-bold uppercase tracking-tighter text-brand-accent leading-none">
               {freedomDate ? freedomDate.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : 'N/A'}
             </p>
@@ -1692,12 +1692,12 @@ function CommandCenter({
                 </div>
                 <div className="space-y-0.5">
                   <h3 className="text-[11px] font-bold text-brand-primary uppercase tracking-widest leading-none">
-                    {activeTab === 'terminal' ? 'Tactical Hub' :
-                     activeTab === 'transaction' ? 'Manual Entry' :
-                     activeTab === 'budget' ? 'Liquidity Guard' : 'Strategy Portfolio'}
+                    {activeTab === 'terminal' ? 'Action Center' :
+                     activeTab === 'transaction' ? 'Quick Add' :
+                     activeTab === 'budget' ? 'Budgeting' : 'Financial Goals'}
                   </h3>
                   <p className="text-[8px] font-mono font-bold text-brand-primary/30 uppercase tracking-[0.25em] leading-none">
-                    {activeTab === 'terminal' ? 'Neural Logic Terminal' : 'High-Precision Protocol'}
+                    {activeTab === 'terminal' ? 'AI Assistant' : 'Update your ledger'}
                   </p>
                 </div>
               </div>
@@ -1715,7 +1715,7 @@ function CommandCenter({
                 <div className="space-y-4 px-1 py-1">
                   <div className="relative group/field">
                     <div className="absolute -top-3.5 left-1 opacity-0 group-focus-within/field:opacity-100 transition-all">
-                      <p className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-accent">Awaiting Natural Language Metadata</p>
+                      <p className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-accent">Describe your transaction or goal</p>
                     </div>
                     <input 
                       ref={smartInputRef}
@@ -1879,10 +1879,10 @@ function BudgetModalContent({ onClose, monthlyBudget, setMonthlyBudget }: { onCl
         <div className="bg-brand-primary/3 border border-brand-primary/5 p-3 rounded-lg space-y-1.5">
           <div className="flex items-center gap-2">
             <Activity className="w-3.5 h-3.5 text-brand-accent" />
-            <p className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary">Allocation Paradox</p>
+            <p className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary">Budget Analysis</p>
           </div>
           <p className="text-[9px] text-brand-primary/40 font-medium leading-relaxed">
-            Allocations exceeding 50% of monthly net-velocity indicate systemic fixed-burn risk. Defensive perimeter strategy active.
+            Allocations exceeding 50% of monthly income suggest higher fixed costs. We recommend monitoring discretionary spend closely.
           </p>
         </div>
       </div>
@@ -1894,7 +1894,7 @@ function BudgetModalContent({ onClose, monthlyBudget, setMonthlyBudget }: { onCl
         }}
         className="w-full py-3 bg-brand-primary text-brand-surface rounded-lg font-bold text-[9px] uppercase tracking-[0.3em] hover:bg-brand-primary/95 transition-all shadow-md active:scale-[0.98] border border-white/10"
       >
-        Authorize Liquidity Perimeter
+        Update Budget
       </button>
     </div>
   );
@@ -2062,7 +2062,7 @@ function TransactionForm({ onClose, userId, transactions, goals }: { onClose: ()
 
       <div className="space-y-4">
         <div className="group/input space-y-2">
-          <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Magnitude</label>
+          <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Amount</label>
           <div className="relative">
             <span className="absolute left-4 top-1/2 -translate-y-1/2 font-mono font-bold text-brand-primary/10 group-focus-within/input:text-brand-accent transition-colors text-base">₹</span>
             <input 
@@ -2078,7 +2078,7 @@ function TransactionForm({ onClose, userId, transactions, goals }: { onClose: ()
         </div>
 
         <div className="space-y-2">
-          <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Categorical Taxonomy</label>
+          <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Category</label>
           <div className="grid grid-cols-2 gap-3 pb-1">
             <div className="relative group/select">
                <select 
