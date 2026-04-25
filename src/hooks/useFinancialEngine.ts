@@ -48,7 +48,24 @@ export function useFinancialEngine(
 
   const activeDailyPace = spentThisMonth / Math.max(1, today.getDate());
   const projectedMonthlyBurn = activeDailyPace * 30;
-  const monthlyBurn = projectedMonthlyBurn > 0 ? projectedMonthlyBurn : (totalExpenses / Math.max(1, transactions.length / 30 || 1));
+  const monthlyBurn = useMemo(() => {
+    const expenseTransactions = transactions.filter(t => t.type === 'expense');
+    if (expenseTransactions.length === 0) return 0;
+
+    const firstDate = new Date(transactions[transactions.length - 1].date);
+    const daysSinceFirst = Math.max(1, (today.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24));
+    
+    // Historical monthly burn based on entire transaction ledger
+    const historicalMonthlyBurn = (totalExpenses / Math.max(1, daysSinceFirst)) * 30;
+    
+    // Strategic weighted blend: 
+    // 70% current active month trajectory (projectedMonthlyBurn)
+    // 30% all-time historical monthly burn
+    if (projectedMonthlyBurn > 0) {
+      return (projectedMonthlyBurn * 0.7) + (historicalMonthlyBurn * 0.3);
+    }
+    return historicalMonthlyBurn;
+  }, [projectedMonthlyBurn, totalExpenses, transactions, today]);
   
   const runwayMonths = monthlyBurn > 0 ? (liquidAssets / (monthlyBurn * (stressTest.expenseShock || 1))) : 0;
   
@@ -66,15 +83,40 @@ export function useFinancialEngine(
                 .reduce((acc, t) => acc + t.amount, 0),
   [transactions, today]);
 
-  const last7Days = useMemo(() => Array.from({ length: 7 }, (_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() - (6 - i));
-    d.setHours(0, 0, 0, 0);
-    const amount = transactions
-      .filter(t => t.type === 'expense' && new Date(t.date).toDateString() === d.toDateString())
-      .reduce((acc, t) => acc + t.amount, 0);
-    return { day: d.toLocaleDateString('en-GB', { weekday: 'short' }), amount };
-  }), [transactions]);
+  const last7Days = useMemo(() => {
+    const dates = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(today);
+      d.setDate(today.getDate() - (6 - i));
+      return d.toDateString();
+    });
+
+    const dailyMap: Record<string, number> = {};
+    dates.forEach(date => dailyMap[date] = 0);
+
+    const sevenDaysAgo = new Date(today);
+    sevenDaysAgo.setDate(today.getDate() - 6);
+
+    transactions.forEach(t => {
+      if (t.type === 'expense') {
+        const tDate = new Date(t.date);
+        tDate.setHours(0, 0, 0, 0);
+        if (tDate >= sevenDaysAgo) {
+          const dateStr = tDate.toDateString();
+          if (dailyMap[dateStr] !== undefined) {
+            dailyMap[dateStr] += t.amount;
+          }
+        }
+      }
+    });
+
+    return dates.map(dateStr => {
+      const d = new Date(dateStr);
+      return { 
+        day: d.toLocaleDateString('en-GB', { weekday: 'short' }), 
+        amount: dailyMap[dateStr] 
+      };
+    });
+  }, [transactions, today]);
 
   const avgDailySpend = last7Days.reduce((acc, d) => acc + d.amount, 0) / 7;
   const remainingDays = Math.max(1, daysInMonth - today.getDate() + 1);

@@ -30,13 +30,25 @@ const callPlatformAI = async (endpoint: string, prompt: string): Promise<string>
 };
 
 export const generateCFOStrategy = async (transactions: Transaction[], goals: Goal[]): Promise<string> => {
+  // Deep Audit Summarization to avoid token overflow while maintaining strategic depth
+  const categorySummary = transactions.reduce((acc: any, t) => {
+    acc[t.category] = (acc[t.category] || 0) + (t.type === 'income' ? t.amount : -t.amount);
+    return acc;
+  }, {});
+
+  const recentAnomalies = transactions
+    .filter(t => t.type === 'expense' && t.amount > 5000)
+    .slice(0, 5);
+
   const prompt = `
 # PERSONAL CFO PROTOCOL (MCKINSEY-LEVEL STRATEGY)
 Analyze capital flows and provide a sequence-over-parallel plan.
 
-## DATA INPUTS
-- Transactions: ${JSON.stringify(transactions)}
-- Goals: ${JSON.stringify(goals)}
+## DATA SUMMARY
+- Category Net Flows: ${JSON.stringify(categorySummary)}
+- Total Goals: ${goals.length}
+- Recent Large Outflows: ${JSON.stringify(recentAnomalies)}
+- Goal Status: ${goals.map(g => `${g.name}: ${g.currentAmount}/${g.targetAmount}`).join(', ')}
 
 ## Mission
 Audit leakage and calculate 'Cost of Delay'. 
@@ -49,7 +61,7 @@ Audit leakage and calculate 'Cost of Delay'.
 5. PHASE-WISE STRATEGY (Stabilization → Acceleration → Optimization)
 6. HOME LOAN STRATEGY
 7. INVESTMENT ALLOCATION
-8. SCENARIO COMPARISON (Conservative vs. Aggressive)
+8. SCENARIO COMPARISON
 9. RISKS & ADJUSTMENTS
 `;
 

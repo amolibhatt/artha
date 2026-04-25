@@ -131,60 +131,79 @@ export function StrategyInsights({
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-12">
       {/* Efficiency & Velocity Dashboard */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
-        <div className="bg-brand-surface p-6 md:p-8 border border-brand-border rounded-3xl shadow-sm space-y-3 md:space-y-4">
-          <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest">Capital Efficiency</p>
-          <div className="flex items-end gap-3">
-            <h4 className="text-3xl md:text-4xl font-mono font-bold text-brand-primary leading-tight py-1">{efficiencyScore.toFixed(0)}%</h4>
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+        <div className="bg-brand-surface p-6 md:p-8 border border-brand-border rounded-3xl shadow-sm space-y-4 relative overflow-hidden group">
+          <p className="data-label">Capital Efficiency</p>
+          <div className="flex items-end justify-between relative z-10">
+            <h4 className="text-3xl md:text-4xl font-mono font-bold text-brand-primary leading-none">{efficiencyScore.toFixed(0)}%</h4>
             <div className={cn(
-              "px-2 py-0.5 rounded text-[10px] font-bold uppercase",
-              efficiencyScore > 40 ? "bg-brand-accent/10 text-brand-accent" : "bg-rose-500/10 text-rose-500"
+              "px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border",
+              efficiencyScore > 40 ? "bg-brand-accent/10 text-brand-accent border-brand-accent/20" : "bg-rose-500/10 text-rose-500 border-rose-500/20"
             )}>
               {efficiencyScore > 40 ? 'High' : 'Low'}
             </div>
           </div>
-          <p className="text-[10px] text-brand-primary/40 leading-relaxed uppercase tracking-widest font-bold opacity-40">Efficiency Index</p>
+          <div className="h-1 w-full bg-brand-bg rounded-full overflow-hidden">
+            <motion.div 
+              initial={{ width: 0 }}
+              animate={{ width: `${efficiencyScore}%` }}
+              className={cn("h-full", efficiencyScore > 40 ? "bg-brand-accent" : "bg-rose-500")}
+            />
+          </div>
         </div>
 
-        <div className="bg-brand-surface p-6 md:p-8 border border-brand-border rounded-3xl shadow-sm space-y-3 md:space-y-4">
-          <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest">Spending Velocity</p>
-          <div className="flex items-end gap-3">
-            <h4 className="text-3xl md:text-4xl font-mono font-bold text-brand-primary leading-tight py-1">
+        <div className="bg-brand-surface p-6 md:p-8 border border-brand-border rounded-3xl shadow-sm space-y-4 relative overflow-hidden group">
+          <p className="data-label">Spending Velocity</p>
+          <div className="flex items-end justify-between relative z-10">
+            <h4 className="text-3xl md:text-4xl font-mono font-bold text-brand-primary leading-none">
               {velocityAudit.change > 0 ? '+' : ''}{velocityAudit.change.toFixed(0)}%
             </h4>
             <div className={cn(
-              "px-2 py-0.5 rounded text-[10px] font-bold uppercase",
-              velocityAudit.change <= 0 ? "bg-brand-accent/10 text-brand-accent" : "bg-rose-500/10 text-rose-500"
+              "px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border",
+              velocityAudit.change <= 5 ? "bg-brand-accent/10 text-brand-accent border-brand-accent/20" : "bg-rose-500/10 text-rose-500 border-rose-500/20"
             )}>
-              {velocityAudit.change <= 0 ? 'Stable' : 'Accelerating'}
+              {velocityAudit.change <= 5 ? 'Stable' : 'Rapid'}
             </div>
           </div>
-          <p className="text-[10px] text-brand-primary/40 leading-relaxed uppercase tracking-widest font-bold opacity-40">Velocity Index</p>
+          <div className="h-1 w-full bg-brand-bg rounded-full overflow-hidden relative">
+             <div className="absolute left-1/2 top-0 h-full w-[1px] bg-brand-border z-10" />
+             <div className={cn(
+               "h-full transition-all",
+               velocityAudit.change > 0 ? "bg-rose-500" : "bg-brand-accent"
+             )} style={{ width: `${Math.min(Math.abs(velocityAudit.change), 100)}%`, marginLeft: velocityAudit.change > 0 ? '50%' : `${50 - Math.min(Math.abs(velocityAudit.change), 50)}%` }} />
+          </div>
         </div>
 
-        <div className="bg-brand-surface p-6 md:p-8 border border-brand-border rounded-3xl shadow-sm space-y-3 md:space-y-4 sm:col-span-2 md:col-span-1">
-          <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest">Commitment Ratio</p>
-          <h4 className="text-3xl md:text-4xl font-mono font-bold text-brand-primary leading-tight py-1">{fixedRatio.toFixed(0)}%</h4>
-          <div className="h-1 w-full bg-brand-bg rounded-full overflow-hidden">
-            <div className="h-full bg-brand-primary" style={{ width: `${fixedRatio}%` }} />
+        <div className="bg-brand-surface p-6 md:p-8 border border-brand-border rounded-3xl shadow-sm space-y-4 relative overflow-hidden group">
+          <p className="data-label">Commitment Ratio</p>
+          <div className="flex items-end justify-between relative z-10">
+            <h4 className="text-3xl md:text-4xl font-mono font-bold text-brand-primary leading-none">{fixedRatio.toFixed(0)}%</h4>
+            <p className="data-label !text-brand-primary/20">Fixed</p>
           </div>
-          <p className="text-[10px] text-brand-primary/40 leading-relaxed uppercase tracking-widest font-bold opacity-40">Fixed Obligation Index</p>
+          <div className="h-1 w-full bg-brand-bg rounded-full overflow-hidden">
+            <motion.div 
+               initial={{ width: 0 }}
+               animate={{ width: `${fixedRatio}%` }}
+               className="h-full bg-brand-primary"
+            />
+          </div>
         </div>
       </div>
 
       {/* Recurring Commitment Audit */}
-      <div className="bg-brand-surface p-6 md:p-12 border border-brand-border rounded-3xl shadow-sm space-y-8 md:space-y-10">
-        <div className="space-y-2">
-          <h3 className="text-2xl md:text-3xl font-sans font-bold uppercase tracking-tight text-brand-primary">Commitment Audit</h3>
-          <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-[0.3em]">Fixed vs. Discretionary Analysis</p>
+      <div className="bg-brand-surface p-8 md:p-16 border border-brand-border rounded-[2.5rem] shadow-sm space-y-12 md:space-y-16 relative overflow-hidden">
+        <div className="absolute inset-0 opacity-[0.02] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#000 1px, transparent 1px)', backgroundSize: '20px 20px' }} />
+        <div className="space-y-3 relative z-10">
+          <h3 className="section-header">Operational Vulnerability Audit</h3>
+          <p className="data-label">Structural Capital Leakage & Fixed Exposure Analysis</p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 md:gap-12">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 md:gap-20 relative z-10">
           {/* Visual Breakdown */}
-          <div className="space-y-8">
-            <div className="h-4 w-full bg-brand-bg rounded-full overflow-hidden flex">
+          <div className="space-y-12">
+            <div className="h-4 w-full bg-brand-bg rounded-full overflow-hidden flex border border-brand-border p-0.5">
               <motion.div 
                 initial={{ width: 0 }}
                 animate={{ width: `${fixedRatio}%` }}
@@ -193,69 +212,70 @@ export function StrategyInsights({
               <motion.div 
                 initial={{ width: 0 }}
                 animate={{ width: `${discretionaryRatio}%` }}
-                className="h-full bg-brand-accent/30"
+                className="h-full bg-brand-accent/20"
               />
             </div>
             
-            <div className="grid grid-cols-2 gap-8">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-brand-primary" />
-                  <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest">Fixed (Mandatory)</p>
+            <div className="grid grid-cols-2 gap-12">
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-4 h-[2px] rounded-full bg-brand-primary" />
+                  <p className="data-label">Immutable Obligations</p>
                 </div>
-                <p className="text-2xl font-mono font-bold text-brand-primary">{fixedRatio.toFixed(0)}%</p>
-                <p className="text-xs text-brand-primary/60 font-mono">{formatCurrency(mandatoryExpenses)}</p>
+                <p className="text-4xl font-mono font-bold text-brand-primary tracking-tight tabular-nums">{fixedRatio.toFixed(0)}%</p>
+                <p className="data-label !text-brand-primary/40 uppercase tracking-widest">{formatCurrency(mandatoryExpenses)}</p>
               </div>
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-brand-accent/30" />
-                  <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest">Discretionary</p>
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-4 h-[2px] rounded-full bg-brand-accent/40" />
+                  <p className="data-label">Liquid Discretionary</p>
                 </div>
-                <p className="text-2xl font-mono font-bold text-brand-primary">{discretionaryRatio.toFixed(0)}%</p>
-                <p className="text-xs text-brand-primary/60 font-mono">{formatCurrency(discretionaryExpenses)}</p>
+                <p className="text-4xl font-mono font-bold text-brand-primary tracking-tight tabular-nums">{discretionaryRatio.toFixed(0)}%</p>
+                <p className="data-label !text-brand-primary/40 uppercase tracking-widest">{formatCurrency(discretionaryExpenses)}</p>
               </div>
             </div>
           </div>
 
           {/* Structural Waste Identification */}
-          <div className="space-y-8">
-            <div className="bg-brand-bg/50 p-6 rounded-2xl border border-brand-border space-y-6">
-              <div className="flex items-center gap-3">
-                <AlertTriangle className="w-4 h-4 text-brand-accent" />
-                <p className="text-[10px] font-bold text-brand-primary/60 uppercase tracking-widest">Structural Waste Audit</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+            <div className="bg-brand-bg/50 p-8 rounded-[2rem] border border-brand-border space-y-8 relative overflow-hidden group">
+              <div className="absolute top-0 right-0 w-24 h-24 bg-rose-500/5 rounded-full blur-3xl -mr-12 -mt-12 transition-all group-hover:scale-150" />
+              <div className="flex items-center gap-4 relative z-10">
+                <AlertTriangle className="w-6 h-6 text-rose-500" />
+                <p className="data-label">Inefficiency Audit</p>
               </div>
-              <div className="space-y-4">
+              <div className="space-y-6 relative z-10">
                 {topWaste.length > 0 ? topWaste.map(([cat, amt]) => (
-                  <div key={cat} className="flex justify-between items-center">
-                    <div className="space-y-0.5">
-                      <p className="text-sm font-sans font-bold uppercase tracking-tight text-brand-primary leading-tight py-0.5">{cat}</p>
-                      <p className="text-[10px] text-brand-primary/40 uppercase tracking-widest leading-relaxed py-0.25">Potential Optimization</p>
+                  <div key={cat} className="flex justify-between items-center border-b border-brand-border/10 pb-4 last:border-0 last:pb-0">
+                    <div className="space-y-1">
+                      <p className="text-sm font-bold uppercase tracking-tight text-brand-primary leading-none">{cat}</p>
+                      <p className="data-label !text-[8.5px]">Optimization Target</p>
                     </div>
-                    <p className="text-sm font-mono font-bold text-brand-primary">{formatCurrency(amt)}</p>
+                    <p className="text-sm font-mono font-bold text-rose-500">{formatCurrency(amt)}</p>
                   </div>
                 )) : (
-                  <p className="text-xs text-brand-primary/40 font-bold uppercase tracking-widest">No significant discretionary waste identified.</p>
+                  <p className="data-label !text-brand-primary/30">No significant efficiency leakage identified.</p>
                 )}
               </div>
             </div>
 
-            {/* Subscription Audit */}
-            <div className="bg-brand-bg/50 p-6 rounded-2xl border border-brand-border space-y-6">
-              <div className="flex items-center gap-3">
-                <ShieldCheck className="w-4 h-4 text-brand-primary/40" />
-                <p className="text-[10px] font-bold text-brand-primary/60 uppercase tracking-widest">Subscription Audit</p>
+            <div className="bg-brand-bg/50 p-8 rounded-[2rem] border border-brand-border space-y-8 relative overflow-hidden group">
+              <div className="absolute top-0 right-0 w-24 h-24 bg-brand-primary/5 rounded-full blur-3xl -mr-12 -mt-12 transition-all group-hover:scale-150" />
+              <div className="flex items-center gap-4 relative z-10">
+                <ShieldCheck className="w-6 h-6 text-brand-accent/40" />
+                <p className="data-label">Subscription Protocol</p>
               </div>
-              <div className="space-y-4">
+              <div className="space-y-6 relative z-10">
                 {subscriptionAudit.length > 0 ? subscriptionAudit.map((sub) => (
-                  <div key={sub.name} className="flex justify-between items-center">
-                    <div className="space-y-0.5">
-                      <p className="text-xs font-bold text-brand-primary uppercase tracking-wide leading-tight py-0.5">{sub.name}</p>
-                      <p className="text-[10px] text-brand-primary/40 uppercase tracking-widest leading-relaxed py-0.25">{sub.frequency} Commitment</p>
+                  <div key={sub.name} className="flex justify-between items-center border-b border-brand-border/10 pb-4 last:border-0 last:pb-0">
+                    <div className="space-y-1">
+                      <p className="text-sm font-bold uppercase tracking-tight text-brand-primary leading-none truncate max-w-[120px]">{sub.name}</p>
+                      <p className="data-label !text-[8.5px]">Fixed Interval Burn</p>
                     </div>
                     <p className="text-sm font-mono font-bold text-brand-primary">{formatCurrency(sub.amount)}</p>
                   </div>
                 )) : (
-                  <p className="text-xs text-brand-primary/40 font-bold uppercase tracking-widest">No recurring subscriptions detected.</p>
+                  <p className="data-label !text-brand-primary/30">Zero subscription commitment detected.</p>
                 )}
               </div>
             </div>
@@ -264,82 +284,96 @@ export function StrategyInsights({
       </div>
 
       {/* AI Strategy Audit */}
-      <div className="bg-brand-surface p-6 md:p-12 border border-brand-border rounded-3xl shadow-sm space-y-8 md:space-y-10 relative overflow-hidden group">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 md:gap-8 relative z-10">
-          <div className="flex items-center gap-4 md:gap-6">
-            <div className="w-12 h-12 md:w-16 md:h-16 bg-brand-primary/5 rounded-2xl flex items-center justify-center transition-all duration-700 group-hover:scale-105">
-              <Sparkles className="w-6 h-6 md:w-8 md:h-8 text-brand-primary" />
+      <div className="bg-brand-primary text-brand-surface p-10 md:p-20 rounded-[3rem] shadow-[0_64px_128px_-32px_rgba(0,0,0,0.6)] space-y-12 md:space-y-16 relative overflow-hidden group">
+        <div className="absolute inset-0 opacity-[0.05] pointer-events-none" style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '100px 100px' }} />
+        <div className="absolute top-0 right-0 w-full h-full bg-brand-accent rounded-full blur-[180px] -mr-[30%] -mt-[30%] opacity-20 pointer-events-none" />
+        
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-10 md:gap-14 relative z-10">
+          <div className="flex items-center gap-8 md:gap-10">
+            <div className="w-16 h-16 md:w-24 md:h-24 bg-white/5 rounded-[2rem] flex items-center justify-center border border-white/10 shadow-inner group-hover:rotate-12 transition-all duration-700 backdrop-blur-3xl">
+              <Sparkles className="w-8 h-8 md:w-12 md:h-12 text-brand-accent animate-pulse" />
             </div>
-            <div className="space-y-1">
-              <h3 className="text-2xl md:text-3xl font-sans font-bold uppercase tracking-tight text-brand-primary leading-tight py-1">Strategic Audit</h3>
-              <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-[0.3em] leading-relaxed py-0.5">Capital Optimization Engine</p>
+            <div className="space-y-3">
+              <h3 className="text-4xl md:text-6xl font-sans font-bold uppercase tracking-tighter text-brand-surface leading-none">Strategic Synthesis</h3>
+              <p className="data-label !text-brand-surface/30">Neural Engine Audit v4.1.2 // Capital Allocation Meta-Analysis</p>
             </div>
           </div>
           <button
             onClick={handleGenerate}
             disabled={isLoading}
-            className="bg-brand-primary text-brand-surface px-6 md:px-8 py-3.5 md:py-4 rounded-xl shadow-lg hover:bg-brand-primary/90 transition-all disabled:opacity-50 flex items-center justify-center gap-3 font-bold text-[10px] md:text-xs uppercase tracking-widest w-full md:w-auto"
+            className="bg-brand-accent text-brand-primary px-10 md:px-14 py-6 md:py-8 rounded-[2rem] shadow-2xl hover:scale-105 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-4 font-bold text-xs md:text-sm uppercase tracking-[0.4em] w-full md:w-auto"
           >
-            {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <TrendingUp className="w-4 h-4" />}
-            {isLoading ? 'Processing' : 'Run Audit'}
+            {isLoading ? <Loader2 className="w-6 h-6 animate-spin" /> : <TrendingUp className="w-6 h-6" />}
+            {isLoading ? 'Synthesizing...' : 'Run Audit'}
           </button>
         </div>
 
         <AnimatePresence mode="wait">
           {isLoading && !strategy ? (
-            <div className="py-20 flex flex-col items-center justify-center gap-6 relative z-10">
-              <Loader2 className="w-12 h-12 animate-spin text-brand-primary/20" />
-              <div className="text-center space-y-2">
-                <p className="text-lg font-sans font-bold uppercase tracking-tight text-brand-primary animate-pulse">Analyzing Capital Vectors</p>
-                <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-[0.2em]">Synthesizing market arbitrage opportunities</p>
+            <div className="py-32 flex flex-col items-center justify-center gap-10 relative z-10">
+              <div className="relative">
+                <Loader2 className="w-24 h-24 animate-spin text-brand-accent/20" />
+                <div className="absolute inset-0 flex items-center justify-center">
+                   <div className="w-4 h-4 bg-brand-accent rounded-full animate-ping" />
+                </div>
+              </div>
+              <div className="text-center space-y-4">
+                <p className="text-3xl font-sans font-bold uppercase tracking-tight text-brand-surface animate-pulse">Analyzing Capital Vectors</p>
+                <div className="flex items-center gap-3 justify-center opacity-30">
+                  <div className="w-8 h-[1px] bg-white" />
+                  <p className="data-label !text-brand-surface">Mapping market arbitrage & systemic risks</p>
+                  <div className="w-8 h-[1px] bg-white" />
+                </div>
               </div>
             </div>
           ) : strategy ? (
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="relative z-10 space-y-6"
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="relative z-10 space-y-12"
             >
               {isDriftDetected && (
                 <motion.div 
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="bg-brand-accent/10 border border-brand-accent/20 p-4 rounded-2xl flex items-center justify-between"
+                  initial={{ opacity: 0, y: -20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="glass-panel p-6 rounded-[1.5rem] flex items-center justify-between border-brand-accent/20"
                 >
-                  <div className="flex items-center gap-3">
-                    <AlertCircle className="w-4 h-4 text-brand-accent" />
-                    <p className="text-[10px] font-bold text-brand-accent uppercase tracking-widest leading-none">Strategic Drift Detected: Capital vectors have shifted.</p>
+                  <div className="flex items-center gap-4">
+                    <div className="w-8 h-8 rounded-lg bg-brand-accent/20 flex items-center justify-center">
+                      <AlertCircle className="w-5 h-5 text-brand-accent" />
+                    </div>
+                    <p className="data-label !text-brand-accent">Strategic Drift Identified: Real-telemetry diverging from initial audit baseline.</p>
                   </div>
                   <button 
                     onClick={handleGenerate}
-                    className="text-[9px] font-bold text-brand-accent underline uppercase tracking-widest"
+                    className="data-label !text-brand-accent underline hover:text-white transition-colors"
                   >
-                    Refresh Audit
+                    Resynthesize
                   </button>
                 </motion.div>
               )}
-              <div className="bg-brand-bg/50 p-8 md:p-10 rounded-2xl border border-brand-border relative overflow-hidden">
-                <div className="markdown-body relative z-10 text-brand-primary/80 leading-relaxed">
+              <div className="bg-white/[0.03] p-10 md:p-16 rounded-[2.5rem] border border-white/10 relative overflow-hidden backdrop-blur-3xl shadow-inner">
+                <div className="markdown-body relative z-10 prose prose-invert prose-brand max-w-none">
                   <Markdown>{strategy}</Markdown>
                 </div>
               </div>
             </motion.div>
           ) : (
-            <div className="border-2 border-dashed border-brand-border p-16 text-center relative z-10 bg-brand-bg/30 rounded-3xl">
-              <div className="space-y-8">
-                <div className="w-16 h-16 bg-brand-surface rounded-2xl flex items-center justify-center mx-auto shadow-sm">
-                  <ShieldCheck className="w-8 h-8 text-brand-primary/20" />
+            <div className="border-4 border-dashed border-white/10 p-24 text-center relative z-10 bg-white/[0.02] rounded-[3rem] group/init cursor-pointer hover:border-brand-accent/40 transition-all"
+                 onClick={handleGenerate}>
+              <div className="space-y-10">
+                <div className="w-24 h-24 bg-white/5 rounded-3xl flex items-center justify-center mx-auto shadow-sm group-hover/init:rotate-45 transition-all duration-700">
+                  <ShieldCheck className="w-12 h-12 text-brand-surface/10 group-hover/init:text-brand-accent transition-all" />
                 </div>
-                <div className="space-y-2">
-                  <p className="text-2xl font-sans font-bold uppercase tracking-tight text-brand-primary">System Ready</p>
-                  <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-[0.2em]">Log transactions to enable capital efficiency analysis</p>
+                <div className="space-y-4">
+                  <p className="text-4xl font-sans font-bold uppercase tracking-tight text-brand-surface">Cold Engine State</p>
+                  <p className="data-label !text-brand-surface/20">Operationalize data input to enable strategic neural synthesis</p>
                 </div>
                 <button
-                  onClick={handleGenerate}
-                  className="bg-brand-primary text-brand-surface px-8 py-4 rounded-xl shadow-lg hover:bg-brand-primary/90 transition-all font-bold text-xs uppercase tracking-widest mx-auto flex items-center gap-3"
+                  className="bg-brand-surface text-brand-primary px-12 py-5 rounded-2xl shadow-2xl font-bold text-xs uppercase tracking-[0.4em] mx-auto flex items-center gap-4 hover:scale-105 transition-all"
                 >
-                  <Plus className="w-4 h-4" />
-                  Initiate Audit
+                  <Plus className="w-5 h-5" />
+                  Initialize Synthesis
                 </button>
               </div>
             </div>
@@ -347,10 +381,16 @@ export function StrategyInsights({
         </AnimatePresence>
 
         {error && (
-          <div className="p-6 bg-rose-500/10 text-rose-500 border border-rose-500/20 rounded-2xl flex items-center gap-4 text-xs font-bold uppercase tracking-widest">
-            <AlertCircle className="w-5 h-5" />
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="p-8 bg-rose-500/10 text-rose-500 border border-rose-500/20 rounded-[2rem] flex items-center gap-6 text-[10px] font-bold uppercase tracking-[0.3em] relative z-10"
+          >
+            <div className="w-10 h-10 bg-rose-500/20 rounded-xl flex items-center justify-center">
+               <AlertCircle className="w-5 h-5" />
+            </div>
             {error}
-          </div>
+          </motion.div>
         )}
       </div>
     </div>

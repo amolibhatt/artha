@@ -24,9 +24,13 @@ import {
   Calendar,
   Info,
   Trash2,
+  CheckCircle2,
   List,
   Zap,
   ArrowDownRight,
+  ArrowUpRight,
+  CornerDownLeft,
+  ChevronRight,
   AlertCircle,
   Terminal,
   Activity,
@@ -76,19 +80,19 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
               <ShieldCheck className="w-10 h-10 text-rose-500" />
             </div>
             <div className="space-y-4">
-              <h2 className="text-4xl font-sans font-bold uppercase tracking-tight text-brand-primary leading-tight py-1">System Alert</h2>
-              <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-[0.2em] leading-relaxed">
+              <h2 className="text-4xl font-sans font-semibold uppercase tracking-tight text-brand-primary leading-tight py-1">System Alert</h2>
+            <p className="data-label">
                 A critical runtime exception occurred. The audit trail has been preserved for diagnosis.
               </p>
             </div>
             <div className="bg-brand-bg p-6 rounded-2xl border border-brand-border text-left overflow-auto max-h-40">
-              <code className="text-[10px] font-mono text-brand-primary/60 break-all">
+              <code className="text-xs font-mono text-brand-primary/60 break-all">
                 {this.state.error?.message || "Unknown Error"}
               </code>
             </div>
             <button 
               onClick={() => window.location.reload()}
-              className="w-full py-5 bg-brand-primary text-brand-surface rounded-xl font-bold text-xs uppercase tracking-[0.2em] hover:bg-brand-primary/90 transition-all shadow-xl"
+              className="w-full py-5 bg-brand-primary text-brand-surface rounded-xl font-semibold text-xs uppercase tracking-[0.2em] hover:bg-brand-primary/90 transition-all shadow-xl"
             >
               Reboot Session
             </button>
@@ -133,6 +137,15 @@ function MainApp() {
   const [showTotalPurgeConfirm, setShowTotalPurgeConfirm] = useState(false);
   const [isPurging, setIsPurging] = useState(false);
 
+  const timeouts = useRef<Record<string, NodeJS.Timeout>>({});
+
+  useEffect(() => {
+    return () => {
+      // Cleanup all tactical timeouts on unmount
+      Object.values(timeouts.current).forEach(clearTimeout);
+    };
+  }, []);
+
   const handleDeleteTransaction = async (t: Transaction) => {
     if (!t.id) return;
     if (transactionIdToConfirmDelete === t.id) {
@@ -150,6 +163,8 @@ function MainApp() {
       }
     } else {
       setTransactionIdToConfirmDelete(t.id);
+      if (timeouts.current.delete) clearTimeout(timeouts.current.delete);
+      timeouts.current.delete = setTimeout(() => setTransactionIdToConfirmDelete(null), 4000);
     }
   };
 
@@ -161,6 +176,28 @@ function MainApp() {
     localStorage.setItem('stressTest', JSON.stringify(stressTest));
   }, [stressTest]);
   const [showStressTest, setShowStressTest] = useState(false);
+  const [streakCount, setStreakCount] = useState(() => Number(localStorage.getItem('streakCount') || 0));
+  const [lastCheckIn, setLastCheckIn] = useState(() => localStorage.getItem('lastCheckIn') || '');
+  const [isReadyForCheckIn, setIsReadyForCheckIn] = useState(false);
+
+  useEffect(() => {
+    const today = new Date().toISOString().split('T')[0];
+    if (lastCheckIn !== today) {
+      setIsReadyForCheckIn(true);
+    }
+  }, [lastCheckIn]);
+
+  const authorizeDailyReady = () => {
+    const today = new Date().toISOString().split('T')[0];
+    const newStreak = lastCheckIn === '' || (new Date(today).getTime() - new Date(lastCheckIn).getTime()) <= 86400000 * 2 
+      ? streakCount + 1 
+      : 1;
+    setStreakCount(newStreak);
+    setLastCheckIn(today);
+    setIsReadyForCheckIn(false);
+    localStorage.setItem('streakCount', String(newStreak));
+    localStorage.setItem('lastCheckIn', today);
+  };
 
   useEffect(() => {
     // Show mobile tip if on mobile and not standalone
@@ -201,8 +238,7 @@ function MainApp() {
     const tQuery = query(
       collection(db, 'transactions'),
       where('userId', '==', user.uid),
-      orderBy('date', 'desc'),
-      limit(50)
+      orderBy('date', 'desc')
     );
 
     const gQuery = query(
@@ -264,6 +300,12 @@ function MainApp() {
     avgDailySpend,
     remainingDays
   } = useFinancialEngine(transactions, goals, monthlyBudget, stressTest);
+
+  // QA Logic: McKinsey-level strategic thresholds
+  const healthStatus = runwayMonths >= 6 ? 'STABILIZED' : runwayMonths >= 3 ? 'WARNING' : 'CRITICAL';
+  const currentPhase = healthStatus === 'STABILIZED' 
+    ? (goals.some(g => g.currentAmount >= g.targetAmount) ? 'OPTIMIZATION' : 'ACCELERATION') 
+    : 'STABILIZATION';
 
   // Predictive Analytics - Stress Test Synchronized
   const projectedMonthlySpend = (spentThisMonth + (avgDailySpend * remainingDays)) * stressTest.expenseShock;
@@ -354,9 +396,14 @@ function MainApp() {
     return <List className="w-5 h-5" />;
   };
 
-  const totalSavedTowardGoals = goals.reduce((acc, g) => acc + g.currentAmount, 0);
+  const totalLiquidReserves = goals
+    .filter(g => g.type === 'savings' || g.type === 'investment')
+    .reduce((acc, g) => acc + g.currentAmount, 0);
+  const totalDebtPaid = goals
+    .filter(g => g.type === 'debt')
+    .reduce((acc, g) => acc + g.currentAmount, 0);
   const totalGoalTarget = goals.reduce((acc, g) => acc + g.targetAmount, 0);
-  const totalGoalCurrent = totalSavedTowardGoals;
+  const totalGoalCurrent = goals.reduce((acc, g) => acc + g.currentAmount, 0);
   const totalGoalProgress = totalGoalTarget > 0 ? (totalGoalCurrent / totalGoalTarget) * 100 : 0;
 
   const categoryData = transactions
@@ -429,20 +476,28 @@ function MainApp() {
           className="max-w-md w-full text-center space-y-12 relative z-10"
         >
           <div className="flex justify-center">
-            <div className="w-20 h-20 bg-brand-primary flex items-center justify-center rounded-2xl shadow-2xl">
-              <Compass className="w-10 h-10 text-brand-surface" />
+            <div className="relative group">
+              <div className="w-24 h-24 bg-brand-primary flex items-center justify-center rounded-3xl shadow-2xl transform group-hover:scale-105 transition-all duration-500 overflow-hidden">
+                <Terminal className="w-12 h-12 text-brand-accent transition-all group-hover:rotate-12" />
+                <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-white/10" />
+              </div>
+              <div className="absolute -top-2 -right-2 w-4 h-4 bg-brand-accent rounded-full border-4 border-brand-bg animate-pulse shadow-[0_0_15px_rgba(16,185,129,0.5)]" />
             </div>
           </div>
           <div className="space-y-4">
-            <h1 className="text-5xl font-sans font-bold uppercase tracking-tight text-brand-primary">Artha AI</h1>
-            <p className="text-brand-primary/40 font-mono text-[10px] font-bold uppercase tracking-[0.4em]">Capital Wealth Protocol</p>
+            <div className="inline-flex items-center gap-2 px-3 py-1 bg-brand-primary/5 border border-brand-primary/10 rounded-full mb-2">
+              <div className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-ping" />
+              <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest">Artha AI</p>
+            </div>
+            <h1 className="text-6xl font-sans font-bold uppercase tracking-tight text-brand-primary leading-none">Artha</h1>
+            <p className="text-brand-accent data-label mt-2">Capital Strategic Framework</p>
           </div>
           <div className="space-y-6">
             <button
               onClick={handleSignIn}
               disabled={isSigningIn}
               className={cn(
-                "w-full flex items-center justify-center gap-4 bg-brand-primary text-brand-surface py-5 px-8 rounded-xl font-bold text-xs uppercase tracking-[0.2em] hover:bg-brand-primary/90 transition-all shadow-xl active:scale-[0.98]",
+                "w-full flex items-center justify-center gap-4 bg-brand-primary text-brand-surface py-5 px-8 rounded-xl font-semibold text-xs uppercase tracking-[0.2em] hover:bg-brand-primary/90 transition-all shadow-xl active:scale-[0.98]",
                 isSigningIn && "opacity-50 cursor-not-allowed"
               )}
             >
@@ -460,7 +515,7 @@ function MainApp() {
                 animate={{ opacity: 1, scale: 1 }}
                 className="bg-rose-500/10 border border-rose-500/20 p-4 rounded-lg"
               >
-                <p className="text-[10px] font-bold text-rose-500 uppercase tracking-widest leading-relaxed">
+                <p className="data-label text-rose-500 leading-relaxed">
                   {authError}
                 </p>
               </motion.div>
@@ -477,136 +532,123 @@ function MainApp() {
 
   return (
     <div className="min-h-screen bg-brand-bg text-brand-primary font-sans pb-24 md:pb-32">
-      {/* Top Header - Compact for Mobile */}
-      <header className="sticky top-0 z-40 bg-brand-surface/80 backdrop-blur-md border-b border-brand-border px-4 py-3 md:px-6 md:py-5">
-        <div className="max-w-5xl mx-auto flex justify-between items-center">
-          <div className="flex items-center gap-3 md:gap-4">
-            <div className="w-8 h-8 md:w-10 md:h-10 bg-brand-primary flex items-center justify-center rounded-lg shadow-sm">
-              <Compass className="w-5 h-5 md:w-6 md:h-6 text-brand-surface" />
+      {/* Top Header - Compact Technical Execution */}
+      <header className="sticky top-0 z-40 bg-brand-surface/90 backdrop-blur-2xl border-b border-brand-border px-4 py-4 md:px-8 md:py-6">
+        <div className="max-w-6xl mx-auto flex justify-between items-center">
+          <div className="flex items-center gap-4 group cursor-pointer">
+            <div className="relative">
+              <div className="w-11 h-11 md:w-13 md:h-13 bg-brand-primary text-brand-surface rounded-xl flex items-center justify-center shadow-xl transform group-hover:rotate-6 transition-all duration-500">
+                <Compass className="w-6 h-6 md:w-7 md:h-7 text-brand-accent animate-spin-slow" />
+              </div>
+              <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-brand-accent rounded-full border-2 border-brand-surface" />
             </div>
-            <div>
-              <span className="text-lg md:text-xl font-sans font-bold uppercase tracking-tight text-brand-primary leading-tight">Artha AI</span>
-              <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-widest leading-tight mt-1">
-                {monthlyBudget === 0 ? 'Protocol Inactive' : 'Capital Audit Active'}
-              </p>
+            <div className="space-y-0.5">
+              <span className="text-xl md:text-2xl font-sans font-bold tracking-tight text-brand-primary leading-none block uppercase">Artha</span>
+              <div className="flex items-center gap-1.5">
+                <div className="w-1 h-1 rounded-full bg-brand-accent animate-pulse" />
+                <p className="data-label !text-[9px]">Strategic Intelligence Platform</p>
+              </div>
             </div>
           </div>
-          <div className="flex items-center gap-4 md:gap-6">
-            <button 
-              type="button"
-              onClick={async () => {
-                if (showTotalPurgeConfirm) {
-                  try {
-                    setIsPurging(true);
-                    const tSnap = await getDocs(query(collection(db, 'transactions'), where('userId', '==', user.uid)));
-                    const gSnap = await getDocs(query(collection(db, 'goals'), where('userId', '==', user.uid)));
-                    
-                    const batch: Promise<void>[] = [];
-                    for (const docRef of tSnap.docs) { batch.push(deleteDoc(doc(db, 'transactions', docRef.id))); }
-                    for (const docRef of gSnap.docs) { batch.push(deleteDoc(doc(db, 'goals', docRef.id))); }
-                    
-                    await Promise.all(batch);
-                    localStorage.removeItem('monthlyBudget');
-                    localStorage.removeItem('stressTest');
-                    window.location.reload();
-                  } catch (e) {
-                    handleFirestoreError(e, OperationType.DELETE, 'global_purge');
-                    setIsPurging(false);
-                    setShowTotalPurgeConfirm(false);
-                  }
-                } else {
-                  setShowTotalPurgeConfirm(true);
-                  setTimeout(() => setShowTotalPurgeConfirm(false), 5000); // Auto-abort after 5s
-                }
-              }}
-              className={cn(
-                "w-10 h-10 md:w-12 md:h-12 flex items-center justify-center rounded-xl border-2 transition-all shadow-lg active:scale-90",
-                showTotalPurgeConfirm 
-                  ? "bg-rose-500 text-white border-rose-600 animate-pulse" 
-                  : "border-rose-500/20 bg-rose-500/5 text-rose-500 hover:bg-rose-500 hover:text-white"
-              )}
-              title="FACTORY DATA PURGE"
-              disabled={isPurging}
-            >
-              {isPurging ? (
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              ) : showTotalPurgeConfirm ? (
-                <AlertTriangle className="w-5 h-5" />
-              ) : (
-                <Trash2 className="w-4 h-4 md:w-5 md:h-5" />
-              )}
-            </button>
-            <div className="hidden sm:flex flex-col items-end">
-              <span className="text-xs font-bold text-brand-primary uppercase tracking-wide">{user.displayName}</span>
-              <span className="text-[10px] text-brand-primary/40 font-medium">{user.email}</span>
+          
+          <div className="hidden lg:flex items-center gap-8">
+            <div className="flex flex-col items-end">
+              <p className="data-label !text-brand-primary/40">Market Volatility</p>
+              <div className="flex items-center gap-1 text-rose-500 font-mono font-bold text-[10px]">
+                <TrendingDown className="w-3 h-3" />
+                <span>+2.45%</span>
+              </div>
             </div>
-            <button 
-              onClick={logout}
-              className="w-8 h-8 md:w-10 md:h-10 flex items-center justify-center rounded-lg border border-brand-border hover:bg-brand-bg transition-all text-brand-primary/40 hover:text-brand-primary"
-              title="Logout"
-            >
-              <LogOut className="w-3.5 h-3.5 md:w-4 md:h-4" />
-            </button>
+            <div className="h-8 w-[1px] bg-brand-border" />
+            <div className="flex flex-col items-end">
+              <p className="data-label !text-brand-primary/40">System Status</p>
+              <div className={cn(
+                "px-2 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-widest border mt-1",
+                currentPhase === 'OPTIMIZATION' ? "bg-brand-accent/5 text-brand-accent border-brand-accent/20" : "bg-brand-primary/5 text-brand-primary/40 border-brand-primary/10"
+              )}>
+                {currentPhase}
+              </div>
+            </div>
+          </div>
+
+          <div className="lg:hidden flex flex-col items-end gap-1">
+             <div className="w-10 h-10 rounded-xl bg-brand-bg border border-brand-border flex items-center justify-center">
+                <div className="w-1 h-1 rounded-full bg-brand-accent animate-ping" />
+             </div>
           </div>
         </div>
       </header>
 
-      {/* Bottom Navigation - Mobile Standard */}
-      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-brand-surface/90 backdrop-blur-lg border-t border-brand-border px-2 pb-safe">
-        <div className="max-w-lg mx-auto flex justify-around items-center h-16">
+      {/* Bottom Navigation - Tactical Switcher */}
+      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-brand-surface/95 backdrop-blur-3xl border-t border-brand-border px-6 pb-safe">
+        <div className="max-w-xl mx-auto flex justify-between items-center h-24">
           <button 
             onClick={() => setActiveTab('home')}
             className={cn(
-              "flex flex-col items-center justify-center gap-1 w-full h-full transition-all",
-              activeTab === 'home' ? "text-brand-primary" : "text-brand-primary/30"
+              "flex flex-col items-center justify-center gap-1.5 flex-1 h-full transition-all relative group",
+              activeTab === 'home' ? "text-brand-primary" : "text-brand-primary/25"
             )}
           >
-            <Home className={cn("w-5 h-5 transition-all", activeTab === 'home' ? "text-brand-accent scale-110" : "text-brand-primary/30")} />
-            <span className="text-[10px] font-bold uppercase tracking-widest">Home</span>
+            <Home className={cn("w-5 h-5 transition-all duration-300", activeTab === 'home' ? "scale-110" : "group-hover:text-brand-primary/50")} />
+            <span className="text-[10px] font-bold uppercase tracking-wider">Matrix</span>
+            {activeTab === 'home' && (
+              <motion.div layoutId="nav-glow" className="absolute -top-px left-1/2 -translate-x-1/2 w-8 h-0.5 bg-brand-accent shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+            )}
           </button>
+          
           <button 
             onClick={() => setActiveTab('history')}
             className={cn(
-              "flex flex-col items-center justify-center gap-1 w-full h-full transition-all",
-              activeTab === 'history' ? "text-brand-primary" : "text-brand-primary/30"
+              "flex flex-col items-center justify-center gap-1.5 flex-1 h-full transition-all relative group",
+              activeTab === 'history' ? "text-brand-primary" : "text-brand-primary/25"
             )}
           >
-            <List className={cn("w-5 h-5 transition-all", activeTab === 'history' ? "text-brand-accent scale-110" : "text-brand-primary/30")} />
-            <span className="text-[10px] font-bold uppercase tracking-widest">Audit</span>
+            <List className={cn("w-5 h-5 transition-all duration-300", activeTab === 'history' ? "scale-110" : "group-hover:text-brand-primary/50")} />
+            <span className="text-[10px] font-bold uppercase tracking-wider">Ledger</span>
+            {activeTab === 'history' && (
+              <motion.div layoutId="nav-glow" className="absolute -top-px left-1/2 -translate-x-1/2 w-8 h-0.5 bg-brand-accent shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+            )}
           </button>
           
-          {/* Central Action Button */}
-          <div className="relative -top-4">
+          {/* Central Execution Hub */}
+          <div className="flex-1 flex justify-center -mt-10 relative">
             <button 
               onClick={() => {
                 setCommandTab('transaction');
                 setShowCommandCenter(true);
               }}
-              className="w-14 h-14 bg-brand-primary text-brand-surface rounded-full flex items-center justify-center shadow-2xl border-4 border-brand-bg active:scale-90 transition-all font-bold"
+              className="w-16 h-16 bg-brand-primary text-brand-accent rounded-2xl flex items-center justify-center shadow-xl border-4 border-brand-bg active:scale-95 transition-all relative z-10"
+              title="Tactical Entry"
             >
-              <Plus className="w-6 h-6" />
+              <Plus className="w-8 h-8" />
             </button>
           </div>
 
           <button 
             onClick={() => setActiveTab('insights')}
             className={cn(
-              "flex flex-col items-center justify-center gap-1 w-full h-full transition-all",
-              activeTab === 'insights' ? "text-brand-primary" : "text-brand-primary/30"
+              "flex flex-col items-center justify-center gap-1.5 flex-1 h-full transition-all relative group",
+              activeTab === 'insights' ? "text-brand-primary" : "text-brand-primary/25"
             )}
           >
-            <Zap className={cn("w-5 h-5 transition-all", activeTab === 'insights' ? "text-brand-accent scale-110" : "text-brand-primary/30")} />
-            <span className="text-[10px] font-bold uppercase tracking-widest">Intel</span>
+            <Zap className={cn("w-5 h-5 transition-all duration-300", activeTab === 'insights' ? "scale-110" : "group-hover:text-brand-primary/50")} />
+            <span className="text-[10px] font-bold uppercase tracking-wider">Audit</span>
+            {activeTab === 'insights' && (
+              <motion.div layoutId="nav-glow" className="absolute -top-px left-1/2 -translate-x-1/2 w-8 h-0.5 bg-brand-accent shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+            )}
           </button>
           <button 
             onClick={() => setActiveTab('goals')}
             className={cn(
-              "flex flex-col items-center justify-center gap-1 w-full h-full transition-all",
-              activeTab === 'goals' ? "text-brand-primary" : "text-brand-primary/30"
+              "flex flex-col items-center justify-center gap-1.5 flex-1 h-full transition-all relative group",
+              activeTab === 'goals' ? "text-brand-primary" : "text-brand-primary/25"
             )}
           >
-            <Target className={cn("w-5 h-5 transition-all", activeTab === 'goals' ? "text-brand-accent scale-110" : "text-brand-primary/30")} />
-            <span className="text-[10px] font-bold uppercase tracking-widest">Goals</span>
+            <Target className={cn("w-5 h-5 transition-all duration-300", activeTab === 'goals' ? "scale-110" : "group-hover:text-brand-primary/50")} />
+            <span className="text-[10px] font-bold uppercase tracking-wider">Portfolio</span>
+            {activeTab === 'goals' && (
+              <motion.div layoutId="nav-glow" className="absolute -top-px left-1/2 -translate-x-1/2 w-8 h-0.5 bg-brand-accent shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+            )}
           </button>
         </div>
       </nav>
@@ -618,105 +660,137 @@ function MainApp() {
             <motion.section 
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="space-y-1 py-2"
+              className="space-y-2 py-2"
             >
-              <div className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-brand-accent shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
-                <p className="text-[9px] font-bold text-brand-primary/30 uppercase tracking-widest font-mono">Dossier // {now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</p>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-[1px] bg-brand-accent/30" />
+                  <p className="data-label">{now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} // Audit Session</p>
+                </div>
               </div>
-              <h1 className="text-xl md:text-2xl font-sans font-bold text-brand-primary uppercase tracking-tight">Active Strategy Snapshot</h1>
+              <h1 className="section-header">Asset Position Review</h1>
             </motion.section>
 
             {/* Unified Strategic Dashboard */}
             <div className="space-y-3 md:space-y-4">
-              <section className="bg-brand-primary text-brand-surface rounded-3xl md:rounded-[2.5rem] overflow-hidden shadow-2xl relative group border border-white/5">
-                <div className="absolute inset-0 opacity-[0.03] pointer-events-none" 
-                  style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '40px 40px' }} 
+              <section className="bg-brand-primary text-brand-surface rounded-[2rem] md:rounded-[3rem] overflow-hidden shadow-2xl relative group border border-white/5 pt-8 md:pt-10">
+                <div className="absolute inset-0 opacity-[0.05] pointer-events-none" 
+                  style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '60px 60px' }} 
                 />
-                <div className="absolute top-0 right-0 w-full h-full opacity-10 pointer-events-none overflow-hidden">
-                  <div className="absolute -top-24 -right-24 w-96 h-96 bg-brand-accent rounded-full blur-[100px]" />
-                </div>
                 
-                <div className="p-4 md:p-6 space-y-4 relative z-10">
-                  {/* Primary Metric */}
-                  <div className="flex justify-between items-center bg-brand-surface/5 p-4 md:p-6 rounded-2xl border border-white/5">
-                    <div className="space-y-0.5">
-                      <p className="text-[9px] font-bold text-brand-surface/30 uppercase tracking-widest font-mono leading-none">
-                        {monthlyBudget === 0 ? 'NOT SET' : 'SAFE TO SPEND'}
-                      </p>
+                <div className="p-6 md:p-10 space-y-8 relative z-10">
+                  <div className="flex flex-col gap-2">
+                    <p className="data-label !text-brand-surface/40">Liquid Liquidity Threshold</p>
+                    <div className="flex justify-between items-end">
                       <h2 className={cn(
-                        "text-4xl md:text-6xl font-mono font-bold tracking-tighter leading-none py-1",
-                        (monthlyBudget === 0) ? "text-brand-surface/10" : (stressTest.incomeShock !== 1 || stressTest.expenseShock !== 1 ? "text-brand-accent" : "text-brand-surface")
+                        "text-5xl md:text-7xl font-display font-bold tracking-tight leading-none py-2",
+                        (monthlyBudget === 0) ? "text-brand-surface/10" : "text-brand-surface"
                       )}>
                         {monthlyBudget === 0 ? '₹0' : formatCurrency(adjustedLeftToSpend)}
                       </h2>
-                    </div>
-                    {monthlyBudget === 0 ? (
-                      <button 
-                        onClick={() => {
-                          setCommandTab('budget');
-                          setShowCommandCenter(true);
-                        }}
-                        className="w-10 h-10 flex items-center justify-center rounded-xl bg-brand-accent text-brand-primary shadow-lg"
-                      >
-                        <Plus className="w-5 h-5" />
-                      </button>
-                    ) : (
                       <button 
                         onClick={() => setShowStressTest(!showStressTest)}
                         className={cn(
-                          "w-10 h-10 flex items-center justify-center rounded-xl transition-all active:scale-95",
-                          showStressTest ? "bg-brand-accent text-brand-primary" : "bg-brand-surface/10 text-brand-surface border border-brand-surface/10"
+                          "w-12 h-12 flex items-center justify-center rounded-2xl transition-all active:scale-90 border mb-2",
+                          showStressTest ? "bg-brand-accent border-brand-accent text-brand-primary shadow-[0_0_20px_rgba(16,185,129,0.3)]" : "bg-brand-surface/5 border-white/10 text-brand-surface"
                         )}
                       >
                         <Zap className="w-5 h-5" />
                       </button>
-                    )}
+                    </div>
                   </div>
 
-                  {/* Strategic Vitals Strip */}
-                  <div className="grid grid-cols-3 gap-4 border-t border-white/10 pt-6">
-                    <div className="space-y-1 border-r border-white/5 pr-4">
-                      <p className="text-[8px] font-bold text-brand-surface/30 uppercase tracking-widest font-mono">Runway</p>
-                      <div className="flex items-baseline gap-1">
-                        <span className="text-lg md:text-xl font-mono font-bold text-brand-surface">{runwayMonths.toFixed(1)}</span>
-                        <span className="text-[8px] font-bold text-brand-surface/20 uppercase font-mono">M</span>
+                  <div className="grid grid-cols-3 gap-6 border-t border-white/10 pt-8">
+                    <div className="space-y-2">
+                      <p className="data-label !text-brand-surface/30">Survival Runway</p>
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-2xl md:text-3xl font-mono font-bold text-brand-surface">{runwayMonths.toFixed(1)}</span>
+                        <p className="data-label !text-brand-surface/20">Mo</p>
                       </div>
                     </div>
-                    <div className="space-y-1 border-r border-white/5 pr-4">
-                      <p className="text-[8px] font-bold text-brand-surface/30 uppercase tracking-widest font-mono">Efficiency</p>
-                      <p className="text-lg md:text-xl font-mono font-bold text-brand-surface">{savingsEfficiency.toFixed(0)}%</p>
+                    <div className="space-y-2">
+                      <p className="data-label !text-brand-surface/30">Capital Yield</p>
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-2xl md:text-3xl font-mono font-bold text-brand-surface">{savingsEfficiency.toFixed(0)}</span>
+                        <p className="data-label !text-brand-surface/20">%</p>
+                      </div>
                     </div>
-                    <div className="space-y-1">
-                      <p className="text-[8px] font-bold text-brand-surface/30 uppercase tracking-widest font-mono">Net Delta</p>
-                      <p className={cn("text-lg md:text-xl font-mono font-bold", balance >= 0 ? "text-brand-accent" : "text-rose-400")}>
-                        {balance >= 0 ? '+' : ''}{Math.abs(balance) > 1000 ? (balance/1000).toFixed(1) + 'k' : balance}
-                      </p>
+                    <div className="space-y-4">
+                      <p className="data-label !text-brand-surface/30">Monthly Goal Status</p>
+                      <div className={cn("text-2xl md:text-3xl font-bold font-mono", balance >= 0 ? "text-brand-accent" : "text-rose-400")}>
+                        {balance >= 0 ? '+' : ''}{Math.abs(balance) > 1000 ? (balance/1000).toFixed(1) + 'k' : Math.abs(balance).toFixed(0)}
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                  {/* Micro Burn Trajectory */}
-                  {monthlyBudget > 0 && (
-                    <div className="space-y-2 border-t border-white/5 pt-4">
-                      <div className="flex justify-between items-center text-[8px] font-bold text-white/30 uppercase tracking-widest font-mono">
-                        <span>Burn Trajectory</span>
-                        <span>{budgetPercentage.toFixed(0)}% Utilized</span>
+                {monthlyBudget > 0 && (
+                  <div className="px-6 md:px-10 pb-8 md:pb-10">
+                    <div className="flex justify-between items-center mb-3">
+                      <p className="data-label !text-brand-surface/20">Resource Depletion Gradient</p>
+                      <p className="font-mono data-label !text-brand-accent">{budgetPercentage.toFixed(1)}%</p>
+                    </div>
+                    <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden p-[2px] border border-white/5">
+                      <motion.div 
+                        initial={{ width: 0 }}
+                        animate={{ width: `${Math.min(budgetPercentage, 100)}%` }}
+                        className={cn(
+                          "h-full rounded-full transition-all duration-1000",
+                          budgetPercentage > (now.getDate() / daysInMonth * 100) ? "bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.5)]" : "bg-brand-accent shadow-[0_0_10px_rgba(16,185,129,0.5)]"
+                        )}
+                      />
+                    </div>
+                  </div>
+                )}
+              </section>
+
+              {/* Strategic Threshold Audit */}
+              {monthlyBudget > 0 && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-brand-surface border border-brand-border rounded-[2rem] p-6 md:p-8 space-y-6 shadow-sm relative overflow-hidden"
+                >
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-brand-bg rounded-full blur-3xl -mr-16 -mt-16" />
+                  <div className="flex items-center justify-between border-b border-brand-border pb-6 relative z-10">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-[1.25rem] bg-brand-primary/5 flex items-center justify-center text-brand-primary/40 border border-brand-border shadow-inner">
+                        <Activity className="w-6 h-6" />
                       </div>
-                      <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden border border-white/5">
-                        <motion.div 
-                          initial={{ width: 0 }}
-                          animate={{ width: `${Math.min(budgetPercentage, 100)}%` }}
-                          className={cn(
-                            "h-full transition-all duration-1000",
-                            budgetPercentage > (now.getDate() / daysInMonth * 100) ? "bg-rose-500" : "bg-brand-accent"
-                          )}
-                        />
+                      <div>
+                        <p className="data-label">Liquidity Audit</p>
+                        <p className="text-xl font-bold text-brand-primary mt-1 tracking-tight">Burn Rate Calibration</p>
                       </div>
                     </div>
-                  )}
+                    <div className={cn(
+                      "px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider border shadow-sm",
+                      isAheadOfBudget ? "text-brand-accent border-brand-accent/20 bg-brand-accent/5" : "text-rose-500 border-rose-500/20 bg-rose-500/5"
+                    )}>
+                      {isAheadOfBudget ? 'OPTIMAL' : 'DEFICIT'}
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-6 relative z-10">
+                    <div className="bg-brand-bg/50 p-5 rounded-2xl border border-brand-border/50 space-y-2">
+                      <p className="data-label">Budgeted Pace</p>
+                      <p className="text-2xl font-mono font-bold text-brand-primary">{formatCurrency(budgetDailyLimit)}</p>
+                    </div>
+                    <div className="bg-brand-bg/50 p-5 rounded-2xl border border-brand-border/50 space-y-2">
+                      <p className="data-label">Active Burn</p>
+                      <p className={cn("text-2xl font-mono font-bold", isAheadOfBudget ? "text-brand-primary" : "text-rose-500")}>
+                        {formatCurrency(activeDailyPace)}
+                      </p>
+                    </div>
+                  </div>
 
-              </section>
+                  <div className="flex justify-between items-center px-2 relative z-10">
+                    <p className="data-label">Net Variance</p>
+                    <p className={cn("text-sm font-mono font-bold", budgetVariance >= 0 ? "text-brand-accent" : "text-rose-500")}>
+                      {budgetVariance >= 0 ? '+' : '-'}{formatCurrency(Math.abs(budgetVariance))}
+                    </p>
+                  </div>
+                </motion.div>
+              )}
 
               <AnimatePresence>
                 {showStressTest && (
@@ -726,10 +800,10 @@ function MainApp() {
                     exit={{ opacity: 0, y: -10 }}
                     className="p-6 bg-brand-surface border border-brand-border rounded-3xl"
                   >
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 font-mono">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                       <div className="space-y-4">
-                        <label className="text-[9px] font-bold text-brand-primary/40 uppercase tracking-widest flex justify-between leading-none">
-                          Inflow Variability <span className="text-brand-accent">{((stressTest.incomeShock - 1) * 100).toFixed(0)}%</span>
+                        <label className="data-label flex justify-between leading-none">
+                          Income Changes <span className="text-brand-accent">{((stressTest.incomeShock - 1) * 100).toFixed(0)}%</span>
                         </label>
                         <input 
                           type="range" min="0.5" max="1.5" step="0.05" 
@@ -739,8 +813,8 @@ function MainApp() {
                         />
                       </div>
                       <div className="space-y-4">
-                        <label className="text-[9px] font-bold text-brand-primary/40 uppercase tracking-widest flex justify-between leading-none">
-                          Outflow Shock <span className="text-rose-500">{((stressTest.expenseShock - 1) * 100).toFixed(0)}%</span>
+                        <label className="data-label flex justify-between leading-none">
+                          Expense Changes <span className="text-rose-500">{((stressTest.expenseShock - 1) * 100).toFixed(0)}%</span>
                         </label>
                         <input 
                           type="range" min="0.5" max="2" step="0.1" 
@@ -765,10 +839,10 @@ function MainApp() {
                     <div className="w-8 h-8 bg-brand-accent/10 rounded-xl flex items-center justify-center">
                       <TrendingUp className="w-4 h-4 text-brand-accent" />
                     </div>
-                    <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-brand-accent font-mono leading-relaxed py-0.5">CFO Insight</p>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-brand-accent leading-relaxed">AI Advisor</p>
                   </div>
-                  <p className="text-sm md:text-lg text-brand-primary/80 leading-relaxed font-sans font-medium uppercase tracking-wide relative z-10">
-                    "{goals.length > 0
+                  <p className="text-base md:text-xl text-brand-primary/80 leading-relaxed font-display font-bold tracking-tight relative z-10">
+                    {goals.length > 0
                       ? (budgetPercentage < 50 
                           ? "You're spending less than planned. Consider moving some surplus into your long-term goals."
                           : budgetPercentage > 90 
@@ -779,7 +853,7 @@ function MainApp() {
                           : budgetPercentage > 90
                           ? "Liquidity is tightening. Audit non-essential outflows to stabilize capital reserves."
                           : "Cash flow is balanced. Protocol recommends defining a financial target.")
-                    }"
+                    }
                   </p>
                 </div>
 
@@ -791,13 +865,13 @@ function MainApp() {
             {transactions.length > 0 && (
               <section className="space-y-6">
                 <div className="flex items-end justify-between px-1">
-                  <div className="space-y-0.5">
-                    <h3 className="text-2xl md:text-3xl font-sans font-bold uppercase tracking-tight text-brand-primary">Recent Activity</h3>
-                    <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-[0.3em] font-mono">Latest Audit Entries</p>
-                  </div>
+                <div className="space-y-1">
+                  <h3 className="text-2xl md:text-3xl font-display font-bold uppercase tracking-tight text-brand-primary">Recent Activity</h3>
+                  <p className="data-label">Latest Audit Entry Ledger</p>
+                </div>
                   <button 
                     onClick={() => setActiveTab('history')}
-                    className="text-[10px] font-bold text-brand-accent uppercase tracking-[0.2em] hover:tracking-[0.3em] transition-all font-mono"
+                    className="text-[10px] font-bold text-brand-accent uppercase tracking-wider transition-all"
                   >
                     View Full Log
                   </button>
@@ -811,7 +885,7 @@ function MainApp() {
                         </div>
                         <div className="space-y-1">
                           <p className="text-sm font-bold text-brand-primary uppercase tracking-wide leading-tight">{t.description}</p>
-                          <p className="text-[10px] font-bold text-brand-primary/30 uppercase tracking-[0.2em] leading-relaxed py-0.5">{t.category}</p>
+                          <p className="text-[10px] font-bold text-brand-primary/30 uppercase tracking-wider leading-relaxed py-0.5">{t.category}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-4">
@@ -854,9 +928,9 @@ function MainApp() {
         {activeTab === 'history' && (
           <div className="space-y-6 md:space-y-10">
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-              <div className="space-y-0.5">
-                <h2 className="text-3xl font-sans font-bold uppercase tracking-tight text-brand-primary">Audit Trail</h2>
-                <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-[0.3em] font-mono">Historical Capital Flow</p>
+              <div className="space-y-1">
+                <h2 className="section-header">Audit Trail</h2>
+                <p className="data-label">Historical Capital Flow Synthesis</p>
               </div>
               <button 
                 onClick={() => {
@@ -870,46 +944,46 @@ function MainApp() {
               </button>
             </div>
 
-            <div className="bg-brand-surface rounded-3xl border border-brand-border shadow-sm overflow-hidden grid grid-cols-3 divide-x divide-brand-border font-mono relative">
-              <div className="p-4 md:p-6 text-center space-y-1">
-                <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest leading-none">Spent</p>
-                <p className="text-lg md:text-xl font-bold text-brand-primary tabular-nums">{formatCurrency(historySummary.spent)}</p>
+              <div className="bg-brand-surface rounded-[2rem] border border-brand-border shadow-sm overflow-hidden grid grid-cols-3 divide-x divide-brand-border font-mono relative">
+                <div className="p-5 md:p-8 text-center space-y-2">
+                  <p className="data-label">Operational Outflow</p>
+                  <p className="text-xl md:text-2xl font-bold text-brand-primary tabular-nums">{formatCurrency(historySummary.spent)}</p>
+                </div>
+                <div className="p-5 md:p-8 text-center space-y-2">
+                  <p className="data-label">Capital Injection</p>
+                  <p className="text-xl md:text-2xl font-bold text-brand-accent tabular-nums">{formatCurrency(historySummary.earned)}</p>
+                </div>
+                <div className="p-5 md:p-8 text-center space-y-2">
+                  <p className="data-label">Net Delta</p>
+                  <p className={cn(
+                    "text-xl md:text-2xl font-bold tabular-nums",
+                    historySummary.net >= 0 ? "text-brand-accent" : "text-rose-500"
+                  )}>
+                    {historySummary.net >= 0 ? '+' : ''}{formatCurrency(historySummary.net)}
+                  </p>
+                </div>
               </div>
-              <div className="p-4 md:p-6 text-center space-y-1">
-                <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest leading-none">Earned</p>
-                <p className="text-lg md:text-xl font-bold text-brand-accent tabular-nums">{formatCurrency(historySummary.earned)}</p>
-              </div>
-              <div className="p-4 md:p-6 text-center space-y-1">
-                <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest leading-none">Net Flow</p>
-                <p className={cn(
-                  "text-lg md:text-xl font-bold tabular-nums",
-                  historySummary.net >= 0 ? "text-brand-accent" : "text-rose-500"
-                )}>
-                  {historySummary.net >= 0 ? '+' : ''}{formatCurrency(historySummary.net)}
-                </p>
-              </div>
-            </div>
 
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-              <div className="space-y-0.5">
-                <h2 className="text-2xl md:text-3xl font-sans font-bold uppercase tracking-tight text-brand-primary">Audit Log</h2>
-                <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-[0.3em] font-mono">Capital Flow History</p>
+              <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+                <div className="space-y-1">
+                  <h2 className="section-header">Operational Log</h2>
+                  <p className="data-label">Immutable Capital History</p>
+                </div>
+                <div className="flex bg-brand-bg p-1.5 rounded-full border border-brand-border shadow-inner">
+                  {['All', 'Expenses', 'Income'].map(f => (
+                    <button 
+                      key={f} 
+                      onClick={() => setFilter(f as any)}
+                      className={cn(
+                        "px-6 py-2 rounded-full text-[10px] font-bold uppercase tracking-[0.2em] transition-all",
+                        filter === f ? "bg-brand-primary text-brand-surface shadow-lg" : "text-brand-primary/30 hover:text-brand-primary/60"
+                      )}
+                    >
+                      {f}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div className="flex bg-brand-surface p-1 rounded-xl border border-brand-border shadow-sm">
-                {['All', 'Expenses', 'Income'].map(f => (
-                  <button 
-                    key={f} 
-                    onClick={() => setFilter(f as any)}
-                    className={cn(
-                      "px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all",
-                      filter === f ? "bg-brand-primary text-brand-surface shadow-md" : "text-brand-primary/40 hover:bg-brand-bg"
-                    )}
-                  >
-                    {f}
-                  </button>
-                ))}
-              </div>
-            </div>
 
             {/* Transaction List */}
             <div className="space-y-8">
@@ -922,40 +996,44 @@ function MainApp() {
                   viewport={{ once: true }}
                   className="space-y-4"
                 >
-                  <motion.div variants={listItem} className="flex items-center gap-3">
-                    <h4 className="text-[10px] font-bold text-brand-primary/30 uppercase tracking-[0.3em] font-mono">{date}</h4>
-                    <div className="h-px flex-1 bg-brand-border" />
+                  <motion.div variants={listItem} className="flex items-center gap-4">
+                    <div className="h-px flex-1 bg-brand-border/60" />
+                    <h4 className="data-label !text-brand-primary/20">{date}</h4>
+                    <div className="h-px flex-1 bg-brand-border/60" />
                   </motion.div>
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     {items.map(t => (
                       <motion.div 
                         key={t.id} 
                         variants={listItem}
-                        className="bg-brand-surface p-4 border border-brand-border rounded-2xl shadow-sm hover:shadow-lg transition-all flex items-center justify-between group"
+                        className="bg-brand-surface p-5 border border-brand-border rounded-[1.5rem] shadow-sm hover:shadow-xl transition-all flex items-center justify-between group overflow-hidden relative"
                       >
+                        <div className="absolute top-0 left-0 w-1 h-full transition-all group-hover:w-1.5"
+                          style={{ backgroundColor: t.type === 'income' ? 'var(--color-brand-accent)' : 'transparent' }}
+                        />
                         <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 bg-brand-bg rounded-xl flex items-center justify-center text-brand-primary/40 group-hover:bg-brand-primary group-hover:text-brand-surface transition-all">
+                          <div className="w-10 h-10 bg-brand-bg rounded-xl flex items-center justify-center text-brand-primary/30 group-hover:bg-brand-primary group-hover:text-brand-surface transition-all border border-brand-border/50">
                             {getCategoryIcon(t.category)}
                           </div>
                           <div className="space-y-0.5">
-                            <p className="text-sm font-bold text-brand-primary uppercase tracking-wide leading-tight">{t.description}</p>
+                            <p className="text-sm font-bold text-brand-primary uppercase tracking-tight leading-none">{t.description}</p>
                             <div className="flex flex-wrap items-center gap-2">
-                              <span className="text-[9px] font-bold text-brand-primary/30 uppercase tracking-[0.2em] font-mono">{t.category}</span>
+                              <span className="data-label !text-[8.5px] !text-brand-primary/40">{t.category}</span>
                               {t.subcategory && (
                                 <>
-                                  <span className="text-[9px] text-brand-primary/10 tracking-widest">•</span>
-                                  <span className="text-[9px] font-bold text-brand-primary/20 uppercase tracking-[0.2em] font-mono">{t.subcategory}</span>
+                                  <span className="w-1 h-1 rounded-full bg-brand-primary/10" />
+                                  <span className="data-label !text-[8.5px] !text-brand-primary/20">{t.subcategory}</span>
                                 </>
                               )}
-                              <div className="flex items-center gap-1.5 ml-2">
+                              <div className="flex items-center gap-1.5 ml-1">
                                 {t.isMandatory && (
-                                  <span className="px-1.5 py-0.5 bg-brand-primary/5 text-brand-primary/40 text-[8px] font-bold uppercase tracking-widest rounded border border-brand-primary/5 font-mono">FIXED</span>
+                                  <span className="px-1.5 py-0.5 bg-brand-primary/5 text-brand-primary/60 text-[8px] font-bold uppercase tracking-wider rounded border border-brand-primary/5 font-mono">FIXED</span>
                                 )}
                                 {t.isRecurring && (
-                                  <span className="px-1.5 py-0.5 bg-brand-accent/5 text-brand-accent/40 text-[8px] font-bold uppercase tracking-widest rounded border border-brand-accent/5 font-mono">REC</span>
+                                  <span className="px-1.5 py-0.5 bg-brand-accent/5 text-brand-accent/60 text-[8px] font-bold uppercase tracking-wider rounded border border-brand-accent/5 font-mono">REC</span>
                                 )}
                                 {t.isAvoidable && (
-                                  <span className="px-1.5 py-0.5 bg-rose-500/5 text-rose-500/40 text-[8px] font-bold uppercase tracking-widest rounded border border-rose-500/5 font-mono">AVOID</span>
+                                  <span className="px-1.5 py-0.5 bg-rose-500/5 text-rose-500/60 text-[8px] font-bold uppercase tracking-wider rounded border border-rose-500/5 font-mono">AVOID</span>
                                 )}
                               </div>
                             </div>
@@ -964,12 +1042,12 @@ function MainApp() {
                         <div className="text-right flex items-center gap-4">
                           <div className="text-right flex flex-col items-end gap-0.5">
                             <p className={cn(
-                              "text-lg md:text-xl font-mono font-bold tabular-nums leading-tight",
+                              "text-lg md:text-xl font-mono font-bold tabular-nums leading-none",
                               t.type === 'income' ? "text-brand-accent" : "text-brand-primary"
                             )}>
                               {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
                             </p>
-                            <p className="text-[9px] font-bold text-brand-primary/20 uppercase tracking-[0.2em] font-mono leading-none">
+                            <p className="text-[8px] font-bold text-brand-primary/10 uppercase tracking-widest leading-none">
                               {new Date(t.date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
                             </p>
                           </div>
@@ -981,17 +1059,17 @@ function MainApp() {
                               handleDeleteTransaction(t);
                             }}
                             className={cn(
-                              "p-3 transition-all rounded-xl active:scale-90 border",
+                              "p-2.5 transition-all rounded-lg active:scale-90 border",
                               transactionIdToConfirmDelete === t.id 
-                                ? "bg-rose-500 text-white border-rose-600 shadow-lg scale-110" 
-                                : "text-rose-500/30 hover:text-rose-600 hover:bg-rose-500/10 border-transparent hover:border-rose-500/20"
+                                ? "bg-rose-500 text-white border-rose-600 shadow-lg" 
+                                : "text-rose-500/10 hover:text-rose-600 hover:bg-rose-500/10 border-transparent hover:border-rose-500/10"
                             )}
                             title="Purge Entry"
                           >
                             {transactionIdToConfirmDelete === t.id ? (
-                              <span className="text-[8px] font-bold uppercase tracking-widest px-1">Confirm</span>
+                              <span className="text-[8px] font-bold uppercase tracking-widest px-1 whitespace-nowrap">Purge</span>
                             ) : (
-                              <Trash2 className="w-5 h-5" />
+                              <Trash2 className="w-4 h-4 opacity-40 group-hover:opacity-100" />
                             )}
                           </button>
                         </div>
@@ -1009,9 +1087,9 @@ function MainApp() {
             {goals.length > 0 && (
               <>
                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-8">
-                  <div className="space-y-2">
-                    <h2 className="text-3xl font-sans font-bold uppercase tracking-tight text-brand-primary leading-normal py-1">Financial Goals</h2>
-                    <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-[0.3em] font-mono leading-relaxed py-1">Capital Allocation Portfolio</p>
+                  <div className="space-y-1">
+                    <h2 className="section-header">Financial Portfolio</h2>
+                    <p className="data-label">Target-Oriented Capital Allocation Map</p>
                   </div>
                   <div className="flex items-center gap-4">
                     <button 
@@ -1057,7 +1135,7 @@ function MainApp() {
                   <div className="absolute top-0 right-0 w-32 h-32 bg-brand-accent/10 rounded-full blur-[60px] -mr-16 -mt-16" />
                   <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div className="space-y-0.5">
-                      <p className="text-[9px] font-bold text-brand-surface/40 uppercase tracking-[0.2em] font-mono">Portfolio Maturity</p>
+                      <p className="text-[9px] font-bold text-brand-surface/40 uppercase tracking-wider">Portfolio Maturity</p>
                       <h3 className="text-3xl md:text-4xl font-mono font-bold text-brand-accent leading-none py-1">
                         {totalGoalTarget > 0 ? totalGoalProgress.toFixed(1) : "0"}%
                       </h3>
@@ -1070,7 +1148,7 @@ function MainApp() {
                           className="h-full bg-brand-accent shadow-[0_0_15px_rgba(16,185,129,0.3)]"
                         />
                       </div>
-                      <div className="flex justify-between text-[9px] font-bold text-brand-surface/40 uppercase tracking-[0.2em] font-mono">
+                      <div className="flex justify-between text-[9px] font-bold text-brand-surface/40 uppercase tracking-wider">
                         <span>{formatCurrency(totalGoalCurrent)}</span>
                         <span>{formatCurrency(totalGoalTarget)}</span>
                       </div>
@@ -1080,41 +1158,60 @@ function MainApp() {
               </>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
-              {goals.map(goal => (
-                <GoalItem 
-                  key={goal.id} 
-                  goal={goal} 
-                  transactions={transactions}
-                  onEdit={() => { 
-                    setEditingGoal(goal); 
-                    setCommandTab('goal');
-                    setShowCommandCenter(true); 
-                  }} 
-                />
-              ))}
-              {goals.length === 0 && (
-                <div className="col-span-full py-32 text-center border-2 border-dashed border-brand-border rounded-[3rem] bg-brand-surface/50">
-                  <div className="max-w-xs mx-auto space-y-8">
-                    <div className="w-20 h-20 bg-brand-bg rounded-3xl flex items-center justify-center mx-auto border border-brand-border shadow-inner">
-                      <Target className="w-10 h-10 text-brand-primary/10" />
-                    </div>
-                    <div className="space-y-3">
-                      <p className="text-2xl font-sans font-bold uppercase tracking-tight text-brand-primary leading-normal py-1">Portfolio Empty</p>
-                      <p className="text-xs text-brand-primary/40 font-medium leading-relaxed">No strategic allocation targets have been defined. Please initialize your first custom goal to begin optimization.</p>
-                    </div>
-                    <button 
-                      onClick={() => {
-                        setCommandTab('goal');
-                        setShowCommandCenter(true);
-                      }}
-                      className="w-full py-4 bg-brand-primary text-brand-surface rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-brand-primary/90 transition-all shadow-xl active:scale-[0.98]"
-                    >
-                      Initialize Custom Goal
-                    </button>
-                  </div>
+            <div className="space-y-8">
+              <div className="flex items-end justify-between px-1">
+                <div className="space-y-1">
+                  <h2 className="text-3xl font-sans font-bold uppercase tracking-tight text-brand-primary leading-tight py-1">Strategic Portfolio</h2>
+                  <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-wider py-0.5">Asset Allocation Targets</p>
                 </div>
-              )}
+                <button 
+                  onClick={() => {
+                    setCommandTab('goal');
+                    setShowCommandCenter(true);
+                  }}
+                  className="px-6 py-3 bg-brand-primary text-brand-surface rounded-xl text-[10px] font-bold uppercase tracking-widest shadow-xl active:scale-95 transition-all flex items-center gap-2"
+                >
+                  <Plus className="w-3 h-3" />
+                  New Target
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
+                {goals.map(goal => (
+                  <GoalItem 
+                    key={goal.id} 
+                    goal={goal} 
+                    transactions={transactions}
+                    onEdit={() => { 
+                      setEditingGoal(goal); 
+                      setCommandTab('goal');
+                      setShowCommandCenter(true); 
+                    }} 
+                  />
+                ))}
+                {goals.length === 0 && (
+                  <div className="col-span-full py-32 text-center border-2 border-dashed border-brand-border rounded-[3rem] bg-brand-surface/50">
+                    <div className="max-w-xs mx-auto space-y-8">
+                      <div className="w-20 h-20 bg-brand-bg rounded-3xl flex items-center justify-center mx-auto border border-brand-border shadow-inner">
+                        <Target className="w-10 h-10 text-brand-primary/10" />
+                      </div>
+                      <div className="space-y-3">
+                        <p className="text-2xl font-sans font-bold uppercase tracking-tight text-brand-primary leading-normal py-1">Portfolio Empty</p>
+                        <p className="text-xs text-brand-primary/40 font-medium leading-relaxed">No strategic allocation targets have been defined. Please initialize your first custom goal to begin optimization.</p>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          setCommandTab('goal');
+                          setShowCommandCenter(true);
+                        }}
+                        className="w-full py-4 bg-brand-primary text-brand-surface rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-brand-primary/90 transition-all shadow-xl active:scale-[0.98]"
+                      >
+                        Initialize Custom Goal
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -1128,7 +1225,7 @@ function MainApp() {
             <div className="space-y-12">
               <div className="space-y-1">
                 <h2 className="text-3xl font-sans font-bold uppercase tracking-tight text-brand-primary leading-tight py-1">Intelligence Suite</h2>
-                <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-[0.3em] leading-relaxed py-0.5">Advanced Capital Optimization</p>
+                <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-wider py-0.5">Advanced Capital Optimization</p>
               </div>
               
               <div className="space-y-12">
@@ -1144,6 +1241,81 @@ function MainApp() {
                 
                 <div className="pt-12 border-t border-brand-border">
                   <DebtOptimization goals={goals} />
+                </div>
+
+                {/* Tactical Deletion & Reset Protocol */}
+                <div className="bg-brand-surface border border-rose-500/10 rounded-3xl p-6 md:p-8 space-y-6">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-2xl bg-rose-500/10 flex items-center justify-center text-rose-500">
+                      <Trash2 className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-brand-primary uppercase tracking-tight">System Purge</h4>
+                      <p className="text-[10px] text-brand-primary/20 font-bold uppercase tracking-widest mt-1">Operational Reset // Warning</p>
+                    </div>
+                  </div>
+                  
+                  <p className="text-[11px] text-brand-primary/50 leading-relaxed max-w-md">
+                    This command initializes a total wipe of all financial dossiers, strategic targets, and capital history. This action is terminal and cannot be reversed.
+                  </p>
+
+                  <button 
+                    onClick={async () => {
+                      if (showTotalPurgeConfirm) {
+                        try {
+                          setIsPurging(true);
+                          const tDocs = await getDocs(query(collection(db, 'transactions'), where('userId', '==', user.uid)));
+                          const gDocs = await getDocs(query(collection(db, 'goals'), where('userId', '==', user.uid)));
+                          const batch = [...tDocs.docs.map(d => deleteDoc(doc(db, 'transactions', d.id))), ...gDocs.docs.map(d => deleteDoc(doc(db, 'goals', d.id)))];
+                          await Promise.all(batch);
+                          localStorage.clear();
+                          window.location.reload();
+                        } catch (e) {
+                          setIsPurging(false);
+                          setShowTotalPurgeConfirm(false);
+                        }
+                      } else {
+                        setShowTotalPurgeConfirm(true);
+                        if (timeouts.current.purge) clearTimeout(timeouts.current.purge);
+                        timeouts.current.purge = setTimeout(() => setShowTotalPurgeConfirm(false), 5000); 
+                      }
+                    }}
+                    className={cn(
+                      "w-full py-5 rounded-2xl font-bold text-[10px] uppercase tracking-[0.4em] transition-all flex items-center justify-center gap-3",
+                      showTotalPurgeConfirm 
+                        ? "bg-rose-500 text-white shadow-[0_10px_30px_rgba(244,63,94,0.3)] animate-pulse" 
+                        : "bg-brand-bg border border-rose-500/20 text-rose-500 hover:bg-rose-500/5"
+                    )}
+                  >
+                    {isPurging ? (
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : showTotalPurgeConfirm ? (
+                      "Authorize Total Destruction"
+                    ) : (
+                      "Initialize Factory Reset"
+                    )}
+                  </button>
+                </div>
+
+                {/* Secure Node Access / Logout */}
+                <div className="bg-brand-surface border border-brand-border rounded-3xl p-6 md:p-8 space-y-6">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-2xl bg-brand-primary/5 flex items-center justify-center text-brand-primary/40 text-xs font-bold border border-brand-border">
+                        {user.displayName?.charAt(0) || 'U'}
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-brand-primary uppercase tracking-tight">{user.displayName}</h4>
+                        <p className="text-[10px] text-brand-primary/20 font-bold uppercase tracking-widest font-mono mt-1">Authenticated Secure Node</p>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={logout}
+                      className="px-6 py-3 rounded-xl bg-brand-bg border border-brand-border text-brand-primary/40 hover:text-rose-500 hover:border-rose-500/20 text-[10px] font-bold uppercase tracking-widest transition-all active:scale-95"
+                    >
+                      Logout Protocol
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1166,6 +1338,7 @@ function MainApp() {
             monthlyBudget={monthlyBudget}
             setMonthlyBudget={setMonthlyBudget}
             editingGoal={editingGoal}
+            avgDailySpend={avgDailySpend}
           />
         )}
       </AnimatePresence>
@@ -1230,53 +1403,61 @@ function GoalItem({ goal, transactions, isDemo, onEdit }: { goal: Goal, transact
 
   return (
     <motion.div 
-      whileHover={{ y: -2 }}
+      whileHover={{ y: -4, scale: 1.01 }}
       className={cn(
-        "flex flex-col p-5 md:p-6 bg-brand-surface border border-brand-border rounded-3xl shadow-sm hover:shadow-lg transition-all group relative overflow-hidden",
+        "flex flex-col p-6 md:p-8 bg-brand-surface border border-brand-border rounded-[2rem] shadow-sm hover:shadow-2xl transition-all group relative overflow-hidden",
         isDemo && "opacity-50 grayscale"
       )}
     >
-      <div className="flex justify-between items-start mb-6" onClick={onEdit}>
-        <div className="space-y-2 cursor-pointer">
+      <div className="absolute top-0 right-0 w-32 h-32 bg-brand-bg rounded-full blur-3xl -mr-16 -mt-16 transition-all group-hover:scale-150" />
+      
+      <div className="flex justify-between items-start mb-8 relative z-10" onClick={onEdit}>
+        <div className="space-y-4 cursor-pointer">
+          <div className="flex items-center gap-4">
+            <h4 className="text-xl md:text-2xl font-sans font-bold uppercase tracking-tight text-brand-primary leading-none">{goal.name}</h4>
+          </div>
           <div className="flex items-center gap-3">
-            <h4 className="text-lg md:text-xl font-sans font-bold uppercase tracking-tight text-brand-primary leading-tight py-0.5">{goal.name}</h4>
-          <div className="flex items-center gap-1.5 text-brand-primary/40">
-            <p className="text-[8px] font-bold uppercase tracking-widest font-mono">{goal.type}</p>
+             <div className="px-2 py-0.5 bg-brand-primary/5 text-brand-primary/40 text-[9px] font-bold uppercase tracking-widest rounded border border-brand-primary/10 font-mono">
+              {goal.type}
+            </div>
             {goal.priority && (
-              <p className={cn(
-                "text-[8px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded border leading-none font-mono",
-                goal.priority === 'high' ? "text-brand-accent border-brand-accent/20 bg-brand-accent/5" : "border-brand-primary/10"
-              )}>{goal.priority}</p>
+              <div className={cn(
+                "px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest border font-mono",
+                goal.priority === 'high' ? "text-brand-accent border-brand-accent/20 bg-brand-accent/5" : "text-brand-primary/20 border-brand-primary/10"
+              )}>{goal.priority}</div>
             )}
-          </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <p className="text-[9px] font-bold text-brand-primary/40 uppercase tracking-[0.2em] leading-relaxed font-mono">
-              {formatCurrency(remaining)} TO TARGET
-            </p>
           </div>
         </div>
         <div className="text-right">
-          <p className="text-2xl font-mono font-bold text-brand-primary tabular-nums leading-none">{progress.toFixed(0)}%</p>
+          <p className="text-3xl font-mono font-bold text-brand-primary tabular-nums leading-none">{progress.toFixed(0)}%</p>
+          <p className="data-label mt-2">Maturity</p>
         </div>
       </div>
 
-      {/* Strategic Simulation Lever */}
-      <div className="mt-auto pt-6 border-t border-brand-border space-y-6">
+      <div className="h-2 w-full bg-brand-bg rounded-full overflow-hidden border border-brand-border p-[1px] mb-8 relative z-10 shadow-inner">
+        <motion.div 
+          initial={{ width: 0 }}
+          animate={{ width: `${progress}%` }}
+          className="h-full bg-brand-primary rounded-full shadow-[0_0_15px_rgba(17,24,39,0.3)] transition-all"
+        />
+      </div>
+
+      {/* Contribution Simulation */}
+      <div className="mt-auto pt-8 border-t border-brand-border space-y-8 relative z-10">
         <div className="flex justify-between items-end">
-          <div className="space-y-2">
-            <p className="text-[10px] font-bold text-brand-primary/30 uppercase tracking-widest leading-relaxed py-0.5 font-mono">Monthly Allocation</p>
-            <p className="text-xl md:text-2xl font-mono font-bold text-brand-primary leading-tight tabular-nums py-1">{formatCurrency(simulationValue)}</p>
+          <div className="space-y-3">
+            <p className="data-label">Periodic Allotment</p>
+            <p className="text-2xl md:text-3xl font-mono font-bold text-brand-primary leading-none tabular-nums">{formatCurrency(simulationValue)}</p>
           </div>
-          <div className="text-right space-y-2">
-            <p className="text-[10px] font-bold text-brand-primary/30 uppercase tracking-widest leading-relaxed py-0.5 font-mono">Projected Maturity</p>
-            <p className="text-lg md:text-xl font-mono font-bold uppercase tracking-tight text-brand-accent leading-tight py-1">
+          <div className="text-right space-y-3">
+            <p className="data-label">Est. Freedom</p>
+            <p className="text-lg md:text-xl font-bold uppercase tracking-tighter text-brand-accent leading-none">
               {freedomDate ? freedomDate.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : 'N/A'}
             </p>
           </div>
         </div>
         
-        <div className="relative group/slider">
+        <div className="space-y-4">
           <input 
             type="range"
             min="0"
@@ -1284,11 +1465,11 @@ function GoalItem({ goal, transactions, isDemo, onEdit }: { goal: Goal, transact
             step="1000"
             value={simulationValue}
             onChange={(e) => setSimulationValue(parseInt(e.target.value))}
-            className="w-full h-1 bg-brand-bg rounded-full appearance-none cursor-pointer accent-brand-primary"
+            className="w-full h-1 bg-brand-bg rounded-full appearance-none cursor-pointer accent-brand-accent"
           />
-          <div className="flex justify-between mt-3 text-[10px] font-bold text-brand-primary/20 uppercase tracking-[0.2em]">
-            <span>Conservative</span>
-            <span>Aggressive</span>
+          <div className="flex justify-between transition-all opacity-0 group-hover:opacity-100">
+            <span className="data-label">Conservative</span>
+            <span className="data-label">Aggressive</span>
           </div>
         </div>
       </div>
@@ -1322,7 +1503,8 @@ function CommandCenter({
   initialTab,
   monthlyBudget,
   setMonthlyBudget,
-  editingGoal
+  editingGoal,
+  avgDailySpend
 }: { 
   onClose: () => void, 
   userId: string, 
@@ -1331,7 +1513,8 @@ function CommandCenter({
   initialTab: 'terminal' | 'transaction' | 'budget' | 'goal',
   monthlyBudget: number,
   setMonthlyBudget: (v: number) => void,
-  editingGoal: Goal | null
+  editingGoal: Goal | null,
+  avgDailySpend: number
 }) {
   const [activeTab, setActiveTab] = useState<'terminal' | 'transaction' | 'budget' | 'goal'>(editingGoal ? 'goal' : 'terminal');
   const [smartCommand, setSmartCommand] = useState('');
@@ -1354,6 +1537,29 @@ function CommandCenter({
       let amount = 0;
       let descriptionParts: string[] = [];
       let type: 'expense' | 'income' = 'expense';
+
+      // Detect Goal Initiation
+      if (smartCommand.toLowerCase().startsWith('goal ')) {
+        const goalMatch = smartCommand.match(/goal\s+(.+?)\s+(\d+(\.\d+)?([kKmM])?)/i);
+        if (goalMatch) {
+          const name = goalMatch[1].toUpperCase();
+          let targetRaw = goalMatch[2].toLowerCase();
+          let target = parseFloat(targetRaw);
+          if (targetRaw.endsWith('k')) target *= 1000;
+          if (targetRaw.endsWith('m')) target *= 1000000;
+          
+          await addDoc(collection(db, 'goals'), {
+            name,
+            targetAmount: target,
+            currentAmount: 0,
+            userId,
+            createdAt: new Date().toISOString()
+          });
+          setSmartCommand('');
+          onClose();
+          return;
+        }
+      }
 
       tokens.forEach(token => {
         const cleanToken = token.replace(/[₹$,]/g, '');
@@ -1438,109 +1644,183 @@ function CommandCenter({
     }
   };
 
+  const getSmartPreview = () => {
+    if (!smartCommand.trim()) return null;
+    const lower = smartCommand.toLowerCase();
+    const amountMatch = smartCommand.match(/\d+(\.\d+)?([kKmM])?/i);
+    let amount = 0;
+    if (amountMatch) {
+      let raw = amountMatch[0].toLowerCase();
+      amount = parseFloat(raw);
+      if (raw.endsWith('k')) amount *= 1000;
+      if (raw.endsWith('m')) amount *= 1000000;
+    }
+
+    if (lower.startsWith('goal ')) {
+      return { type: 'STRATEGIC_INIT', label: 'NEW ASSET TARGET', val: amount };
+    }
+
+    const isIncome = lower.includes('income') || lower.includes('salary') || lower.includes('+') || lower.includes('bonus');
+    return { 
+      type: isIncome ? 'CAPITAL_INFLOW' : 'OPERATIONAL_OUTFLOW', 
+      val: amount,
+      impact: !isIncome && avgDailySpend > 0 ? (amount / avgDailySpend).toFixed(1) : null
+    };
+  };
+
+  const preview = getSmartPreview();
+
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-brand-primary/80 backdrop-blur-xl">
+    <div className="fixed inset-0 z-[100] flex items-end md:items-center justify-center bg-brand-primary/80 backdrop-blur-xl">
       <motion.div 
-        initial={{ opacity: 0, scale: 0.9, y: 20 }}
+        initial={{ opacity: 0, scale: 0.95, y: 100 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="bg-brand-surface w-full max-w-2xl rounded-[3rem] shadow-[0_64px_128px_-24px_rgba(0,0,0,0.8)] overflow-hidden border border-white/10 flex flex-col"
+        className="bg-brand-surface w-full max-w-2xl rounded-t-[4rem] md:rounded-[4rem] shadow-[0_64px_128px_-24px_rgba(0,0,0,0.8)] overflow-hidden border-x border-t md:border border-white/10 flex flex-col max-h-[95vh] relative"
       >
-        <div className={cn("p-10 md:p-14 space-y-12", activeTab !== 'terminal' && "pb-4")}>
-          {/* Header Area */}
-          <div className="flex justify-between items-end">
-            <div className="space-y-1">
-              <h3 className="text-3xl font-sans font-bold uppercase tracking-tight text-brand-primary">
-                {activeTab === 'terminal' ? 'Terminal' : activeTab === 'transaction' ? 'Manual Link' : activeTab === 'budget' ? 'Thresholds' : 'Strategic Goals'}
-              </h3>
-              <p className="text-[10px] text-brand-primary/30 font-bold uppercase tracking-[0.4em] font-mono">
-                {activeTab === 'terminal' ? 'Real-time Capital Logging' : 'Protocol Parameters'}
-              </p>
-            </div>
-            <button 
-              onClick={onClose}
-              className="text-[10px] font-bold text-brand-primary/20 hover:text-brand-primary uppercase tracking-[0.2em] transition-colors"
-            >
-              Close (ESC)
-            </button>
-          </div>
-
-          {/* Conditional Input Area */}
-          {activeTab === 'terminal' && (
-            <div className="space-y-6">
-              <form onSubmit={handleSmartEntry} className="relative group">
-                <div className="absolute left-0 top-1/2 -translate-y-1/2 flex items-center gap-4">
-                  <Terminal className={cn("w-8 h-8 transition-colors", isProcessing ? "text-brand-accent animate-pulse" : "text-brand-primary/10 group-focus-within:text-brand-accent")} />
+        <div className="absolute top-6 left-1/2 -translate-x-1/2 w-12 h-1.5 bg-brand-primary/5 rounded-full md:hidden" />
+        
+        <div className="flex-1 flex flex-col min-h-0">
+          <div className="p-3 md:p-4 flex flex-col min-h-0 space-y-3 md:space-y-4">
+            {/* Unified Header */}
+            <div className="flex justify-between items-center bg-brand-bg/20 p-2 md:p-3 rounded-xl border border-brand-border/30 relative overflow-hidden group/header">
+              <div className="absolute top-0 right-0 w-20 h-20 bg-brand-accent/5 rounded-full blur-2xl -mr-10 -mt-10 group-hover/header:bg-brand-accent/10 transition-all" />
+              <div className="flex items-center gap-3 relative z-10">
+                <div className="w-8 h-8 rounded-lg bg-brand-primary flex items-center justify-center text-brand-surface shadow-lg transform hover:rotate-6 transition-all duration-500">
+                  {activeTab === 'terminal' ? <Sparkles className="w-4 h-4 text-brand-accent" /> :
+                   activeTab === 'transaction' ? <Plus className="w-4 h-4 text-brand-accent" /> :
+                   activeTab === 'budget' ? <ShieldCheck className="w-4 h-4 text-brand-accent" /> : <Target className="w-4 h-4 text-brand-accent" />}
                 </div>
-                <input 
-                  ref={smartInputRef}
-                  type="text"
-                  value={smartCommand}
-                  onChange={(e) => setSmartCommand(e.target.value)}
-                  placeholder="PROMPT: '500 COFFEE'..."
-                  className="w-full bg-transparent border-b-2 border-brand-primary/5 py-6 md:py-10 pl-14 text-2xl md:text-6xl font-mono font-bold uppercase tracking-tighter placeholder:text-brand-primary/5 focus:border-brand-accent transition-all outline-none text-brand-primary"
-                />
-                {smartCommand && (
-                  <div className="absolute right-0 top-1/2 -translate-y-1/2">
-                    <button 
-                      disabled={isProcessing}
-                      className="bg-brand-accent text-brand-surface px-6 py-3 rounded-xl font-bold text-[10px] uppercase tracking-widest shadow-lg shadow-brand-accent/20 active:scale-95 transition-all"
-                    >
-                      Commit
-                    </button>
-                  </div>
-                )}
-              </form>
-              
-              <p className="text-[10px] text-brand-primary/20 font-bold uppercase tracking-widest leading-relaxed">
-                Log capital flows by typing <span className="text-brand-accent/40">Amount</span> + <span className="text-brand-accent/40">Source</span>. 
-                Tip: Press <span className="text-brand-primary px-1.5 py-0.5 bg-brand-bg rounded border border-brand-border">C</span> to summon from anywhere.
-              </p>
-            </div>
-          )}
-
-          {/* Contextual Navigation */}
-          <div className="flex gap-4 border-t border-brand-primary/5 pt-10">
-            {[
-              { id: 'terminal', label: 'Terminal', icon: Terminal },
-              { id: 'transaction', label: 'Manual Form', icon: Plus },
-              { id: 'budget', label: 'Thresholds', icon: ShieldCheck },
-              { id: 'goal', label: 'Goals', icon: Target },
-            ].map((t) => (
-              <button
-                key={t.id}
-                onClick={() => setActiveTab(t.id as any)}
-                className={cn(
-                  "flex-1 p-4 md:p-6 rounded-2xl border transition-all flex flex-col gap-3 group text-left",
-                  activeTab === t.id 
-                    ? "bg-brand-primary border-brand-primary text-brand-surface shadow-xl scale-[1.02]" 
-                    : "bg-brand-bg/50 border-brand-border text-brand-primary/40 hover:border-brand-primary/20"
-                )}
+                <div className="space-y-0.5">
+                  <h3 className="text-[11px] font-bold text-brand-primary uppercase tracking-widest leading-none">
+                    {activeTab === 'terminal' ? 'Tactical Hub' :
+                     activeTab === 'transaction' ? 'Manual Entry' :
+                     activeTab === 'budget' ? 'Liquidity Guard' : 'Strategy Portfolio'}
+                  </h3>
+                  <p className="text-[8px] font-mono font-bold text-brand-primary/30 uppercase tracking-[0.25em] leading-none">
+                    {activeTab === 'terminal' ? 'Neural Logic Terminal' : 'High-Precision Protocol'}
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={onClose}
+                className="w-8 h-8 flex items-center justify-center rounded-lg bg-brand-surface border border-brand-border text-brand-primary/20 hover:text-rose-500 hover:border-rose-500/20 hover:bg-rose-500/5 transition-all active:scale-90"
               >
-                <t.icon className={cn("w-5 h-5", activeTab === t.id ? "text-brand-accent" : "text-brand-primary/20")} />
-                <div>
-                  <p className={cn("text-[8px] md:text-[9px] font-bold uppercase tracking-widest", activeTab === t.id ? "text-brand-surface" : "text-brand-primary")}>{t.label}</p>
-                </div>
+                <X className="w-3.5 h-3.5" />
               </button>
-            ))}
+            </div>
+
+            {/* Content Area */}
+            <div className="flex-1 overflow-y-auto no-scrollbar">
+              {activeTab === 'terminal' && (
+                <div className="space-y-4 px-1 py-1">
+                  <div className="relative group/field">
+                    <div className="absolute -top-3.5 left-1 opacity-0 group-focus-within/field:opacity-100 transition-all">
+                      <p className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-accent">Awaiting Natural Language Metadata</p>
+                    </div>
+                    <input 
+                      ref={smartInputRef}
+                      autoFocus
+                      type="text"
+                      value={smartCommand}
+                      onChange={(e) => setSmartCommand(e.target.value)}
+                      placeholder="e.g. Coffee 250 // Uber 450"
+                      className="w-full bg-brand-bg/50 border border-brand-border rounded-lg py-2 px-3 text-[12px] font-mono placeholder:text-brand-primary/10 focus:border-brand-accent/30 focus:ring-2 focus:ring-brand-accent/5 transition-all outline-none text-brand-primary tracking-tight"
+                    />
+                    
+                    <AnimatePresence>
+                      {preview && (
+                        <motion.div 
+                          initial={{ opacity: 0, scale: 0.98, y: 10 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.98, y: 5 }}
+                          className="absolute -bottom-14 left-0 right-0 glass-panel p-2.5 rounded-xl flex items-center gap-3 shadow-xl z-20 border-brand-accent/20"
+                        >
+                          <div className={cn(
+                            "w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border shadow-inner",
+                            preview.type === 'STRATEGIC_INIT' ? "bg-brand-accent/10 text-brand-accent border-brand-accent/20" :
+                            preview.type === 'CAPITAL_INFLOW' ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : "bg-rose-500/10 text-rose-500 border-rose-500/20"
+                          )}>
+                            {preview.type === 'STRATEGIC_INIT' ? <Target className="w-4 h-4" /> : 
+                             preview.type === 'CAPITAL_INFLOW' ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownRight className="w-4 h-4" />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 leading-none">{preview.type}</p>
+                            <p className="text-xs font-bold text-brand-primary tracking-tight uppercase mt-1 leading-tight">
+                              {preview.type === 'STRATEGIC_INIT' ? `INITIALIZE: ${formatCurrency(preview.val)}` : `LOG: ${formatCurrency(preview.val)}`}
+                            </p>
+                          </div>
+                          <div className="px-2.5 py-1.5 bg-brand-primary text-brand-surface rounded-md text-[8.5px] font-mono font-bold uppercase tracking-[0.2em] flex items-center gap-1.5 shrink-0">
+                            <CornerDownLeft className="w-2.5 h-2.5 text-brand-accent" />
+                            Execute
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+
+                  {/* Quick Macros */}
+                  <div className="pt-2 space-y-2">
+                    <p className="text-[8.5px] font-mono font-bold uppercase tracking-[0.2em] text-brand-primary/20 pl-1">Protocol Macros</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        { l: 'Brew', v: 'Coffee 250' },
+                        { l: 'Transit', v: 'Uber 450' },
+                        { l: 'Dinner', v: 'Food 800' },
+                        { l: 'Yield', v: 'Salary 1.5L income' },
+                      ].map(macro => (
+                        <button 
+                          key={macro.l}
+                          onClick={() => setSmartCommand(macro.v)}
+                          className="px-2.5 py-1.5 rounded-md border border-brand-primary/5 bg-brand-primary/[0.02] text-[10px] font-mono font-bold text-brand-primary/40 hover:bg-brand-primary/5 hover:text-brand-primary transition-all active:scale-95 uppercase tracking-wide"
+                        >
+                          {macro.l}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'transaction' && (
+                <TransactionForm onClose={onClose} userId={userId} transactions={transactions} goals={goals} />
+              )}
+              {activeTab === 'budget' && <BudgetModalContent onClose={onClose} monthlyBudget={monthlyBudget} setMonthlyBudget={setMonthlyBudget} />}
+              {activeTab === 'goal' && (
+                <GoalModalContent onClose={onClose} userId={userId} goal={editingGoal} />
+              )}
+            </div>
+
+            {/* Unified Navigation at bottom of flex container */}
+            <div className="pt-2 border-t border-brand-primary/5">
+              <div className="flex gap-1.5 pb-1">
+                {[
+                  { id: 'terminal', label: 'HUB', icon: Sparkles },
+                  { id: 'transaction', label: 'ENTRY', icon: Plus },
+                  { id: 'budget', label: 'GUARD', icon: ShieldCheck },
+                  { id: 'goal', label: 'PORTFOLIO', icon: Target },
+                ].map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => setActiveTab(t.id as any)}
+                    className={cn(
+                      "flex-1 py-2 px-1 rounded-lg border transition-all flex flex-col items-center gap-1.5 relative overflow-hidden group/tab",
+                      activeTab === t.id 
+                        ? "bg-brand-primary border-brand-primary text-brand-surface shadow-lg z-10 font-bold" 
+                        : "bg-brand-bg/50 border-brand-border text-brand-primary/40"
+                    )}
+                  >
+                    <div className={cn(
+                      "absolute top-0 right-0 w-16 h-16 rounded-full blur-2xl -mr-8 -mt-8 transition-all group-hover/tab:scale-150",
+                      activeTab === t.id ? "bg-brand-accent/20" : "bg-transparent"
+                    )} />
+                    <t.icon className={cn("w-4 h-4 relative z-10", activeTab === t.id ? "text-brand-accent" : "text-brand-primary/20")} />
+                    <p className="text-[8.5px] font-mono uppercase tracking-widest relative z-10 leading-none">{t.label}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
-
-        {/* Action Content Area */}
-        {activeTab !== 'terminal' && (
-          <div className="bg-brand-bg/30 border-t border-brand-primary/5 max-h-[60vh] overflow-y-auto no-scrollbar">
-            {activeTab === 'transaction' && (
-              <div className="p-0">
-                <TransactionForm onClose={onClose} userId={userId} transactions={transactions} goals={goals} />
-              </div>
-            )}
-            {activeTab === 'budget' && <BudgetModalContent onClose={onClose} monthlyBudget={monthlyBudget} setMonthlyBudget={setMonthlyBudget} />}
-            {activeTab === 'goal' && (
-              <div className="p-10">
-                <GoalModalContent onClose={onClose} userId={userId} goal={editingGoal} />
-              </div>
-            )}
-          </div>
-        )}
       </motion.div>
     </div>
   );
@@ -1549,35 +1829,72 @@ function CommandCenter({
 function BudgetModalContent({ onClose, monthlyBudget, setMonthlyBudget }: { onClose: () => void, monthlyBudget: number, setMonthlyBudget: (v: number) => void }) {
   const [tempBudget, setTempBudget] = useState(monthlyBudget);
 
+  const budgetPresets = [
+    { label: 'Minimalist', value: 25000 },
+    { label: 'Executive', value: 75000 },
+    { label: 'Prime', value: 150000 }
+  ];
+
   return (
-    <div className="p-8 md:p-10 space-y-10">
-      <div className="space-y-6">
-        <div className="space-y-3">
-          <label className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-[0.3em] font-mono pl-1">Threshold Designation</label>
-          <div className="relative group">
-            <div className="absolute left-6 top-1/2 -translate-y-1/2 text-brand-accent/40 font-mono font-bold text-2xl group-focus-within:text-brand-accent transition-colors">₹</div>
+    <div className="space-y-4 pt-1">
+      <div className="space-y-4">
+        <div className="space-y-2 group/input">
+          <label className="text-[8px] font-mono font-bold uppercase tracking-[0.2em] text-brand-primary/30 pl-1">Threshold Designation</label>
+          <div className="relative">
+            <div className="absolute left-5 top-1/2 -translate-y-1/2 text-brand-accent/20 font-mono font-bold text-xl group-focus-within/input:text-brand-accent transition-colors">₹</div>
             <input 
               type="number"
-              value={tempBudget}
+              value={tempBudget || ''}
               onChange={(e) => setTempBudget(Number(e.target.value))}
-              className="w-full bg-brand-surface border border-brand-border rounded-[2rem] py-8 pl-14 pr-8 font-mono font-bold text-5xl text-brand-primary focus:ring-4 focus:ring-brand-accent/5 transition-all outline-none shadow-inner"
+              className="w-full bg-brand-surface border border-brand-border rounded-lg py-4 pl-10 pr-4 font-mono font-bold text-2xl text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none shadow-inner tracking-tighter"
               placeholder="0"
             />
+            <div className="absolute top-0 right-0 h-full w-12 flex items-center justify-center">
+               <ShieldCheck className={cn("w-5 h-5 transition-colors", tempBudget > 0 ? "text-brand-accent/20" : "text-brand-primary/5")} />
+            </div>
           </div>
-          <p className="text-[9px] text-brand-primary/30 font-bold uppercase tracking-widest pl-1 leading-relaxed">
-            This value defines the defensive perimeter for non-essential capital outflow.
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-[8px] font-mono font-bold uppercase tracking-[0.2em] text-brand-primary/20 pl-1">Strategic Presets</p>
+          <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+            {budgetPresets.map(preset => (
+              <button 
+                key={preset.label}
+                onClick={() => setTempBudget(preset.value)}
+                className={cn(
+                  "flex-shrink-0 px-3 py-2 rounded-lg border transition-all text-left min-w-[90px] group/preset",
+                  tempBudget === preset.value 
+                    ? "bg-brand-primary border-brand-primary text-brand-surface shadow-md" 
+                    : "bg-brand-bg/40 border-brand-border text-brand-primary/40"
+                )}
+              >
+                <p className={cn("text-[7px] font-mono font-bold uppercase tracking-wider mb-0.5", tempBudget === preset.value ? "text-brand-accent" : "")}>{preset.label}</p>
+                <p className="text-[12px] font-mono font-bold tracking-tight">₹{(preset.value/1000).toFixed(0)}k</p>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-brand-primary/3 border border-brand-primary/5 p-3 rounded-lg space-y-1.5">
+          <div className="flex items-center gap-2">
+            <Activity className="w-3.5 h-3.5 text-brand-accent" />
+            <p className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary">Allocation Paradox</p>
+          </div>
+          <p className="text-[9px] text-brand-primary/40 font-medium leading-relaxed">
+            Allocations exceeding 50% of monthly net-velocity indicate systemic fixed-burn risk. Defensive perimeter strategy active.
           </p>
         </div>
       </div>
 
-      <button 
+      <button
         onClick={() => {
           setMonthlyBudget(tempBudget);
           onClose();
         }}
-        className="w-full py-6 bg-brand-primary text-brand-surface rounded-2xl font-bold text-xs uppercase tracking-[0.3em] hover:bg-brand-primary/95 transition-all shadow-[0_20px_40px_-12px_rgba(0,0,0,0.3)] hover:scale-[1.01] active:scale-95"
+        className="w-full py-3 bg-brand-primary text-brand-surface rounded-lg font-bold text-[9px] uppercase tracking-[0.3em] hover:bg-brand-primary/95 transition-all shadow-md active:scale-[0.98] border border-white/10"
       >
-        Commit Limit
+        Authorize Liquidity Perimeter
       </button>
     </div>
   );
@@ -1588,7 +1905,6 @@ function TransactionForm({ onClose, userId, transactions, goals }: { onClose: ()
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('Food & Dining');
   const [subcategory, setSubcategory] = useState('Groceries');
-  const [description, setDescription] = useState('');
   const [type, setType] = useState<'income' | 'expense'>('expense');
   const [isMandatory, setIsMandatory] = useState(false);
   const [isRecurring, setIsRecurring] = useState(false);
@@ -1629,7 +1945,6 @@ function TransactionForm({ onClose, userId, transactions, goals }: { onClose: ()
   }, [transactions]);
 
   const applyTemplate = (template: { name: string, category: string, lastAmount: number }) => {
-    setDescription(template.name.toUpperCase());
     setCategory(template.category);
     setAmount(template.lastAmount.toString());
   };
@@ -1639,7 +1954,8 @@ function TransactionForm({ onClose, userId, transactions, goals }: { onClose: ()
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const amountNum = parseFloat(amount);
-    if (isNaN(amountNum) || amountNum <= 0 || !description || isSubmitting) return;
+    const finalDescription = subcategory.toUpperCase();
+    if (isNaN(amountNum) || amountNum <= 0 || isSubmitting) return;
 
     setIsSubmitting(true);
     setErrorMsg(null);
@@ -1652,8 +1968,8 @@ function TransactionForm({ onClose, userId, transactions, goals }: { onClose: ()
         
         const goalDoc = gSnapshot.docs.find(d => {
           const gData = d.data();
-          const nameMatch = description.toLowerCase().includes(gData.name.toLowerCase()) ||
-                           gData.name.toLowerCase().includes(description.toLowerCase());
+          const nameMatch = finalDescription.toLowerCase().includes(gData.name.toLowerCase()) ||
+                           gData.name.toLowerCase().includes(finalDescription.toLowerCase());
           const typeMatch = gData.type === goalTypeMap[category];
           return nameMatch || (goalType && typeMatch);
         });
@@ -1668,7 +1984,7 @@ function TransactionForm({ onClose, userId, transactions, goals }: { onClose: ()
         amount: amountNum,
         category,
         subcategory,
-        description: description.toUpperCase(),
+        description: finalDescription,
         type,
         date: new Date().toISOString(),
         userId,
@@ -1688,25 +2004,28 @@ function TransactionForm({ onClose, userId, transactions, goals }: { onClose: ()
   };
 
   return (
-    <form onSubmit={handleSubmit} className="p-8 md:p-10 space-y-8 md:space-y-10">
+    <form onSubmit={handleSubmit} className="space-y-6">
       {errorMsg && (
-        <div className="bg-rose-500/10 border border-rose-500/20 p-4 rounded-xl">
-          <p className="text-[10px] font-bold text-rose-500 uppercase tracking-widest leading-relaxed">
-            {errorMsg}
-          </p>
-        </div>
+        <motion.div 
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: 'auto' }}
+          className="bg-rose-500/10 border-l-2 border-rose-500 p-3 rounded-r-lg"
+        >
+          <p className="text-[8px] font-mono font-bold uppercase tracking-widest text-rose-500">Constraint Breach</p>
+          <p className="text-[10px] font-bold text-rose-600 mt-1">{errorMsg}</p>
+        </motion.div>
       )}
       
       {smartTemplates.length > 0 && (
-        <div className="space-y-4">
-          <label className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-[0.3em] font-mono">Frequent Counterparties</label>
-          <div className="flex gap-2 overflow-x-auto pb-4 no-scrollbar">
+        <div className="space-y-2">
+          <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/30 pl-1">Historical Alignment</label>
+          <div className="flex gap-1.5 overflow-x-auto pb-2 no-scrollbar">
             {smartTemplates.slice(0, 5).map((t) => (
               <button
                 key={t.name}
                 type="button"
                 onClick={() => applyTemplate(t)}
-                className="flex-shrink-0 px-5 py-3 bg-brand-surface border border-brand-border rounded-xl text-[10px] font-bold text-brand-primary/60 hover:bg-brand-primary hover:text-brand-surface transition-all active:scale-95 uppercase tracking-widest shadow-sm hover:shadow-md"
+                className="flex-shrink-0 px-3 py-1.5 bg-brand-surface border border-brand-border rounded-lg text-[9px] font-mono font-bold text-brand-primary/50 hover:bg-brand-primary hover:text-brand-surface transition-all active:scale-95"
               >
                 {t.name}
               </button>
@@ -1715,123 +2034,108 @@ function TransactionForm({ onClose, userId, transactions, goals }: { onClose: ()
         </div>
       )}
 
-      <div className="flex bg-brand-bg/50 p-2 rounded-[1.5rem] border border-brand-border shadow-inner">
+      <div className="bg-brand-bg/80 p-1.5 rounded-xl border border-brand-border shadow-inner flex relative">
         {(['expense', 'income'] as const).map((t) => (
           <button
             key={t}
             type="button"
             onClick={() => {
               setType(t);
-              const firstCat = Object.keys(t === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES)[0];
+              const currentCats = t === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
+              const firstCat = Object.keys(currentCats)[0];
+              const firstSub = (currentCats as any)[firstCat][0];
               setCategory(firstCat);
-              const firstSub = (t === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES)[firstCat as keyof typeof EXPENSE_CATEGORIES][0];
               setSubcategory(firstSub);
             }}
             className={cn(
-              "flex-1 py-4 rounded-xl text-[10px] font-bold uppercase tracking-[0.3em] transition-all flex items-center justify-center gap-2",
+              "flex-1 py-2 rounded-lg text-[9px] font-bold uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-2 relative z-10",
               type === t 
-                ? "bg-brand-primary text-brand-surface shadow-xl scale-[1.02]" 
-                : "text-brand-primary/40 hover:bg-brand-primary/5"
+                ? "bg-brand-primary text-brand-surface shadow-md" 
+                : "text-brand-primary/30 hover:text-brand-primary/60 hover:bg-brand-primary/5"
             )}
           >
-            {t === 'income' ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+            {t === 'income' ? <TrendingUp className="w-3 h-3 text-brand-accent" /> : <TrendingDown className="w-3 h-3 text-rose-400" />}
             {t}
           </button>
         ))}
       </div>
 
-      <div className="space-y-8">
-        <div className="space-y-3 relative">
-          <label className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-[0.3em] font-mono">Entity Designation</label>
-          <input 
-            type="text" 
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="WHERE OR WHOM?"
-            className="w-full bg-brand-surface border border-brand-border rounded-xl py-5 px-6 text-sm font-bold uppercase tracking-wider focus:ring-2 focus:ring-brand-accent/20 transition-all outline-none"
-            required
-          />
+      <div className="space-y-4">
+        <div className="group/input space-y-2">
+          <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Magnitude</label>
+          <div className="relative">
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 font-mono font-bold text-brand-primary/10 group-focus-within/input:text-brand-accent transition-colors text-base">₹</span>
+            <input 
+              autoFocus
+              type="number" 
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="0.00"
+              className="w-full bg-brand-surface border border-brand-border rounded-lg py-2.5 pl-8 pr-4 font-mono font-bold text-lg text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none"
+              required
+            />
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
-          <div className="md:col-span-2 space-y-3">
-            <label className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-[0.3em] font-mono">Quantum</label>
-            <div className="relative group">
-              <span className="absolute left-5 top-1/2 -translate-y-1/2 text-brand-primary/30 font-sans font-bold group-focus-within:text-brand-accent transition-colors">₹</span>
-              <input 
-                type="number" 
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="0.00"
-                className="w-full bg-brand-surface border border-brand-border rounded-xl py-5 pl-10 pr-6 text-sm font-mono font-bold focus:ring-2 focus:ring-brand-accent/20 transition-all outline-none"
-                required
-              />
-            </div>
-          </div>
-          <div className="md:col-span-3 space-y-3">
-            <label className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-[0.3em] font-mono">Classification</label>
-            <div className="grid grid-cols-2 gap-2">
-              <select 
+        <div className="space-y-2">
+          <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Categorical Taxonomy</label>
+          <div className="grid grid-cols-2 gap-3 pb-1">
+            <div className="relative group/select">
+               <select 
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
-                className="w-full h-[56px] bg-brand-surface border border-brand-border rounded-xl px-4 text-[10px] font-bold uppercase tracking-widest focus:ring-2 focus:ring-brand-accent/20 transition-all outline-none appearance-none"
+                className="w-full h-10 bg-brand-bg/30 border border-brand-border rounded-lg px-4 text-[9px] font-mono font-bold text-brand-primary outline-none appearance-none cursor-pointer focus:bg-brand-surface transition-all"
               >
                 {Object.keys(currentCategories).map(cat => (
-                  <option key={cat} value={cat}>{cat}</option>
+                  <option key={cat} value={cat}>{cat.toUpperCase()}</option>
                 ))}
               </select>
+              <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-brand-primary/20">
+                <ChevronRight className="w-3.5 h-3.5 rotate-90" />
+              </div>
+            </div>
+            <div className="relative group/select">
               <select 
                 value={subcategory}
                 onChange={(e) => setSubcategory(e.target.value)}
-                className="w-full h-[56px] bg-brand-surface border border-brand-border rounded-xl px-4 text-[10px] font-bold uppercase tracking-widest focus:ring-2 focus:ring-brand-accent/20 transition-all outline-none appearance-none"
+                className="w-full h-10 bg-brand-bg/30 border border-brand-border rounded-lg px-4 text-[9px] font-mono font-bold text-brand-primary/40 outline-none appearance-none cursor-pointer focus:bg-brand-surface transition-all"
               >
                 {(currentCategories as any)[category]?.map((sub: string) => (
-                  <option key={sub} value={sub}>{sub}</option>
+                  <option key={sub} value={sub}>{sub.toUpperCase()}</option>
                 ))}
               </select>
+              <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-brand-primary/10">
+                <ChevronRight className="w-3.5 h-3.5 rotate-90" />
+              </div>
             </div>
           </div>
         </div>
-
-        {type === 'expense' && (
-          <div className="space-y-4">
-            <label className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-[0.3em] font-mono leading-none">Strategic Attributes</label>
-            <div className="grid grid-cols-3 gap-3">
-              {[
-                { id: 'mandatory', label: 'Essential', state: isMandatory, set: setIsMandatory, icon: ShieldCheck },
-                { id: 'recurring', label: 'Recurring', state: isRecurring, set: setIsRecurring, icon: Activity },
-                { id: 'avoidable', label: 'Avoidable', state: isAvoidable, set: setIsAvoidable, icon: AlertTriangle },
-              ].map((attr) => (
-                <button
-                  key={attr.id}
-                  type="button"
-                  onClick={() => attr.set(!attr.state)}
-                  className={cn(
-                    "flex flex-col items-center gap-3 p-4 rounded-2xl border transition-all",
-                    attr.state 
-                      ? "bg-brand-primary text-brand-surface border-brand-primary shadow-lg" 
-                      : "bg-brand-surface text-brand-primary/40 border-brand-border hover:border-brand-primary/20"
-                  )}
-                >
-                  <attr.icon className={cn("w-4 h-4", attr.state ? "text-brand-accent" : "text-brand-primary/20")} />
-                  <span className="text-[9px] font-bold uppercase tracking-widest leading-none">{attr.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
-      {matchingGoal && type === 'expense' && (
-        <div className="bg-brand-accent/5 border border-brand-accent/10 p-5 rounded-2xl flex items-center gap-4">
-          <div className="w-8 h-8 bg-brand-accent/20 rounded-lg flex items-center justify-center border border-brand-accent/20">
-            <Target className="w-4 h-4 text-brand-accent" />
-          </div>
-          <div className="space-y-0.5">
-            <p className="text-[10px] font-bold text-brand-accent uppercase tracking-[0.2em]">Strategic Routing Enabled</p>
-            <p className="text-[8px] text-brand-primary/40 font-bold uppercase tracking-widest">
-              Allocating to: <span className="text-brand-primary">{matchingGoal.name}</span>
-            </p>
+      {type === 'expense' && (
+        <div className="space-y-2.5">
+          <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/20 pl-1">Scalars</label>
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { id: 'mandatory', label: 'ESSENTIAL', state: isMandatory, set: setIsMandatory, icon: ShieldCheck, color: 'text-brand-accent' },
+              { id: 'recurring', label: 'FIXED', state: isRecurring, set: setIsRecurring, icon: Activity, color: 'text-brand-accent' },
+              { id: 'avoidable', label: 'LEAK', state: isAvoidable, set: setIsAvoidable, icon: AlertCircle, color: 'text-rose-400' },
+            ].map((attr) => (
+              <button
+                key={attr.id}
+                type="button"
+                onClick={() => attr.set(!attr.state)}
+                className={cn(
+                  "flex flex-col items-center justify-center gap-1 py-2 px-2 rounded-lg border transition-all active:scale-95 group/scalar",
+                  attr.state 
+                    ? "bg-brand-primary text-brand-surface border-brand-primary shadow-md" 
+                    : "bg-brand-surface border-brand-border text-brand-primary/30"
+                )}
+              >
+                <attr.icon className={cn("w-3 h-3 transition-colors", attr.state ? attr.color : "text-brand-primary/10")} />
+                <span className="text-[7px] font-bold uppercase tracking-widest">{attr.label}</span>
+              </button>
+            ))}
           </div>
         </div>
       )}
@@ -1839,9 +2143,9 @@ function TransactionForm({ onClose, userId, transactions, goals }: { onClose: ()
       <button
         type="submit"
         disabled={isSubmitting}
-        className="w-full py-6 bg-brand-primary text-brand-surface rounded-2xl font-bold text-xs uppercase tracking-[0.3em] shadow-2xl hover:scale-[1.01] transition-all active:scale-[0.98] disabled:opacity-50"
+        className="w-full py-4 bg-brand-primary text-brand-surface rounded-lg font-bold text-[9px] uppercase tracking-[0.4em] shadow-lg active:scale-[0.98] transition-all border border-white/10 hover:bg-brand-primary/95"
       >
-        {isSubmitting ? 'SECURE_SAVE_PENDING...' : `COMMIT ${type === 'expense' ? 'OUTFLOW' : 'INFLOW'} PROTOCOL`}
+        {isSubmitting ? 'PROCESSING...' : `AUTHORIZE ${type === 'expense' ? 'OUTFLOW' : 'INFLOW'} PROTOCOL`}
       </button>
     </form>
   );
@@ -1861,6 +2165,13 @@ function GoalModalContent({ onClose, userId, goal }: { onClose: () => void, user
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const templates = [
+    { name: 'Emergency Fund', target: 500000, type: 'savings' as GoalType },
+    { name: 'Lifestyle Build', target: 250000, type: 'lifestyle' as GoalType },
+    { name: 'Growth Seed', target: 1000000, type: 'investment' as GoalType },
+    { name: 'Global Travel', target: 400000, type: 'lifestyle' as GoalType }
+  ];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1902,10 +2213,19 @@ function GoalModalContent({ onClose, userId, goal }: { onClose: () => void, user
     if (!goal?.id) return;
     if (!showConfirmDelete) {
       setShowConfirmDelete(true);
+      setTimeout(() => setShowConfirmDelete(false), 4000);
       return;
     }
     setIsSubmitting(true);
     try {
+      // QA FIX: Before deleting goal, find any transactions linked to it and decouple them
+      const q = query(collection(db, 'transactions'), where('linkedGoalId', '==', goal.id));
+      const snapshot = await getDocs(q);
+      const updates = snapshot.docs.map(d => updateDoc(doc(db, 'transactions', d.id), {
+        linkedGoalId: null
+      }));
+      await Promise.all(updates);
+      
       await deleteDoc(doc(db, 'goals', goal.id));
       onClose();
     } catch (error) {
@@ -1916,134 +2236,140 @@ function GoalModalContent({ onClose, userId, goal }: { onClose: () => void, user
   };
 
   return (
-    <form onSubmit={handleSubmit} className="p-6 md:p-8 space-y-6 md:space-y-8">
-      {!showConfirmDelete ? (
-        <div className="space-y-8">
-          <div className="space-y-6">
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-[0.2em]">Goal Designation</label>
-              <input 
-                required
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full bg-brand-bg border border-brand-border rounded-xl py-4 px-5 text-sm font-bold uppercase focus:ring-2 focus:ring-brand-primary/5 transition-all outline-none"
-                placeholder="e.g. Major Asset"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-[0.2em]">Goal Amount</label>
-                <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-brand-primary/40 font-sans font-bold">₹</span>
-                  <input 
-                    required
-                    type="number"
-                    value={targetAmount}
-                    onChange={(e) => setTargetAmount(e.target.value)}
-                    className="w-full bg-brand-bg border border-brand-border rounded-xl py-4 pl-8 pr-5 text-sm font-mono focus:ring-2 focus:ring-brand-primary/5 transition-all outline-none"
-                    placeholder="0"
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-[0.2em]">Monthly Contribution</label>
-                <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-brand-primary/40 font-sans font-bold">₹</span>
-                  <input 
-                    required
-                    type="number"
-                    value={monthlyContribution}
-                    onChange={(e) => setMonthlyContribution(e.target.value)}
-                    className="w-full bg-brand-bg border border-brand-border rounded-xl py-4 pl-8 pr-5 text-sm font-mono focus:ring-2 focus:ring-brand-primary/5 transition-all outline-none"
-                    placeholder="0"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-[0.2em]">Classification</label>
-              <div className="flex bg-brand-bg p-1 rounded-xl border border-brand-border">
-                {(['savings', 'debt', 'investment'] as GoalType[]).map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setType(t)}
-                    className={cn(
-                      "flex-1 py-2.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all",
-                      type === t ? "bg-brand-primary text-brand-surface shadow-md" : "text-brand-primary/40 hover:bg-brand-primary/5"
-                    )}
-                  >
-                    {t}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-[0.2em]">Priority</label>
-              <div className="flex bg-brand-bg p-1 rounded-xl border border-brand-border">
-                {(['low', 'medium', 'high'] as const).map((p) => (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() => setPriority(p)}
-                    className={cn(
-                      "flex-1 py-2.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all",
-                      priority === p ? "bg-brand-primary text-brand-surface shadow-md" : "text-brand-primary/40 hover:bg-brand-primary/5"
-                    )}
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-4">
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="w-full bg-brand-primary text-brand-surface py-5 rounded-xl font-bold text-xs uppercase tracking-[0.2em] hover:bg-brand-primary/90 transition-all shadow-xl disabled:opacity-50 active:scale-[0.98]"
-            >
-              {isSubmitting ? 'Processing' : goal ? 'Commit Changes' : 'Initialize Goal'}
-            </button>
-            {goal && (
+    <form onSubmit={handleSubmit} className="space-y-6">
+      {!goal && (
+        <div className="space-y-2">
+          <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Templates</label>
+          <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+            {templates.map(tmp => (
               <button 
+                key={tmp.name}
                 type="button"
-                onClick={() => setShowConfirmDelete(true)}
-                disabled={isSubmitting}
-                className="w-full text-rose-500 py-2 text-[10px] font-bold uppercase tracking-[0.2em] hover:text-rose-600 transition-all disabled:opacity-50"
+                onClick={() => {
+                  setName(tmp.name);
+                  setTargetAmount(tmp.target.toString());
+                  setType(tmp.type);
+                }}
+                className="flex-shrink-0 px-4 py-3 rounded-xl border border-brand-border bg-brand-bg/50 hover:border-brand-accent/40 hover:bg-brand-surface transition-all text-left min-w-[140px] group"
               >
-                Terminate Goal
+                <div className="flex items-center justify-between mb-2">
+                  <div className="px-2 py-0.5 bg-brand-accent/10 text-brand-accent text-[7px] font-mono font-bold uppercase tracking-widest rounded">{tmp.type}</div>
+                  <Target className="w-2.5 h-2.5 text-brand-primary/10 group-hover:text-brand-accent transition-colors" />
+                </div>
+                <p className="text-[10px] font-bold text-brand-primary uppercase tracking-tight mb-1">{tmp.name}</p>
+                <p className="text-[8px] font-mono text-brand-primary/30 font-bold">₹{(tmp.target/1000).toFixed(0)}K TARGET</p>
               </button>
-            )}
-          </div>
-        </div>
-      ) : (
-        <div className="bg-rose-500/5 p-8 rounded-2xl border border-rose-500/20 space-y-8">
-          <p className="text-sm text-rose-600 font-bold uppercase tracking-wide text-center leading-relaxed">Confirm Goal Termination? This action will purge all associated goal data.</p>
-          <div className="flex flex-col gap-3">
-            <button 
-              type="button"
-              onClick={handleDelete}
-              disabled={isSubmitting}
-              className="w-full bg-rose-500 text-white py-4 rounded-xl font-bold text-xs uppercase tracking-[0.2em] hover:bg-rose-600 transition-all shadow-lg disabled:opacity-50"
-            >
-              {isSubmitting ? '...' : 'Confirm Purge'}
-            </button>
-            <button 
-              type="button"
-              onClick={() => setShowConfirmDelete(false)}
-              className="w-full py-3 text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest hover:text-brand-primary transition-all"
-            >
-              Abort
-            </button>
+            ))}
           </div>
         </div>
       )}
+
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Entity Identity</label>
+          <input 
+            required
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. MISSION ALPHA"
+            className="w-full bg-brand-surface border border-brand-border rounded-lg py-2 px-4 text-base font-bold uppercase tracking-tight text-brand-primary outline-none focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all text-center placeholder:text-brand-primary/5"
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-2">
+            <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Capital Target</label>
+            <div className="relative group">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 font-mono font-bold text-brand-primary/10 group-focus-within/input:text-brand-accent transition-colors text-xs">₹</span>
+              <input 
+                required
+                type="number"
+                value={targetAmount}
+                onChange={(e) => setTargetAmount(e.target.value)}
+                className="w-full bg-brand-surface border border-brand-border rounded-lg py-2.5 pl-8 pr-4 font-mono font-bold text-lg text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none"
+                placeholder="0"
+              />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Seed Assets</label>
+            <div className="relative group">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 font-mono font-bold text-brand-primary/10 group-focus-within/input:text-brand-accent transition-colors text-xs">₹</span>
+              <input 
+                type="number"
+                value={currentAmount}
+                onChange={(e) => setCurrentAmount(e.target.value)}
+                className="w-full bg-brand-surface border border-brand-border rounded-lg py-2.5 pl-8 pr-4 font-mono font-bold text-lg text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none"
+                placeholder="0"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-2">
+            <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Protocol Type</label>
+            <div className="relative group">
+              <select 
+                value={type}
+                onChange={(e) => setType(e.target.value as GoalType)}
+                className="w-full h-10 bg-brand-surface border border-brand-border rounded-lg px-4 text-[9px] font-mono font-bold text-brand-primary outline-none appearance-none cursor-pointer focus:ring-2 focus:ring-brand-accent/5 transition-all text-center"
+              >
+                <option value="savings">SAVINGS_CORE</option>
+                <option value="investment">GROWTH_ASSET</option>
+                <option value="lifestyle">LIFESTYLE_BURN</option>
+              </select>
+              <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-brand-primary/20">
+                <ChevronRight className="w-3 h-3 rotate-90" />
+              </div>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Operational Priority</label>
+            <div className="relative group">
+              <select 
+                value={priority}
+                onChange={(e) => setPriority(e.target.value as any)}
+                className="w-full h-10 bg-brand-surface border border-brand-border rounded-lg px-4 text-[9px] font-mono font-bold text-brand-primary outline-none appearance-none cursor-pointer focus:ring-2 focus:ring-brand-accent/5 transition-all text-center"
+              >
+                <option value="high">SYSTEM_CRITICAL</option>
+                <option value="medium">STANDARD_OPS</option>
+                <option value="low">TRIVIAL_FLOAT</option>
+              </select>
+              <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-brand-primary/20">
+                <ChevronRight className="w-3 h-3 rotate-90" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-3">
+        {errorMsg && (
+          <p className="text-[8px] font-mono font-bold text-rose-500 text-center animate-pulse">{errorMsg}</p>
+        )}
+        <button 
+          type="submit"
+          disabled={isSubmitting}
+          className="w-full py-5 bg-brand-primary text-brand-surface rounded-xl font-bold text-[10px] uppercase tracking-[0.4em] shadow-lg active:scale-[0.98] transition-all border border-white/10"
+        >
+          {isSubmitting ? 'SECURE_COMMIT_PENDING' : goal ? 'Authorize Strategic Modification' : 'Initialize Portfolio Target'}
+        </button>
+
+        {goal && (
+          <button 
+            type="button"
+            onClick={handleDelete}
+            className={cn(
+              "w-full py-3 rounded-lg text-[9px] font-mono font-bold uppercase tracking-widest transition-all",
+              showConfirmDelete ? "bg-rose-500 text-white animate-pulse" : "bg-rose-500/5 text-rose-500 hover:bg-rose-500/10"
+            )}
+          >
+            {showConfirmDelete ? 'Confirm Resignation' : 'Decommission Goal'}
+          </button>
+        )}
+      </div>
     </form>
   );
 }
