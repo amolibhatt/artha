@@ -37,7 +37,12 @@ import {
   Activity,
   AlertTriangle,
   Settings2,
-  X
+  X,
+  UtensilsCrossed,
+  ShoppingCart,
+  ShoppingBag,
+  Car,
+  Film
 } from 'lucide-react';
 import { 
   Tooltip, 
@@ -128,10 +133,9 @@ function MainApp() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [showCommandCenter, setShowCommandCenter] = useState(false);
-  const [commandTab, setCommandTab] = useState<'transaction' | 'budget' | 'goal'>('transaction');
+  const [commandTab, setCommandTab] = useState<'transaction' | 'goal'>('transaction');
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
   const [showMobileTip, setShowMobileTip] = useState(false);
-  const [monthlyBudget, setMonthlyBudget] = useState(() => Number(localStorage.getItem('monthlyBudget')) || 0);
   const [filter, setFilter] = useState<'All' | 'Expenses' | 'Income'>('All');
   const [stressTest, setStressTest] = useState<StressTestState>(() => {
     const saved = localStorage.getItem('stressTest');
@@ -172,10 +176,6 @@ function MainApp() {
       timeouts.current.delete = setTimeout(() => setTransactionIdToConfirmDelete(null), 4000);
     }
   };
-
-  useEffect(() => {
-    localStorage.setItem('monthlyBudget', monthlyBudget.toString());
-  }, [monthlyBudget]);
 
   useEffect(() => {
     localStorage.setItem('stressTest', JSON.stringify(stressTest));
@@ -282,6 +282,7 @@ function MainApp() {
     }
   }, [user, transactions.length, goals.length]);
 
+  // Strategic Cash Flow Monitoring
   const {
     totalIncome,
     totalExpenses,
@@ -303,8 +304,12 @@ function MainApp() {
     daysInMonth,
     last7Days,
     avgDailySpend,
-    remainingDays
-  } = useFinancialEngine(transactions, goals, monthlyBudget, stressTest);
+    remainingDays,
+    strategicSpendingCeiling,
+    dailySpendingPower,
+    monthlyGoalCommitments,
+    estimatedMonthlyIncome
+  } = useFinancialEngine(transactions, goals, 0, stressTest);
 
   // QA Logic: McKinsey-level strategic thresholds
   const healthStatus = runwayMonths >= 6 ? 'STABILIZED' : runwayMonths >= 3 ? 'WARNING' : 'CRITICAL';
@@ -320,34 +325,10 @@ function MainApp() {
   const daysUntilReset = lastDayOfMonth.getDate() - now.getDate();
   const recentTrend = last7Days[6].amount > avgDailySpend ? 'Increasing' : 'Stable';
 
-  // Global Command Shortcut
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() === 'c' && !showCommandCenter && (e.target as HTMLElement).tagName !== 'INPUT' && (e.target as HTMLElement).tagName !== 'TEXTAREA') {
-        setShowCommandCenter(true);
-      }
-      if (e.key === 'Escape' && showCommandCenter) {
-        setShowCommandCenter(false);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showCommandCenter]);
-
-  const budgetDailyLimit = monthlyBudget / daysInMonth;
-  const isAheadOfBudget = activeDailyPace < budgetDailyLimit;
-  const budgetVariance = (budgetDailyLimit * today.getDate()) - spentThisMonth;
-  const todaySpent = transactions
-    .filter(t => {
-      const d = new Date(t.date);
-      return d.getDate() === today.getDate() && 
-             d.getMonth() === today.getMonth() && 
-             d.getFullYear() === today.getFullYear() &&
-             t.type === 'expense';
-    })
-    .reduce((sum, t) => sum + t.amount, 0);
-
-  const dailyRemaining = Math.max(0, budgetDailyLimit - todaySpent);
+  const budgetDailyLimit = dailySpendingPower;
+  const isAheadOfBudget = activeDailyPace < dailySpendingPower;
+  const budgetVariance = (dailySpendingPower * today.getDate()) - spentThisMonth;
+  const dailyRemaining = Math.max(0, dailySpendingPower - spentToday);
 
   const listContainer = {
     hidden: { opacity: 0 },
@@ -416,15 +397,17 @@ function MainApp() {
 
   const getCategoryIcon = (category: string) => {
     const cat = category.toLowerCase();
-    if (cat.includes('food') || cat.includes('dining') || cat.includes('restaurant')) return <Zap className="w-5 h-5" />;
-    if (cat.includes('shopping') || cat.includes('amazon') || cat.includes('lifestyle')) return <Plus className="w-5 h-5 rotate-45" />;
-    if (cat.includes('transport') || cat.includes('travel') || cat.includes('uber')) return <Compass className="w-5 h-5" />;
-    if (cat.includes('bill') || cat.includes('rent') || cat.includes('utility')) return <Landmark className="w-5 h-5" />;
-    if (cat.includes('invest') || cat.includes('stock') || cat.includes('crypto')) return <Sparkles className="w-5 h-5" />;
-    if (cat.includes('salary') || cat.includes('income')) return <TrendingUp className="w-5 h-5" />;
-    if (cat.includes('health') || cat.includes('medical')) return <ShieldCheck className="w-5 h-5" />;
-    if (cat.includes('entertainment') || cat.includes('netflix')) return <Zap className="w-5 h-5 text-amber-400" />;
-    return <List className="w-5 h-5" />;
+    if (cat.includes('dining') || cat.includes('swiggy') || cat.includes('zomato')) return <UtensilsCrossed className="w-5 h-5 text-brand-accent/70" />;
+    if (cat.includes('grocery') || cat.includes('q-commerce') || cat.includes('blinkit') || cat.includes('instamart') || cat.includes('zepto')) return <ShoppingCart className="w-5 h-5 text-emerald-400/70" />;
+    if (cat.includes('shopping') || cat.includes('fashion') || cat.includes('lifestyle') || cat.includes('amazon') || cat.includes('flipkart')) return <ShoppingBag className="w-5 h-5 text-brand-secondary/70" />;
+    if (cat.includes('transport') || cat.includes('commute') || cat.includes('uber') || cat.includes('ola') || cat.includes('rapido')) return <Car className="w-5 h-5 text-sky-400/70" />;
+    if (cat.includes('bill') || cat.includes('utility') || cat.includes('recharge')) return <Zap className="w-5 h-5 text-amber-400/70" />;
+    if (cat.includes('housing') || cat.includes('rent')) return <Home className="w-5 h-5 text-brand-primary/70" />;
+    if (cat.includes('health') || cat.includes('medical') || cat.includes('gym')) return <Activity className="w-5 h-5 text-rose-400/70" />;
+    if (cat.includes('travel') || cat.includes('flight') || cat.includes('hotel')) return <Plane className="w-5 h-5 text-indigo-400/70" />;
+    if (cat.includes('entertainment') || cat.includes('netflix') || cat.includes('gaming')) return <Film className="w-5 h-5 text-purple-400/70" />;
+    if (cat.includes('invest') || cat.includes('emi') || cat.includes('stock')) return <TrendingUp className="w-5 h-5 text-brand-accent" />;
+    return <List className="w-5 h-5 text-brand-primary/40" />;
   };
 
   const totalLiquidReserves = goals
@@ -440,20 +423,7 @@ function MainApp() {
   const categoryData = transactions
     .filter(t => t.type === 'expense')
     .reduce((acc: any[], t) => {
-      let groupName = t.category;
-      const lowerCat = t.category.toLowerCase();
-      
-      if (lowerCat.includes('food') || lowerCat.includes('dining') || lowerCat.includes('quick commerce') || lowerCat.includes('grocery')) {
-        groupName = 'Food & Groceries';
-      } else if (lowerCat.includes('shopping') || lowerCat.includes('ecommerce') || lowerCat.includes('clothing')) {
-        groupName = 'Shopping';
-      } else if (lowerCat.includes('transport') || lowerCat.includes('fuel') || lowerCat.includes('travel') || lowerCat.includes('cab')) {
-        groupName = 'Transport';
-      } else if (lowerCat.includes('utilities') || lowerCat.includes('rent') || lowerCat.includes('bills') || lowerCat.includes('recharge')) {
-        groupName = 'Bills & Rent';
-      } else if (lowerCat.includes('investment') || lowerCat.includes('savings') || lowerCat.includes('sip') || lowerCat.includes('stock')) {
-        groupName = 'Savings & Investments';
-      }
+      const groupName = t.category;
       
       const existing = acc.find(i => i.name === groupName);
       if (existing) {
@@ -686,89 +656,66 @@ function MainApp() {
 
       <main className="max-w-4xl mx-auto px-4 md:px-6 py-4 md:py-8 space-y-4 md:space-y-8">
         {activeTab === 'home' && (
-          <div className="space-y-4 md:space-y-8">
-            {/* Quick Action Bar */}
-            <div className="flex items-center justify-between">
+          <div className="space-y-6">
+            {/* Executive Header */}
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
               <div className="space-y-1">
-                <h1 className="text-2xl font-display font-bold text-brand-primary tracking-tight">Dashboard</h1>
-                <p className="data-label">Your daily spending status</p>
+                <h1 className="text-3xl font-display font-bold text-brand-primary tracking-tighter">Personal CFO</h1>
+                <p className="data-label">Strategic Cash Flow Control Module</p>
               </div>
-              <button 
-                onClick={() => {
-                  setCommandTab('transaction');
-                  setShowCommandCenter(true);
-                }}
-                className="group flex items-center gap-2 px-6 py-3 bg-brand-primary text-brand-surface rounded-2xl text-xs font-bold uppercase tracking-widest hover:scale-[1.02] active:scale-95 transition-all shadow-xl"
-              >
-                <Plus className="w-5 h-5 transition-transform group-hover:rotate-90" />
-                <span>Add Expense</span>
-              </button>
+              <div className="flex gap-2">
+                 <div className="bg-brand-surface/50 border border-brand-border px-3 py-1.5 rounded-xl flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 bg-brand-accent rounded-full animate-pulse" />
+                    <span className="text-[10px] font-mono font-bold text-brand-primary uppercase tracking-widest">{healthStatus}</span>
+                 </div>
+              </div>
             </div>
 
-            {monthlyBudget === 0 ? (
-              <div className="bg-brand-bg border-2 border-dashed border-brand-border rounded-[2.5rem] p-12 text-center space-y-6">
-                <div className="w-16 h-16 bg-brand-primary/5 rounded-3xl flex items-center justify-center text-brand-primary/20 mx-auto">
-                  <Wallet className="w-8 h-8" />
-                </div>
-                <div className="space-y-2">
-                  <h3 className="text-xl font-display font-bold text-brand-primary">No budget established</h3>
-                  <p className="text-sm text-brand-primary/40 max-w-xs mx-auto">Set a monthly limit to enable strategic spending tracking and daily allowances.</p>
-                </div>
-                <button 
-                  onClick={() => {
-                    setCommandTab('budget');
-                    setShowCommandCenter(true);
-                  }}
-                  className="px-8 py-4 bg-brand-primary text-brand-surface rounded-2xl text-xs font-bold uppercase tracking-widest hover:bg-brand-primary/95 transition-all shadow-lg active:scale-95"
-                >
-                  Set Monthly Budget
-                </button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-12 gap-4 md:gap-8">
-              {/* Primary Liquidity Card */}
-              <div className="md:col-span-7">
-                <section className="bg-brand-primary text-brand-surface rounded-[2.5rem] overflow-hidden shadow-2xl relative h-full border border-white/5">
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+              {/* Strategic Capacity & Metrics (Left Column Dominant) */}
+              <div className="md:col-span-8 md:row-span-2 space-y-6">
+                <section className="bg-brand-primary text-brand-surface rounded-[2.5rem] overflow-hidden shadow-2xl relative h-full border border-white/5 flex flex-col">
                   <div className="absolute inset-0 opacity-[0.03] pointer-events-none" 
                     style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '40px 40px' }} 
                   />
                   
-                  <div className="p-8 md:p-10 space-y-8 relative z-10">
-                    <div className="space-y-1">
-                      <p className="data-label !text-brand-surface/40 uppercase tracking-[0.2em]">Monthly Budget Left</p>
-                      <h2 className={cn(
-                        "text-5xl md:text-7xl font-display font-bold tracking-tighter leading-none",
-                        (monthlyBudget === 0) ? "text-brand-surface/10" : "text-brand-surface"
-                      )}>
-                        {monthlyBudget === 0 ? '₹0' : formatCurrency(adjustedLeftToSpend)}
+                  <div className="p-8 md:p-10 space-y-10 relative z-10 flex-1">
+                    <div className="space-y-2">
+                      <p className="data-label !text-brand-surface/40 uppercase tracking-[0.2em]">Safe Spending Capacity</p>
+                      <h2 className="text-6xl md:text-8xl font-display font-bold tracking-tighter leading-none text-brand-surface">
+                        {formatCurrency(Math.max(0, strategicSpendingCeiling - spentThisMonth))}
                       </h2>
-                      <p className="text-[10px] text-brand-surface/30 uppercase font-bold mt-2 tracking-widest">Available funds for the month</p>
+                      <p className="text-xs text-brand-surface/30 font-medium mt-2 tracking-tight">Net monthly liquidity after goal preservation protocols</p>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-8 border-t border-white/10 pt-8">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-8 pt-10 border-t border-white/10">
                       <div className="space-y-1">
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-brand-surface/30 px-1">Planned Per Day</p>
-                        <p className="text-3xl font-mono font-bold text-brand-surface">{formatCurrency(budgetDailyLimit)}</p>
-                        <p className="text-[8px] text-brand-surface/20 uppercase font-medium px-1">Target spending speed</p>
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-brand-surface/30">Monthly Ceiling</p>
+                        <p className="text-2xl font-mono font-bold text-brand-surface">{formatCurrency(strategicSpendingCeiling)}</p>
+                        <p className="text-[8px] text-brand-surface/20 uppercase font-medium">Cap based on net flow</p>
                       </div>
                       <div className="space-y-1">
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-brand-surface/30 px-1">Month Progress</p>
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-brand-surface/30">Deployment</p>
                         <div className="flex items-baseline gap-2">
-                          <span className="text-3xl font-mono font-bold text-brand-surface">{((now.getDate() / daysInMonth) * 100).toFixed(0)}</span>
-                          <p className="text-[10px] font-bold text-brand-surface/20 uppercase">%</p>
+                          <span className="text-2xl font-mono font-bold text-brand-surface">{((spentThisMonth / (strategicSpendingCeiling || 1)) * 100).toFixed(0)}%</span>
                         </div>
                         <div className="h-1 w-full bg-white/10 rounded-full mt-2 overflow-hidden">
-                          <div className="h-full bg-brand-accent w-full" style={{ width: `${(now.getDate() / daysInMonth) * 100}%` }} />
+                          <div className="h-full bg-brand-accent w-full" style={{ width: `${Math.min(100, (spentThisMonth / (strategicSpendingCeiling || 1)) * 100)}%` }} />
                         </div>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-brand-surface/30">Protected Funds</p>
+                        <p className="text-2xl font-mono font-bold text-brand-accent">{formatCurrency(monthlyGoalCommitments)}</p>
+                        <p className="text-[8px] text-brand-accent/40 uppercase font-medium">Earmarked for targets</p>
                       </div>
                     </div>
                   </div>
                 </section>
               </div>
 
-              {/* Allowance Radar */}
-              <div className="md:col-span-5">
-                <div className="bg-brand-surface border border-brand-border rounded-[2.5rem] p-8 md:p-10 h-full shadow-sm flex flex-col justify-between relative overflow-hidden">
+              {/* Tactical Pulse (Right Column) */}
+              <div className="md:col-span-4 space-y-6">
+                <div className="bg-brand-surface border border-brand-border rounded-[2.5rem] p-8 h-full shadow-sm flex flex-col justify-between relative overflow-hidden">
                   <div className="absolute top-0 right-0 w-40 h-40 bg-brand-accent/5 rounded-full blur-[60px] -mr-20 -mt-20" />
                   
                   <div className="space-y-6 relative z-10">
@@ -792,21 +739,21 @@ function MainApp() {
                       )}>
                         {formatCurrency(dailyRemaining)}
                       </p>
-                      <p className="text-[10px] font-bold text-brand-primary/30 uppercase tracking-widest px-1">Available to spend now</p>
+                      <p className="text-[10px] font-bold text-brand-primary/30 uppercase tracking-widest px-1">Available spending power</p>
                     </div>
                     
                     <div className="pt-4 border-t border-brand-border">
                       <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-wider">
-                        <span className="text-brand-primary/40 text-[8px]">Spent so far</span>
-                        <span className="text-brand-primary">{formatCurrency(todaySpent)}</span>
+                        <span className="text-brand-primary/40 text-[8px]">Daily Limit</span>
+                        <span className="text-brand-primary">{formatCurrency(dailySpendingPower)}</span>
                       </div>
                       <div className="h-2 w-full bg-brand-bg rounded-full mt-3 overflow-hidden p-0.5 border border-brand-border">
                         <motion.div 
                           initial={{ width: 0 }}
-                          animate={{ width: `${Math.min((todaySpent / (budgetDailyLimit || 1)) * 100, 100)}%` }}
+                          animate={{ width: `${Math.min((spentToday / (dailySpendingPower || 1)) * 100, 100)}%` }}
                           className={cn(
                             "h-full rounded-full",
-                            todaySpent > budgetDailyLimit ? "bg-rose-500" : "bg-brand-primary"
+                            spentToday > dailySpendingPower ? "bg-rose-500" : "bg-brand-primary"
                           )}
                         />
                       </div>
@@ -814,7 +761,7 @@ function MainApp() {
                   </div>
 
                   <div className={cn(
-                    "mt-8 p-4 rounded-2xl border text-[10px] font-bold uppercase tracking-widest text-center",
+                    "mt-8 p-3 rounded-2xl border text-[9px] font-bold uppercase tracking-widest text-center",
                     isAheadOfBudget ? "bg-brand-accent/5 border-brand-accent/10 text-brand-accent" : "bg-rose-500/5 border-rose-500/10 text-rose-500"
                   )}>
                     {isAheadOfBudget ? '✓ Operational Surplus' : '⚠ Capital Leak Detected'}
@@ -822,125 +769,109 @@ function MainApp() {
                 </div>
               </div>
 
-              {/* Insights & Strategy Grid */}
-              <div className="md:col-span-12 grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8">
-                {/* AI Briefing */}
-                <div className="bg-brand-accent/5 border border-brand-accent/10 rounded-[2.5rem] p-8 md:p-10 space-y-4 relative overflow-hidden group">
+              {/* Insights Briefing (Right Column) */}
+              <div className="md:col-span-4 h-full">
+                <div className="bg-brand-accent/5 border border-brand-accent/10 rounded-[2.5rem] p-8 space-y-4 relative overflow-hidden flex flex-col justify-center h-full">
                   <div className="flex items-center gap-3 mb-2">
                     <div className="w-10 h-10 bg-brand-accent/10 rounded-2xl flex items-center justify-center text-brand-accent">
                       <TrendingUp className="w-5 h-5" />
                     </div>
                     <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-brand-accent">CFO Assessment</p>
                   </div>
-                  <p className="text-xl md:text-2xl text-brand-primary font-display font-medium leading-tight tracking-tight">
-                    {budgetPercentage < 50 
-                      ? "Capital efficiency is high. Strategic reinvestment of surplus into current goals recommended."
-                      : budgetPercentage > 90 
+                  <p className="text-lg text-brand-primary font-display font-medium leading-tight tracking-tight">
+                    { (spentThisMonth / (strategicSpendingCeiling || 1)) < 0.5 
+                      ? "Capital efficiency is high. Strategic reinvestment of surplus into portfolio targets recommended."
+                      : (spentThisMonth / (strategicSpendingCeiling || 1)) > 0.9 
                       ? "Liquidity threshold reached. Immediate spending freeze on non-essentials required to stabilize month-end cash."
                       : "Operational flow is stable. Maintain current daily velocity to meet all financial targets."
                     }
                   </p>
                 </div>
+              </div>
 
-                {/* Goals Snapview */}
-                <div className="bg-brand-surface border border-brand-border rounded-[2.5rem] p-8 md:p-10 space-y-6 shadow-sm">
+              {/* Lower Dashboard Grid */}
+              <div className="md:col-span-12 grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                {/* Goals Pulse */}
+                <div className="bg-brand-surface border border-brand-border rounded-[2.5rem] p-8 space-y-6 shadow-sm">
                   <div className="flex items-center justify-between border-b border-brand-border pb-6">
                     <div className="space-y-1">
-                      <p className="data-label">Strategic Targets</p>
-                      <h3 className="text-xl font-display font-bold text-brand-primary tracking-tight">Portfolio Pulse</h3>
+                      <p className="data-label">Portfolio Pulse</p>
+                      <h3 className="text-xl font-display font-bold text-brand-primary tracking-tight">Active Targets</h3>
                     </div>
                     <div className="w-10 h-10 rounded-2xl bg-brand-primary/5 flex items-center justify-center text-brand-primary border border-brand-border">
                       <Target className="w-5 h-5" />
                     </div>
                   </div>
                   
-                  <div className="space-y-4">
-                    {goals.length > 0 ? goals.slice(0, 2).map((goal) => {
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {goals.length > 0 ? goals.slice(0, 4).map((goal) => {
                       const progress = goal.targetAmount > 0 ? Math.min((goal.currentAmount / goal.targetAmount) * 100, 100) : 0;
                       return (
-                        <div key={goal.id} className="bg-brand-bg/40 p-5 rounded-[1.5rem] border border-brand-border/50 space-y-3">
-                          <div className="flex justify-between items-center">
-                            <p className="text-xs font-bold text-brand-primary uppercase tracking-wide">{goal.name}</p>
-                            <span className="text-[10px] font-mono font-bold text-brand-accent bg-brand-accent/10 px-2 py-0.5 rounded-lg border border-brand-accent/20">{progress.toFixed(0)}%</span>
+                        <div key={goal.id} className="bg-brand-bg/40 p-4 rounded-[1.5rem] border border-brand-border/50 space-y-3">
+                          <div className="flex justify-between items-start gap-2">
+                             <div className="space-y-1 min-w-0">
+                              <p className="text-[10px] font-bold text-brand-primary uppercase tracking-wide truncate">{goal.name}</p>
+                              <div className="space-y-0.5">
+                                <p className="text-[11px] font-mono font-bold text-brand-primary">{formatCurrency(goal.targetAmount)}</p>
+                                <p className="text-[7px] font-bold text-brand-primary/20 uppercase tracking-[0.1em]">Target Protocol</p>
+                              </div>
+                            </div>
+                            <span className="text-[9px] font-mono font-bold text-brand-accent flex-shrink-0">{progress.toFixed(0)}%</span>
                           </div>
-                          <div className="h-1.5 w-full bg-brand-primary/5 rounded-full overflow-hidden">
+                          <div className="h-1 w-full bg-brand-primary/5 rounded-full overflow-hidden">
                             <div className="h-full bg-brand-primary" style={{ width: `${progress}%` }} />
                           </div>
                         </div>
                       );
                     }) : (
-                      <div className="py-4 text-center space-y-2">
-                        <p className="text-sm font-medium text-brand-primary/40 font-mono">NO ACTIVE TARGETS</p>
-                        <button onClick={() => setActiveTab('goals')} className="text-[10px] font-bold text-brand-accent uppercase underline decoration-brand-accent/30 underline-offset-4">Provision Portfolio</button>
+                      <div className="col-span-2 py-4 text-center space-y-2">
+                        <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest">No Active Targets</p>
                       </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Operations Ledger Snippet */}
+                <div className="bg-brand-surface border border-brand-border rounded-[2.5rem] p-8 space-y-6 shadow-sm">
+                  <div className="flex items-center justify-between border-b border-brand-border pb-6">
+                    <div className="space-y-1">
+                      <p className="data-label">Operations Ledger</p>
+                      <h3 className="text-xl font-display font-bold text-brand-primary tracking-tight">Recent Activity</h3>
+                    </div>
+                    <button 
+                      onClick={() => setActiveTab('history')}
+                      className="text-[10px] font-bold text-brand-accent uppercase tracking-[0.2em] hover:opacity-80 transition-opacity"
+                    >
+                      Audit History
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    {transactions.slice(0, 3).map(t => (
+                      <div key={t.id} className="flex items-center justify-between p-2 hover:bg-brand-bg/50 rounded-xl transition-colors">
+                        <div className="flex items-center gap-3">
+                           <div className="w-8 h-8 bg-brand-bg rounded-lg flex items-center justify-center text-brand-primary/40 text-[10px]">
+                              {getCategoryIcon(t.category)}
+                           </div>
+                           <div>
+                              <p className="text-xs font-bold text-brand-primary uppercase tracking-wide truncate max-w-[120px]">{t.description}</p>
+                              <p className="text-[8px] text-brand-primary/30 font-bold uppercase">{t.category}</p>
+                           </div>
+                        </div>
+                        <p className={cn(
+                          "text-sm font-mono font-bold",
+                          t.type === 'income' ? "text-brand-accent" : "text-brand-primary"
+                        )}>
+                          {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
+                        </p>
+                      </div>
+                    ))}
+                    {transactions.length === 0 && (
+                      <p className="text-center py-4 text-[10px] font-bold text-brand-primary/30 uppercase tracking-widest">Ledger Clear</p>
                     )}
                   </div>
                 </div>
               </div>
             </div>
-          )}
-
-            {/* Recent Activity Snippet - Only show if data exists */}
-            {transactions.length > 0 && (
-              <section className="space-y-4">
-                <div className="flex items-end justify-between px-1">
-                  <div className="space-y-1">
-                    <h3 className="text-2xl md:text-3xl font-display font-bold uppercase tracking-tight text-brand-primary">Transactions</h3>
-                    <p className="data-label">Recent entries</p>
-                  </div>
-                  <button 
-                    onClick={() => setActiveTab('history')}
-                    className="text-[10px] font-bold text-brand-accent uppercase tracking-wider transition-all"
-                  >
-                    View Ledger
-                  </button>
-                </div>
-                <div className="space-y-2">
-                  {transactions.slice(0, 3).map(t => (
-                    <div key={t.id} className="bg-brand-surface p-3.5 border border-brand-border rounded-2xl flex items-center justify-between group hover:border-brand-primary/20 transition-all shadow-sm">
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 bg-brand-bg rounded-xl flex items-center justify-center text-brand-primary/30 group-hover:bg-brand-primary group-hover:text-brand-surface transition-all border border-brand-border group-hover:border-brand-primary shadow-sm group-hover:shadow-lg">
-                          {getCategoryIcon(t.category)}
-                        </div>
-                        <div className="space-y-1">
-                          <p className="text-sm font-bold text-brand-primary uppercase tracking-wide leading-tight">{t.description}</p>
-                          <p className="text-[10px] font-bold text-brand-primary/30 uppercase tracking-wider leading-relaxed py-0.5">{t.category}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-4">
-                        <p className={cn(
-                          "text-xl font-mono font-bold tabular-nums leading-tight py-1",
-                          t.type === 'income' ? "text-brand-accent" : "text-brand-primary"
-                        )}>
-                          {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
-                        </p>
-                        <button 
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            handleDeleteTransaction(t);
-                          }}
-                          className={cn(
-                            "p-3 transition-all rounded-xl active:scale-90 border",
-                            transactionIdToConfirmDelete === t.id 
-                              ? "bg-rose-500 text-white border-rose-600 shadow-lg scale-110" 
-                              : "text-rose-500/30 hover:text-rose-600 hover:bg-rose-500/10 border-transparent hover:border-rose-500/20"
-                          )}
-                          title="Delete Transaction"
-                        >
-                          {transactionIdToConfirmDelete === t.id ? (
-                            <span className="text-[8px] font-bold uppercase tracking-widest px-1">Confirm</span>
-                          ) : (
-                            <Trash2 className="w-5 h-5" />
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
           </div>
         )}
 
@@ -951,17 +882,6 @@ function MainApp() {
                 <h2 className="section-header">Ledger</h2>
                 <p className="data-label">Comprehensive history of your money movement</p>
               </div>
-
-              <button 
-                onClick={() => {
-                  setCommandTab('transaction');
-                  setShowCommandCenter(true);
-                }}
-                className="group relative flex items-center gap-3 px-5 py-2.5 bg-brand-primary text-brand-surface rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-brand-primary/95 transition-all shadow-xl active:scale-95"
-              >
-                <Plus className="w-4 h-4 transition-transform group-hover:rotate-90" />
-                <span>Log Entry</span>
-              </button>
             </div>
 
               <div className="bg-brand-surface rounded-[2rem] border border-brand-border shadow-sm overflow-hidden grid grid-cols-3 divide-x divide-brand-border font-mono relative">
@@ -1214,71 +1134,21 @@ function MainApp() {
 
         {activeTab === 'goals' && (
           <div className="space-y-12">
-            {goals.length > 0 && (
-              <>
-                <div className="flex flex-col md:flex-row md:items-end justify-between gap-8">
-                  <div className="space-y-1">
-                    <h2 className="section-header">Financial Portfolio</h2>
-                    <p className="data-label">Target-Oriented Capital Allocation Map</p>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <button 
-                      onClick={() => {
-                        setCommandTab('goal');
-                        setShowCommandCenter(true);
-                      }}
-                      className="px-6 py-3 bg-brand-primary text-brand-surface rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-brand-primary/90 transition-all flex items-center gap-3 shadow-xl"
-                    >
-                      <Plus className="w-4 h-4" />
-                      Initialize New Goal
-                    </button>
-                  </div>
-                </div>
-
-                {/* Aggregate Progress Hero - Compact */}
-                <div className="bg-brand-primary text-brand-surface rounded-3xl p-4 md:p-6 relative overflow-hidden shadow-xl">
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-brand-accent/10 rounded-full blur-[60px] -mr-16 -mt-16" />
-                  <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div className="space-y-0.5">
-                      <p className="text-[9px] font-bold text-brand-surface/40 uppercase tracking-wider">Total Progress</p>
-                      <h3 className="text-3xl md:text-4xl font-mono font-bold text-brand-accent leading-none py-1">
-                        {totalGoalTarget > 0 ? totalGoalProgress.toFixed(1) : "0"}%
-                      </h3>
-                    </div>
-                    <div className="flex-1 sm:max-w-xs space-y-3">
-                      <div className="h-1.5 w-full bg-brand-surface/10 rounded-full overflow-hidden border border-white/5">
-                        <motion.div 
-                          initial={{ width: 0 }}
-                          animate={{ width: `${totalGoalTarget > 0 ? Math.min(totalGoalProgress, 100) : 0}%` }}
-                          className="h-full bg-brand-accent shadow-[0_0_15px_rgba(16,185,129,0.3)]"
-                        />
-                      </div>
-                      <div className="flex justify-between text-[9px] font-bold text-brand-surface/40 uppercase tracking-wider">
-                        <span>{formatCurrency(totalGoalCurrent)}</span>
-                        <span>{formatCurrency(totalGoalTarget)}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </>
-            )}
-
             <div className="space-y-8">
-              <div className="flex items-end justify-between px-1">
+              <div className="flex flex-col md:flex-row md:items-end justify-between px-1 gap-4">
                 <div className="space-y-1">
                   <h2 className="text-3xl font-sans font-bold uppercase tracking-tight text-brand-primary leading-tight py-1">Strategic Portfolio</h2>
                   <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-wider py-0.5">Asset Allocation Targets</p>
                 </div>
-                <button 
-                  onClick={() => {
-                    setCommandTab('goal');
-                    setShowCommandCenter(true);
-                  }}
-                  className="px-6 py-3 bg-brand-primary text-brand-surface rounded-xl text-[10px] font-bold uppercase tracking-widest shadow-xl active:scale-95 transition-all flex items-center gap-2"
-                >
-                  <Plus className="w-3 h-3" />
-                  New Target
-                </button>
+                {goals.some(g => g.type === 'debt') && (
+                  <button 
+                    onClick={() => setActiveTab('insights')}
+                    className="flex items-center gap-2 px-6 py-3 bg-brand-accent/10 text-brand-accent rounded-xl border border-brand-accent/20 text-[10px] font-bold uppercase tracking-widest hover:bg-brand-accent/20 transition-all shadow-sm group"
+                  >
+                    <Landmark className="w-4 h-4 transition-transform group-hover:scale-110" />
+                    Debt Architect Active // View Strategy
+                  </button>
+                )}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
@@ -1342,6 +1212,9 @@ function MainApp() {
                   totalSavings={liquidAssets}
                   mandatoryExpenses={mandatoryExpenses}
                   discretionaryExpenses={discretionaryExpenses}
+                  strategicSpendingCeiling={strategicSpendingCeiling}
+                  dailySpendingPower={dailySpendingPower}
+                  monthlyGoalCommitments={monthlyGoalCommitments}
                 />
                 
                 <div className="pt-12 border-t border-brand-border">
@@ -1440,8 +1313,6 @@ function MainApp() {
             transactions={transactions}
             goals={goals}
             initialTab={commandTab}
-            monthlyBudget={monthlyBudget}
-            setMonthlyBudget={setMonthlyBudget}
             editingGoal={editingGoal}
             avgDailySpend={avgDailySpend}
           />
@@ -1479,66 +1350,71 @@ function MainApp() {
   );
 }
 
-function GoalItem({ goal, transactions, isDemo, onEdit }: { goal: Goal, transactions: Transaction[], isDemo?: boolean, onEdit?: () => void }) {
-  const [simulationValue, setSimulationValue] = useState(goal.monthlyContribution || 0);
+function GoalItem({ goal, onEdit }: { goal: Goal, transactions: Transaction[], isDemo?: boolean, onEdit?: () => void }) {
   const [isDeleting, setIsDeleting] = useState(false);
   const progress = goal.targetAmount > 0 ? Math.min((goal.currentAmount / goal.targetAmount) * 100, 100) : 0;
-  const remaining = Math.max(0, goal.targetAmount - goal.currentAmount);
   
-  // Calculate this month's contribution velocity
-  const now = new Date();
-  const thisMonthContribution = transactions
-    .filter(t => {
-      const tDate = new Date(t.date);
-      return tDate.getMonth() === now.getMonth() && 
-             tDate.getFullYear() === now.getFullYear() &&
-             t.type === 'expense' &&
-             t.description.toLowerCase().includes(goal.name.toLowerCase());
-    })
-    .reduce((acc, t) => acc + t.amount, 0);
-
-  const monthsToGoal = simulationValue > 0 ? remaining / simulationValue : Infinity;
-  const freedomDate = React.useMemo(() => {
-    if (monthsToGoal === Infinity || isNaN(monthsToGoal)) return null;
-    const date = new Date();
-    // Use first day of current month to avoid overflow issues when adding months
-    date.setDate(1);
-    date.setMonth(date.getMonth() + Math.ceil(monthsToGoal));
-    return date;
-  }, [monthsToGoal]);
-
   return (
     <motion.div 
-      whileHover={{ y: -4, scale: 1.01 }}
-      className={cn(
-        "flex flex-col p-6 md:p-8 bg-brand-surface border border-brand-border rounded-[2rem] shadow-sm hover:shadow-2xl transition-all group relative overflow-hidden",
-        isDemo && "opacity-50 grayscale"
-      )}
+      whileHover={{ y: -2 }}
+      className="bg-brand-surface p-5 border border-brand-border rounded-[1.5rem] shadow-sm hover:shadow-xl transition-all group relative overflow-hidden flex flex-col justify-between h-full"
     >
-      <div className="absolute top-0 right-0 w-32 h-32 bg-brand-bg rounded-full blur-3xl -mr-16 -mt-16 transition-all group-hover:scale-150" />
+      <div className="absolute top-0 right-0 w-32 h-32 bg-brand-bg rounded-full blur-[80px] -mr-16 -mt-16 opacity-30 group-hover:opacity-50 transition-all pointer-events-none" />
       
-      <div className="flex justify-between items-start mb-8 relative z-10">
-        <div className="space-y-4 cursor-pointer flex-1" onClick={onEdit}>
-          <div className="flex items-center gap-4">
-            <h4 className="text-xl md:text-2xl font-sans font-bold uppercase tracking-tight text-brand-primary leading-none">{goal.name}</h4>
-          </div>
-          <div className="flex items-center gap-3">
-             <div className="px-2 py-0.5 bg-brand-primary/5 text-brand-primary/40 text-[9px] font-bold uppercase tracking-widest rounded border border-brand-primary/10 font-mono">
-              {goal.type}
+      <div className="space-y-4 relative z-10">
+        <div className="flex justify-between items-start">
+          <div className="space-y-1.5 cursor-pointer flex-1" onClick={onEdit}>
+            <h4 className="text-sm font-sans font-bold uppercase tracking-tight text-brand-primary leading-tight">{goal.name}</h4>
+            <div className="flex flex-wrap gap-1.5">
+              <div className="flex items-center gap-1.5 bg-brand-bg/50 px-2 py-0.5 rounded-lg border border-brand-border">
+                <span className="text-[7px] font-bold text-brand-primary/30 uppercase tracking-widest">Protocol</span>
+                <span className="text-[10px] font-mono font-bold text-brand-primary">{formatCurrency(goal.targetAmount)}</span>
+              </div>
+              <div className="flex items-center gap-1.5 bg-brand-accent/5 px-2 py-0.5 rounded-lg border border-brand-accent/20">
+                <span className="text-[7px] font-bold text-brand-accent uppercase tracking-widest">Secured</span>
+                <span className="text-[10px] font-mono font-bold text-brand-accent">{formatCurrency(goal.currentAmount)}</span>
+              </div>
             </div>
-            {goal.priority && (
-              <div className={cn(
-                "px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest border font-mono",
-                goal.priority === 'high' ? "text-brand-accent border-brand-accent/20 bg-brand-accent/5" : "text-brand-primary/20 border-brand-primary/10"
-              )}>{goal.priority}</div>
-            )}
+          </div>
+          <div className="text-right">
+            <p className="text-sm font-mono font-bold text-brand-primary tabular-nums leading-none">{progress.toFixed(0)}%</p>
+            <p className="text-[7px] font-bold text-brand-primary/30 uppercase tracking-widest mt-1">Status</p>
           </div>
         </div>
-        <div className="flex items-start gap-4">
-          <div className="text-right">
-            <p className="text-3xl font-mono font-bold text-brand-primary tabular-nums leading-none">{progress.toFixed(0)}%</p>
-            <p className="data-label mt-2">Saved</p>
+
+        <div className="h-1 w-full bg-brand-bg rounded-full overflow-hidden border border-brand-border p-[0.5px]">
+          <motion.div 
+            initial={{ width: 0 }}
+            animate={{ width: `${progress}%` }}
+            className="h-full bg-brand-primary rounded-full shadow-[0_0_8px_rgba(17,24,39,0.2)]"
+          />
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between pt-4 mt-4 border-t border-brand-border/50 relative z-10">
+        <div className="flex gap-4">
+          <div className="space-y-0.5">
+            <p className="text-[7px] font-bold text-brand-primary/20 uppercase tracking-widest">Type</p>
+            <p className="text-[9px] font-bold text-brand-primary uppercase truncate max-w-[80px]">{goal.type}</p>
           </div>
+          <div className="space-y-0.5">
+            <p className="text-[7px] font-bold text-brand-primary/20 uppercase tracking-widest">Target</p>
+            <p className="text-[9px] font-mono font-bold text-brand-primary">
+              {goal.deadline ? new Date(goal.deadline).toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }).toUpperCase() : 'N/A'}
+            </p>
+          </div>
+        </div>
+        
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit?.();
+            }}
+            className="p-1.5 bg-brand-primary/5 hover:bg-brand-primary hover:text-brand-surface rounded-lg transition-all border border-brand-border group/edit"
+          >
+            <Target className="w-3.5 h-3.5" />
+          </button>
           
           <button
             type="button"
@@ -1557,58 +1433,18 @@ function GoalItem({ goal, transactions, isDemo, onEdit }: { goal: Goal, transact
               }
             }}
             className={cn(
-              "p-3 rounded-xl border transition-all active:scale-95 ml-2",
+              "p-1.5 rounded-lg border transition-all h-8 flex items-center justify-center",
               isDeleting 
-                ? "bg-rose-500 text-white border-rose-600 shadow-lg scale-110" 
-                : "text-rose-500/20 hover:text-rose-600 hover:bg-rose-500/10 border-transparent hover:border-rose-500/20"
+                ? "bg-rose-500 text-white border-rose-600 px-3 w-auto" 
+                : "text-rose-500/20 hover:text-rose-600 hover:bg-rose-500/10 border-transparent"
             )}
           >
             {isDeleting ? (
-              <span className="text-[8px] font-bold uppercase tracking-widest px-1">Verify</span>
+              <span className="text-[7px] font-bold uppercase tracking-widest">Confirm</span>
             ) : (
-              <Trash2 className="w-4 h-4" />
+              <Trash2 className="w-3.5 h-3.5" />
             )}
           </button>
-        </div>
-      </div>
-
-      <div className="h-2 w-full bg-brand-bg rounded-full overflow-hidden border border-brand-border p-[1px] mb-8 relative z-10 shadow-inner">
-        <motion.div 
-          initial={{ width: 0 }}
-          animate={{ width: `${progress}%` }}
-          className="h-full bg-brand-primary rounded-full shadow-[0_0_15px_rgba(17,24,39,0.3)] transition-all"
-        />
-      </div>
-
-      {/* Contribution Simulation */}
-      <div className="mt-auto pt-8 border-t border-brand-border space-y-8 relative z-10">
-        <div className="flex justify-between items-end">
-          <div className="space-y-3">
-            <p className="data-label">Monthly Addition</p>
-            <p className="text-2xl md:text-3xl font-mono font-bold text-brand-primary leading-none tabular-nums">{formatCurrency(simulationValue)}</p>
-          </div>
-          <div className="text-right space-y-3">
-            <p className="data-label">Estimated Completion</p>
-            <p className="text-lg md:text-xl font-bold uppercase tracking-tighter text-brand-accent leading-none">
-              {freedomDate ? freedomDate.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : 'N/A'}
-            </p>
-          </div>
-        </div>
-        
-        <div className="space-y-4">
-          <input 
-            type="range"
-            min="0"
-            max={Math.max(100000, simulationValue * 2)}
-            step="1000"
-            value={simulationValue}
-            onChange={(e) => setSimulationValue(parseInt(e.target.value))}
-            className="w-full h-1 bg-brand-bg rounded-full appearance-none cursor-pointer accent-brand-accent"
-          />
-          <div className="flex justify-between transition-all opacity-0 group-hover:opacity-100">
-            <span className="data-label">Conservative</span>
-            <span className="data-label">Aggressive</span>
-          </div>
         </div>
       </div>
     </motion.div>
@@ -1616,15 +1452,17 @@ function GoalItem({ goal, transactions, isDemo, onEdit }: { goal: Goal, transact
 }
 
 const EXPENSE_CATEGORIES = {
-  'Living': ['Rent', 'Maintenance', 'Utilities', 'Taxes'],
-  'Food & Groceries': ['Groceries', 'Swiggy/Zomato', 'Restaurants', 'Cafe'],
-  'Cabs & Fuel': ['Fuel', 'Cab/Auto', 'Public Transport', 'Service'],
-  'Shopping': ['Lifestyle', 'Electronics', 'Home Decor', 'Amazon/Flipkart'],
-  'Health': ['Medical', 'Gym', 'Insurance', 'Pharmacy'],
-  'Travel': ['Flight/Train', 'Hotel', 'Sightseeing', 'Commute'],
-  'Entertainment': ['Streaming', 'Movies', 'Hobbies', 'Gaming'],
-  'Saving & Investing': ['SIP/Mutual Funds', 'Stocks', 'Debt Repayment', 'Insurance'],
-  'Other': ['Misc', 'Gifts', 'Unknown']
+  'Dining & Delivery': ['Swiggy', 'Zomato', 'Restaurants', 'Cafes', 'Fine Dining'],
+  'Groceries & Q-Commerce': ['Blinkit', 'Instamart', 'Zepto', 'BigBasket', 'Local Grocery'],
+  'Shopping & Lifestyle': ['Myntra', 'Ajio', 'Nykaa', 'Tira', 'Zara', 'H&M', 'Amazon', 'Flipkart', 'Lifestyle'],
+  'Transport & Commute': ['Uber', 'Ola', 'Rapido', 'Fuel', 'Public Transport', 'Vehicle Service'],
+  'Bills & Utilities': ['Electricity', 'Gas', 'Water', 'Internet', 'Mobile Recharge', 'DTH'],
+  'Housing': ['Rent', 'Maintenance', 'Home Decor', 'Domestic Help', 'Property Tax'],
+  'Health & Wellness': ['Medical/Doctors', 'Pharmacy', 'Gym/Fitness', 'Insurance'],
+  'Travel & Stays': ['Flights', 'Trains', 'Hotels/Airbnb', 'Vacation'],
+  'Entertainment': ['Netflix/Hotstar', 'Movies', 'Gaming', 'Events'],
+  'Investments & EMI': ['SIP/Mutual Funds', 'Stocks', 'Gold', 'EMI/Loan'],
+  'Other': ['Gifts', 'Donations', 'Misc']
 };
 
 const INCOME_CATEGORIES = {
@@ -1640,8 +1478,6 @@ function CommandCenter({
   transactions, 
   goals, 
   initialTab,
-  monthlyBudget,
-  setMonthlyBudget,
   editingGoal,
   avgDailySpend
 }: { 
@@ -1649,13 +1485,11 @@ function CommandCenter({
   userId: string, 
   transactions: Transaction[], 
   goals: Goal[],
-  initialTab: 'transaction' | 'budget' | 'goal',
-  monthlyBudget: number,
-  setMonthlyBudget: (v: number) => void,
+  initialTab: 'transaction' | 'goal',
   editingGoal: Goal | null,
   avgDailySpend: number
 }) {
-  const [activeTab, setActiveTab] = useState<'transaction' | 'budget' | 'goal'>(editingGoal ? 'goal' : initialTab);
+  const [activeTab, setActiveTab] = useState<'transaction' | 'goal'>(editingGoal ? 'goal' : initialTab);
 
   return (
     <div className="fixed inset-0 z-[100] flex items-end md:items-center justify-center bg-brand-primary/80 backdrop-blur-xl">
@@ -1673,13 +1507,11 @@ function CommandCenter({
               <div className="absolute top-0 right-0 w-20 h-20 bg-brand-accent/5 rounded-full blur-2xl -mr-10 -mt-10 group-hover/header:bg-brand-accent/10 transition-all" />
               <div className="flex items-center gap-3 relative z-10">
                 <div className="w-8 h-8 rounded-lg bg-brand-primary flex items-center justify-center text-brand-surface shadow-lg transform hover:rotate-6 transition-all duration-500">
-                  {activeTab === 'transaction' ? <Plus className="w-4 h-4 text-brand-accent" /> :
-                   activeTab === 'budget' ? <ShieldCheck className="w-4 h-4 text-brand-accent" /> : <Target className="w-4 h-4 text-brand-accent" />}
+                  {activeTab === 'transaction' ? <Plus className="w-4 h-4 text-brand-accent" /> : <Target className="w-4 h-4 text-brand-accent" />}
                 </div>
                 <div className="space-y-0.5">
                   <h3 className="text-[11px] font-bold text-brand-primary uppercase tracking-widest leading-none">
-                    {activeTab === 'transaction' ? 'Quick Add' :
-                     activeTab === 'budget' ? 'Budgeting' : 'Financial Goals'}
+                    {activeTab === 'transaction' ? 'Quick Add' : 'Financial Goals'}
                   </h3>
                   <p className="text-[8px] font-mono font-bold text-brand-primary/30 uppercase tracking-[0.25em] leading-none">
                     Update your ledger
@@ -1699,7 +1531,6 @@ function CommandCenter({
               {activeTab === 'transaction' && (
                 <TransactionForm onClose={onClose} userId={userId} transactions={transactions} goals={goals} />
               )}
-              {activeTab === 'budget' && <BudgetModalContent onClose={onClose} monthlyBudget={monthlyBudget} setMonthlyBudget={setMonthlyBudget} />}
               {activeTab === 'goal' && (
                 <GoalModalContent onClose={onClose} userId={userId} goal={editingGoal} />
               )}
@@ -1710,7 +1541,6 @@ function CommandCenter({
               <div className="flex gap-1.5 pb-1">
                 {[
                   { id: 'transaction', label: 'ENTRY', icon: Plus },
-                  { id: 'budget', label: 'GUARD', icon: ShieldCheck },
                   { id: 'goal', label: 'PORTFOLIO', icon: Target },
                 ].map((t) => (
                   <button
@@ -1740,89 +1570,10 @@ function CommandCenter({
   );
 }
 
-function BudgetModalContent({ onClose, monthlyBudget, setMonthlyBudget }: { onClose: () => void, monthlyBudget: number, setMonthlyBudget: (v: number) => void }) {
-  const [tempBudget, setTempBudget] = useState(monthlyBudget);
-
-  const budgetPresets = [
-    { label: 'Minimalist', value: 25000 },
-    { label: 'Executive', value: 75000 },
-    { label: 'Prime', value: 150000 }
-  ];
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setMonthlyBudget(tempBudget);
-    onClose();
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4 pt-1 pb-8">
-      <div className="space-y-4">
-        <div className="space-y-2 group/input">
-          <label className="text-[8px] font-mono font-bold uppercase tracking-[0.2em] text-brand-primary/30 pl-1">Threshold Designation</label>
-          <div className="relative">
-            <div className="absolute left-5 top-1/2 -translate-y-1/2 text-brand-accent/20 font-mono font-bold text-xl group-focus-within/input:text-brand-accent transition-colors">₹</div>
-            <input 
-              type="number"
-              value={tempBudget || ''}
-              onChange={(e) => setTempBudget(Number(e.target.value))}
-              className="w-full bg-brand-surface border border-brand-border rounded-lg py-4 pl-10 pr-4 font-mono font-bold text-2xl text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none shadow-inner tracking-tighter"
-              placeholder="0"
-            />
-            <div className="absolute top-0 right-0 h-full w-12 flex items-center justify-center">
-               <ShieldCheck className={cn("w-5 h-5 transition-colors", tempBudget > 0 ? "text-brand-accent/20" : "text-brand-primary/5")} />
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <p className="text-[8px] font-mono font-bold uppercase tracking-[0.2em] text-brand-primary/20 pl-1">Strategic Presets</p>
-          <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
-            {budgetPresets.map(preset => (
-              <button 
-                key={preset.label}
-                type="button"
-                onClick={() => setTempBudget(preset.value)}
-                className={cn(
-                  "flex-shrink-0 px-3 py-2 rounded-lg border transition-all text-left min-w-[90px] group/preset",
-                  tempBudget === preset.value 
-                    ? "bg-brand-primary border-brand-primary text-brand-surface shadow-md" 
-                    : "bg-brand-bg/40 border-brand-border text-brand-primary/40"
-                )}
-              >
-                <p className={cn("text-[7px] font-mono font-bold uppercase tracking-wider mb-0.5", tempBudget === preset.value ? "text-brand-accent" : "")}>{preset.label}</p>
-                <p className="text-[12px] font-mono font-bold tracking-tight">₹{(preset.value/1000).toFixed(0)}k</p>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="bg-brand-primary/3 border border-brand-primary/5 p-3 rounded-lg space-y-1.5">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="w-3.5 h-3.5 text-brand-accent" />
-            <p className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary">Strategy Insight</p>
-          </div>
-          <p className="text-[9px] text-brand-primary/50 font-medium leading-relaxed">
-            Thresholds above 50% of monthly velocity indicate higher fixed-cost exposure. We recommend maintaining a liquid buffer for flexible maneuvering.
-          </p>
-        </div>
-      </div>
-
-      <button
-        type="submit"
-        className="w-full py-3 bg-brand-primary text-brand-surface rounded-lg font-bold text-[9px] uppercase tracking-[0.3em] hover:bg-brand-primary/95 transition-all shadow-md active:scale-[0.98] border border-white/10"
-      >
-        Update Budget
-      </button>
-    </form>
-  );
-}
-
-// Refactored TransactionModal to use a content component
 function TransactionForm({ onClose, userId, transactions, goals }: { onClose: () => void, userId: string, transactions: Transaction[], goals: Goal[] }) {
   const [amount, setAmount] = useState('');
-  const [category, setCategory] = useState('Food & Dining');
-  const [subcategory, setSubcategory] = useState('Groceries');
+  const [category, setCategory] = useState('Dining & Delivery');
+  const [subcategory, setSubcategory] = useState('Swiggy');
   const [type, setType] = useState<'income' | 'expense'>('expense');
   const [isMandatory, setIsMandatory] = useState(false);
   const [isRecurring, setIsRecurring] = useState(false);
@@ -1841,7 +1592,8 @@ function TransactionForm({ onClose, userId, transactions, goals }: { onClose: ()
   }, [category, type]);
 
   const goalTypeMap: Record<string, string> = {
-    'Investment': 'investment',
+    'Investments & EMI': 'investment',
+    'Investments': 'investment',
     'Debt Repayment': 'debt',
     'Savings': 'savings'
   };
@@ -1880,7 +1632,7 @@ function TransactionForm({ onClose, userId, transactions, goals }: { onClose: ()
     try {
       let linkedGoalId = null;
       if (type === 'expense') {
-        const goalType = goalTypeMap[category === 'Investments' ? 'Investment' : category === 'Debt Repayment' ? 'Debt Repayment' : category];
+        const goalType = goalTypeMap[category];
         const gQuery = query(collection(db, 'goals'), where('userId', '==', userId));
         const gSnapshot = await getDocs(gQuery);
         
@@ -2085,8 +1837,8 @@ function GoalModalContent({ onClose, userId, goal }: { onClose: () => void, user
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const templates = [
+    { name: 'Home Loan Protocol', target: 5000000, type: 'debt' as GoalType },
     { name: 'Emergency Fund', target: 500000, type: 'savings' as GoalType },
-    { name: 'Lifestyle Build', target: 250000, type: 'lifestyle' as GoalType },
     { name: 'Growth Seed', target: 1000000, type: 'investment' as GoalType },
     { name: 'Global Travel', target: 400000, type: 'lifestyle' as GoalType }
   ];
@@ -2211,7 +1963,7 @@ function GoalModalContent({ onClose, userId, goal }: { onClose: () => void, user
             </div>
           </div>
           <div className="space-y-2">
-            <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Seed Assets</label>
+            <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Current Balance</label>
             <div className="relative group">
               <span className="absolute left-4 top-1/2 -translate-y-1/2 font-mono font-bold text-brand-primary/10 group-focus-within/input:text-brand-accent transition-colors text-xs">₹</span>
               <input 

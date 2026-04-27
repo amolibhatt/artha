@@ -14,6 +14,9 @@ interface StrategyInsightsProps {
   totalSavings: number;
   mandatoryExpenses: number;
   discretionaryExpenses: number;
+  strategicSpendingCeiling: number;
+  dailySpendingPower: number;
+  monthlyGoalCommitments: number;
 }
 
 export function StrategyInsights({ 
@@ -23,7 +26,10 @@ export function StrategyInsights({
   totalIncome, 
   totalSavings,
   mandatoryExpenses,
-  discretionaryExpenses
+  discretionaryExpenses,
+  strategicSpendingCeiling,
+  dailySpendingPower,
+  monthlyGoalCommitments
 }: StrategyInsightsProps) {
   const [strategy, setStrategy] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -190,9 +196,126 @@ export function StrategyInsights({
             />
           </div>
         </div>
+
+        {/* Global Strategy Allocation */}
+        <div className="col-span-full bg-brand-primary text-brand-surface p-10 rounded-[2.5rem] relative overflow-hidden shadow-2xl">
+          <div className="absolute inset-0 opacity-[0.05] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '15px 15px' }} />
+          <div className="space-y-6 relative z-10">
+            <div className="flex items-center gap-3">
+              <Compass className="w-5 h-5 text-brand-accent/60" />
+              <h3 className="text-xl font-display font-bold uppercase tracking-widest">Global Allocation Model</h3>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+              <div className="space-y-1">
+                <p className="text-[10px] font-bold text-brand-surface/40 uppercase tracking-widest">Total Income</p>
+                <p className="text-2xl font-mono font-bold">{formatCurrency(totalIncome)}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-[10px] font-bold text-brand-surface/40 uppercase tracking-widest">Fixed Obligations</p>
+                <p className="text-2xl font-mono font-bold text-rose-400">-{formatCurrency(mandatoryExpenses)}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-[10px] font-bold text-brand-surface/40 uppercase tracking-widest">Goal Commitments</p>
+                <p className="text-2xl font-mono font-bold text-brand-accent">-{formatCurrency(monthlyGoalCommitments)}</p>
+              </div>
+              <div className="space-y-1 pt-4 md:pt-0 md:pl-8 md:border-l border-white/10">
+                <p className="text-[10px] font-bold text-brand-accent uppercase tracking-widest">Safe Spending Limit</p>
+                <p className="text-4xl font-mono font-bold text-brand-surface">{formatCurrency(strategicSpendingCeiling)}</p>
+              </div>
+            </div>
+            
+            <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden flex p-0.5 border border-white/10 mt-6">
+              <div className="h-full bg-rose-500/60" style={{ width: `${(mandatoryExpenses/(totalIncome || 1))*100}%` }} />
+              <div className="h-full bg-brand-accent" style={{ width: `${(monthlyGoalCommitments/(totalIncome || 1))*100}%` }} />
+              <div className="h-full bg-brand-surface" style={{ width: `${(strategicSpendingCeiling/(totalIncome || 1))*100}%` }} />
+            </div>
+            <div className="flex justify-between items-center text-[8px] font-bold uppercase tracking-[0.2em] opacity-40">
+              <span>Fixed Costs</span>
+              <span>Prioritized Wealth</span>
+              <span>Pure Disposable Income</span>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* Recurring Commitment Audit */}
+      {/* Debt Strategy Engine */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between px-1">
+          <div className="space-y-0.5">
+            <h3 className="text-xl font-display font-bold text-brand-primary tracking-tight">Debt Architecture</h3>
+            <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest pl-0.5">Liability Audit & Optimization</p>
+          </div>
+          {goals.some(g => g.type === 'debt') && (
+            <Landmark className="w-5 h-5 text-brand-primary/20" />
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {goals.filter(g => g.type === 'debt').length > 0 ? (
+            goals.filter(g => g.type === 'debt').map(loan => (
+              <div key={loan.id} className="bg-brand-surface p-8 md:p-12 border border-brand-border rounded-[2.5rem] shadow-sm space-y-8 relative overflow-hidden group">
+                <div className="flex items-center justify-between border-b border-brand-border pb-6">
+                  <div className="space-y-1">
+                    <p className="data-label">Liability Audit</p>
+                    <h3 className="text-xl font-display font-bold text-brand-primary tracking-tight">{loan.name}</h3>
+                  </div>
+                  <div className="w-12 h-12 rounded-2xl bg-brand-primary/5 flex items-center justify-center text-brand-primary border border-brand-border">
+                    <Landmark className="w-6 h-6" />
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-8">
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest">Rate of Capital Loss</p>
+                    <p className="text-2xl font-mono font-bold text-brand-primary">{loan.interestRate || 8.5}% <span className="text-[10px] opacity-30 text-brand-primary">p.a.</span></p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest">Target Resolution</p>
+                    <p className="text-2xl font-mono font-bold text-brand-primary">{loan.tenureMonths || 240} <span className="text-[10px] opacity-30 text-brand-primary">Months</span></p>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-brand-accent/5 rounded-2xl border border-brand-accent/10 flex items-center gap-4">
+                  <Zap className="w-5 h-5 text-brand-accent" />
+                  <div className="space-y-0.5">
+                    <p className="text-[10px] font-bold text-brand-accent uppercase tracking-widest">Prepayment Potential</p>
+                    <p className="text-[11px] font-medium text-brand-primary/70">Check the <span className="font-bold underline cursor-pointer" onClick={() => (document.getElementById('debt-optimization-engine') as any)?.scrollIntoView({ behavior: 'smooth' })}>Debt Architect</span> below to simulate interest savings.</p>
+                  </div>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="bg-brand-surface p-8 md:p-12 border border-brand-border rounded-[2.5rem] shadow-sm flex flex-col items-center justify-center text-center space-y-6 relative overflow-hidden group">
+              <div className="absolute inset-0 opacity-[0.02] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#000 1px, transparent 1px)', backgroundSize: '20px 20px' }} />
+              <div className="w-16 h-16 rounded-3xl bg-brand-primary/5 flex items-center justify-center text-brand-primary/20 border border-brand-border">
+                <Landmark className="w-8 h-8" />
+              </div>
+              <div className="space-y-2 max-w-sm">
+                <h3 className="text-xl font-display font-medium text-brand-primary">No Active Debt Protocol</h3>
+                <p className="text-xs text-brand-primary/40 leading-relaxed font-medium">Tracking and prepaying your Home Loan is the most effective way to protect your long-term capital from interest loss.</p>
+              </div>
+              <p className="text-[10px] font-bold text-brand-accent uppercase tracking-[0.2em]">Start Tracking Strategy //</p>
+            </div>
+          )}
+
+          <div className="bg-brand-accent/5 border border-brand-accent/10 rounded-[2.5rem] p-8 md:p-12 flex flex-col justify-center space-y-6">
+            <div className="space-y-2">
+              <h3 className="text-xl font-display font-bold text-brand-accent tracking-tight">The 1-Step Advantage</h3>
+              <p className="text-xs text-brand-primary/60 leading-relaxed font-medium">
+                Every extra payment towards your principal in the first 5 years of a Home Loan can save you up to 3x that amount in future interest. Use the architect below to plan your attack.
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-brand-accent/20 flex items-center justify-center text-brand-accent">
+                <ArrowUpRight className="w-4 h-4" />
+              </div>
+              <span className="text-[10px] font-bold text-brand-accent uppercase tracking-widest">Interest minimization active</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      {/* Expense Audit */}
       <div className="bg-brand-surface p-8 md:p-16 border border-brand-border rounded-[2.5rem] shadow-sm space-y-12 md:space-y-16 relative overflow-hidden">
         <div className="absolute inset-0 opacity-[0.02] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#000 1px, transparent 1px)', backgroundSize: '20px 20px' }} />
         <div className="space-y-3 relative z-10">

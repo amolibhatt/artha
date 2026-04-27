@@ -70,7 +70,7 @@ export function DebtOptimization({ goals }: DebtOptimizationProps) {
   const impact = selectedLoan ? calculateImpact(selectedLoan, prepayment) : null;
 
   return (
-    <div className="bg-brand-surface p-8 md:p-12 border border-brand-border rounded-[2.5rem] shadow-sm space-y-12 md:space-y-16 relative overflow-hidden group">
+    <div id="debt-optimization-engine" className="bg-brand-surface p-8 md:p-12 border border-brand-border rounded-[2.5rem] shadow-sm space-y-12 md:space-y-16 relative overflow-hidden group">
       <div className="absolute top-0 right-0 w-64 h-64 bg-brand-bg rounded-full blur-[120px] -mr-32 -mt-32 opacity-50" />
       
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">

@@ -121,6 +121,57 @@ export function useFinancialEngine(
   const avgDailySpend = last7Days.reduce((acc, d) => acc + d.amount, 0) / 7;
   const remainingDays = Math.max(1, daysInMonth - today.getDate() + 1);
 
+  // Strategic Spending Ceiling Logic (Personal CFO Mode)
+  const monthlyGoalCommitments = useMemo(() => {
+    return goals.reduce((acc, g) => {
+      if (g.currentAmount >= g.targetAmount) return acc;
+      
+      // Use explicit monthlyContribution if defined
+      if (g.monthlyContribution) return acc + g.monthlyContribution;
+
+      // Fallback: calculate based on deadline
+      if (g.deadline) {
+        const deadline = new Date(g.deadline);
+        const monthsRemaining = Math.max(1, (deadline.getTime() - today.getTime()) / (1000 * 60 * 60 * 24 * 30.44));
+        return acc + ((g.targetAmount - g.currentAmount) / monthsRemaining);
+      }
+
+      // Final fallback: 5% of target per month if no deadline
+      return acc + (g.targetAmount * 0.05);
+    }, 0);
+  }, [goals, today]);
+
+  // Use the average income of the last 3 months (or max available) as baseline
+  const estimatedMonthlyIncome = useMemo(() => {
+    const incomeThisMonth = transactions
+      .filter(t => t.type === 'income' && new Date(t.date).getMonth() === today.getMonth())
+      .reduce((acc, t) => acc + t.amount, 0);
+    
+    // If we have income this month, use it. Otherwise look at historical average.
+    if (incomeThisMonth > 0) return incomeThisMonth;
+    
+    const incomes = transactions.filter(t => t.type === 'income');
+    if (incomes.length === 0) return 0;
+    return totalIncome / Math.max(1, (today.getTime() - new Date(transactions[transactions.length-1].date).getTime()) / (1000 * 60 * 60 * 24 * 30.44));
+  }, [transactions, today, totalIncome]);
+
+  // Fixed Costs = Mandatory expenses frequency normalized
+  const estimatedFixedCosts = useMemo(() => {
+    const mandatories = transactions.filter(t => t.type === 'expense' && t.isMandatory);
+    if (mandatories.length === 0) return 0;
+    
+    // Sum of unique mandatory costs in the last 30 days
+    const thirtyDaysAgo = new Date(today);
+    thirtyDaysAgo.setDate(today.getDate() - 30);
+    
+    return mandatories
+      .filter(t => new Date(t.date) >= thirtyDaysAgo)
+      .reduce((acc, t) => acc + t.amount, 0);
+  }, [transactions, today]);
+
+  const strategicSpendingCeiling = Math.max(0, estimatedMonthlyIncome - estimatedFixedCosts - monthlyGoalCommitments);
+  const dailySpendingPower = strategicSpendingCeiling / daysInMonth;
+
   return {
     totalIncome,
     totalExpenses,
@@ -142,6 +193,10 @@ export function useFinancialEngine(
     daysInMonth,
     last7Days,
     avgDailySpend,
-    remainingDays
+    remainingDays,
+    strategicSpendingCeiling,
+    dailySpendingPower,
+    monthlyGoalCommitments,
+    estimatedMonthlyIncome
   };
 }
