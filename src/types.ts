@@ -1,5 +1,5 @@
 export type TransactionType = 'income' | 'expense';
-export type GoalType = 'savings' | 'debt' | 'investment';
+export type GoalType = 'savings' | 'debt' | 'investment' | 'lifestyle';
 
 export interface Transaction {
   id?: string;

@@ -22,7 +22,7 @@
         "name": { "type": "string", "description": "Goal name" },
         "targetAmount": { "type": "number", "description": "Target amount to reach" },
         "currentAmount": { "type": "number", "description": "Current progress" },
-        "type": { "type": "string", "enum": ["savings", "debt", "investment"], "description": "Goal type" },
+        "type": { "type": "string", "enum": ["savings", "debt", "investment", "lifestyle"], "description": "Goal type" },
         "userId": { "type": "string", "description": "Owner UID" },
         "deadline": { "type": "string", "format": "date", "description": "Target date" }
       },

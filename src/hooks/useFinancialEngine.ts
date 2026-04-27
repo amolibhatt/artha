@@ -37,7 +37,7 @@ export function useFinancialEngine(
   }, [transactions, today]);
 
   const liquidAssets = useMemo(() => 
-    goals.filter(g => g.type === 'savings' || g.type === 'investment')
+    goals.filter(g => g.type === 'savings' || g.type === 'investment' || g.type === 'lifestyle')
          .reduce((acc, g) => acc + g.currentAmount, 0),
   [goals]);
 

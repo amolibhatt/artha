@@ -688,15 +688,6 @@ function MainApp() {
                       )}>
                         {monthlyBudget === 0 ? '₹0' : formatCurrency(adjustedLeftToSpend)}
                       </h2>
-                      <button 
-                        onClick={() => setShowStressTest(!showStressTest)}
-                        className={cn(
-                          "w-12 h-12 flex items-center justify-center rounded-2xl transition-all active:scale-90 border mb-2",
-                          showStressTest ? "bg-brand-accent border-brand-accent text-brand-primary shadow-[0_0_20px_rgba(16,185,129,0.3)]" : "bg-brand-surface/5 border-white/10 text-brand-surface"
-                        )}
-                      >
-                        <Zap className="w-5 h-5" />
-                      </button>
                     </div>
                   </div>
 
@@ -792,72 +783,80 @@ function MainApp() {
                 </motion.div>
               )}
 
-              <AnimatePresence>
-                {showStressTest && (
-                  <motion.div 
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="p-6 bg-brand-surface border border-brand-border rounded-3xl"
-                  >
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                      <div className="space-y-4">
-                        <label className="data-label flex justify-between leading-none">
-                          Income Projection <span className="text-brand-accent">{((stressTest.incomeShock - 1) * 100).toFixed(0)}%</span>
-                        </label>
-                        <input 
-                          type="range" min="0.5" max="1.5" step="0.05" 
-                          value={stressTest.incomeShock} 
-                          onChange={(e) => setStressTest(s => ({ ...s, incomeShock: parseFloat(e.target.value) }))}
-                          className="w-full accent-brand-accent bg-brand-bg rounded-full h-1 appearance-none cursor-pointer"
-                        />
-                      </div>
-                      <div className="space-y-4">
-                        <label className="data-label flex justify-between leading-none">
-                          Expense Projection <span className="text-rose-500">{((stressTest.expenseShock - 1) * 100).toFixed(0)}%</span>
-                        </label>
-                        <input 
-                          type="range" min="0.5" max="2" step="0.1" 
-                          value={stressTest.expenseShock} 
-                          onChange={(e) => setStressTest(s => ({ ...s, expenseShock: parseFloat(e.target.value) }))}
-                          className="w-full accent-rose-500 bg-brand-bg rounded-full h-1 appearance-none cursor-pointer"
-                        />
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
             </div>
 
-            {/* CFO Insights - Only show if data exists */}
-            {transactions.length > 0 && (
+            {/* CFO Insights & Goals - Show if any data exists */}
+            {(transactions.length > 0 || goals.length > 0) && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* CFO Insight Card */}
-                <div className="bg-brand-accent/5 border border-brand-accent/10 rounded-[2rem] p-8 md:p-10 space-y-5 relative overflow-hidden group">
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-brand-accent/5 rounded-full blur-3xl -mr-16 -mt-16 transition-all group-hover:scale-150" />
-                  <div className="flex items-center gap-3 relative z-10">
-                    <div className="w-8 h-8 bg-brand-accent/10 rounded-xl flex items-center justify-center">
-                      <TrendingUp className="w-4 h-4 text-brand-accent" />
+                {/* CFO Insight Card - Only show if we have transactions to analyze */}
+                {transactions.length > 0 && (
+                  <div className="bg-brand-accent/5 border border-brand-accent/10 rounded-[2rem] p-8 md:p-10 space-y-5 relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-brand-accent/5 rounded-full blur-3xl -mr-16 -mt-16 transition-all group-hover:scale-150" />
+                    <div className="flex items-center gap-3 relative z-10">
+                      <div className="w-8 h-8 bg-brand-accent/10 rounded-xl flex items-center justify-center">
+                        <TrendingUp className="w-4 h-4 text-brand-accent" />
+                      </div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-brand-accent leading-relaxed">AI Advisor</p>
                     </div>
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-brand-accent leading-relaxed">AI Advisor</p>
+                    <p className="text-base md:text-xl text-brand-primary/80 leading-relaxed font-display font-bold tracking-tight relative z-10">
+                      {goals.length > 0
+                        ? (budgetPercentage < 50 
+                            ? "You're spending less than planned. Consider moving some surplus into your long-term goals."
+                            : budgetPercentage > 90 
+                            ? "Spending is high this month. Try to limit non-essential purchases for the next few days."
+                            : "Your spending is perfectly on track. Keep this momentum to hit your monthly savings goal.")
+                        : (budgetPercentage < 50
+                            ? "Surplus capital detected. Establish a savings goal to optimize this liquidity."
+                            : budgetPercentage > 90
+                            ? "Liquidity is tightening. Audit non-essential outflows to stabilize capital reserves."
+                            : "Cash flow is balanced. Protocol recommends defining a financial target.")
+                      }
+                    </p>
                   </div>
-                  <p className="text-base md:text-xl text-brand-primary/80 leading-relaxed font-display font-bold tracking-tight relative z-10">
-                    {goals.length > 0
-                      ? (budgetPercentage < 50 
-                          ? "You're spending less than planned. Consider moving some surplus into your long-term goals."
-                          : budgetPercentage > 90 
-                          ? "Spending is high this month. Try to limit non-essential purchases for the next few days."
-                          : "Your spending is perfectly on track. Keep this momentum to hit your monthly savings goal.")
-                      : (budgetPercentage < 50
-                          ? "Surplus capital detected. Establish a savings goal to optimize this liquidity."
-                          : budgetPercentage > 90
-                          ? "Liquidity is tightening. Audit non-essential outflows to stabilize capital reserves."
-                          : "Cash flow is balanced. Protocol recommends defining a financial target.")
-                    }
-                  </p>
-                </div>
+                )}
 
-                {/* Goals section removed per direct instruction to avoid auto-defined/surfaced goals on main dashboard */}
+                {/* Strategic Goals Section */}
+                {goals.length > 0 && (
+                  <div className="bg-brand-surface border border-brand-border rounded-[2rem] p-8 md:p-10 space-y-6 shadow-sm relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-brand-primary/5 rounded-full blur-3xl -mr-16 -mt-16 transition-all group-hover:scale-150" />
+                    <div className="flex items-center justify-between border-b border-brand-border pb-6 relative z-10">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-[1.25rem] bg-brand-primary/5 flex items-center justify-center text-brand-primary/40 border border-brand-border shadow-inner">
+                          <Target className="w-6 h-6" />
+                        </div>
+                        <div>
+                          <p className="data-label">Active Targets</p>
+                          <p className="text-xl font-bold text-brand-primary mt-1 tracking-tight">Strategic Goals</p>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 gap-4 relative z-10">
+                      {goals.slice(0, 2).map((goal) => {
+                        const progress = goal.targetAmount > 0 ? Math.min((goal.currentAmount / goal.targetAmount) * 100, 100) : 0;
+                        return (
+                          <div key={goal.id} className="bg-brand-bg/50 p-4 rounded-2xl border border-brand-border/50 space-y-3">
+                            <div className="flex justify-between items-start">
+                              <p className="text-[10px] font-bold text-brand-primary uppercase tracking-wide truncate max-w-[150px]">{goal.name}</p>
+                              <p className="font-mono text-[10px] font-bold text-brand-accent">{progress.toFixed(0)}%</p>
+                            </div>
+                            <div className="h-1 w-full bg-brand-primary/10 rounded-full overflow-hidden">
+                              <motion.div 
+                                initial={{ width: 0 }}
+                                animate={{ width: `${progress}%` }}
+                                className="h-full bg-brand-primary rounded-full"
+                              />
+                            </div>
+                            <div className="flex justify-between items-end">
+                              <p className="text-[9px] font-bold text-brand-primary/40 uppercase tracking-widest">{formatCurrency(goal.currentAmount)}</p>
+                              <p className="text-[7px] font-bold text-brand-primary/20 uppercase tracking-widest">OF {formatCurrency(goal.targetAmount)}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1092,31 +1091,6 @@ function MainApp() {
                     <p className="data-label">Target-Oriented Capital Allocation Map</p>
                   </div>
                   <div className="flex items-center gap-4">
-                    <button 
-                      onClick={async () => {
-                        if (showGoalPurgeConfirm) {
-                          try {
-                            const batch = goals.map(g => deleteDoc(doc(db, 'goals', g.id)));
-                            await Promise.all(batch);
-                            setShowGoalPurgeConfirm(false);
-                          } catch (err) {
-                            handleFirestoreError(err, OperationType.DELETE, 'goals');
-                            alert("Goal Purge Failed.");
-                          }
-                        } else {
-                          setShowGoalPurgeConfirm(true);
-                          setTimeout(() => setShowGoalPurgeConfirm(false), 3000);
-                        }
-                      }}
-                      className={cn(
-                        "px-4 py-3 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all shadow-sm border",
-                        showGoalPurgeConfirm 
-                          ? "bg-rose-500 text-white border-rose-600 animate-pulse" 
-                          : "bg-rose-500/10 text-rose-500 border-rose-500/20 hover:bg-rose-500 hover:text-white"
-                      )}
-                    >
-                      {showGoalPurgeConfirm ? 'Confirm Global Goal Wipe' : 'Clear Portfolio'}
-                    </button>
                     <button 
                       onClick={() => {
                         setCommandTab('goal');
@@ -1376,6 +1350,7 @@ function MainApp() {
 
 function GoalItem({ goal, transactions, isDemo, onEdit }: { goal: Goal, transactions: Transaction[], isDemo?: boolean, onEdit?: () => void }) {
   const [simulationValue, setSimulationValue] = useState(goal.monthlyContribution || 0);
+  const [isDeleting, setIsDeleting] = useState(false);
   const progress = goal.targetAmount > 0 ? Math.min((goal.currentAmount / goal.targetAmount) * 100, 100) : 0;
   const remaining = Math.max(0, goal.targetAmount - goal.currentAmount);
   
@@ -1411,8 +1386,8 @@ function GoalItem({ goal, transactions, isDemo, onEdit }: { goal: Goal, transact
     >
       <div className="absolute top-0 right-0 w-32 h-32 bg-brand-bg rounded-full blur-3xl -mr-16 -mt-16 transition-all group-hover:scale-150" />
       
-      <div className="flex justify-between items-start mb-8 relative z-10" onClick={onEdit}>
-        <div className="space-y-4 cursor-pointer">
+      <div className="flex justify-between items-start mb-8 relative z-10">
+        <div className="space-y-4 cursor-pointer flex-1" onClick={onEdit}>
           <div className="flex items-center gap-4">
             <h4 className="text-xl md:text-2xl font-sans font-bold uppercase tracking-tight text-brand-primary leading-none">{goal.name}</h4>
           </div>
@@ -1428,9 +1403,41 @@ function GoalItem({ goal, transactions, isDemo, onEdit }: { goal: Goal, transact
             )}
           </div>
         </div>
-        <div className="text-right">
-          <p className="text-3xl font-mono font-bold text-brand-primary tabular-nums leading-none">{progress.toFixed(0)}%</p>
-          <p className="data-label mt-2">Saved</p>
+        <div className="flex items-start gap-4">
+          <div className="text-right">
+            <p className="text-3xl font-mono font-bold text-brand-primary tabular-nums leading-none">{progress.toFixed(0)}%</p>
+            <p className="data-label mt-2">Saved</p>
+          </div>
+          
+          <button
+            type="button"
+            onClick={async (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (isDeleting) {
+                try {
+                  await deleteDoc(doc(db, 'goals', goal.id!));
+                } catch (err) {
+                  handleFirestoreError(err, OperationType.DELETE, 'goals');
+                }
+              } else {
+                setIsDeleting(true);
+                setTimeout(() => setIsDeleting(false), 3000);
+              }
+            }}
+            className={cn(
+              "p-3 rounded-xl border transition-all active:scale-95 ml-2",
+              isDeleting 
+                ? "bg-rose-500 text-white border-rose-600 shadow-lg scale-110" 
+                : "text-rose-500/20 hover:text-rose-600 hover:bg-rose-500/10 border-transparent hover:border-rose-500/20"
+            )}
+          >
+            {isDeleting ? (
+              <span className="text-[8px] font-bold uppercase tracking-widest px-1">Verify</span>
+            ) : (
+              <Trash2 className="w-4 h-4" />
+            )}
+          </button>
         </div>
       </div>
 
@@ -1835,8 +1842,14 @@ function BudgetModalContent({ onClose, monthlyBudget, setMonthlyBudget }: { onCl
     { label: 'Prime', value: 150000 }
   ];
 
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setMonthlyBudget(tempBudget);
+    onClose();
+  };
+
   return (
-    <div className="space-y-4 pt-1">
+    <form onSubmit={handleSubmit} className="space-y-4 pt-1 pb-8">
       <div className="space-y-4">
         <div className="space-y-2 group/input">
           <label className="text-[8px] font-mono font-bold uppercase tracking-[0.2em] text-brand-primary/30 pl-1">Threshold Designation</label>
@@ -1861,6 +1874,7 @@ function BudgetModalContent({ onClose, monthlyBudget, setMonthlyBudget }: { onCl
             {budgetPresets.map(preset => (
               <button 
                 key={preset.label}
+                type="button"
                 onClick={() => setTempBudget(preset.value)}
                 className={cn(
                   "flex-shrink-0 px-3 py-2 rounded-lg border transition-all text-left min-w-[90px] group/preset",
@@ -1878,25 +1892,22 @@ function BudgetModalContent({ onClose, monthlyBudget, setMonthlyBudget }: { onCl
 
         <div className="bg-brand-primary/3 border border-brand-primary/5 p-3 rounded-lg space-y-1.5">
           <div className="flex items-center gap-2">
-            <Activity className="w-3.5 h-3.5 text-brand-accent" />
-            <p className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary">Budget Analysis</p>
+            <ShieldCheck className="w-3.5 h-3.5 text-brand-accent" />
+            <p className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary">Strategy Insight</p>
           </div>
-          <p className="text-[9px] text-brand-primary/40 font-medium leading-relaxed">
-            Allocations exceeding 50% of monthly income suggest higher fixed costs. We recommend monitoring discretionary spend closely.
+          <p className="text-[9px] text-brand-primary/50 font-medium leading-relaxed">
+            Thresholds above 50% of monthly velocity indicate higher fixed-cost exposure. We recommend maintaining a liquid buffer for flexible maneuvering.
           </p>
         </div>
       </div>
 
       <button
-        onClick={() => {
-          setMonthlyBudget(tempBudget);
-          onClose();
-        }}
+        type="submit"
         className="w-full py-3 bg-brand-primary text-brand-surface rounded-lg font-bold text-[9px] uppercase tracking-[0.3em] hover:bg-brand-primary/95 transition-all shadow-md active:scale-[0.98] border border-white/10"
       >
         Update Budget
       </button>
-    </div>
+    </form>
   );
 }
 
@@ -2004,7 +2015,7 @@ function TransactionForm({ onClose, userId, transactions, goals }: { onClose: ()
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={handleSubmit} className="space-y-6 pb-8 px-1">
       {errorMsg && (
         <motion.div 
           initial={{ opacity: 0, height: 0 }}
@@ -2236,7 +2247,7 @@ function GoalModalContent({ onClose, userId, goal }: { onClose: () => void, user
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={handleSubmit} className="space-y-6 pb-8 px-1">
       {!goal && (
         <div className="space-y-2">
           <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Templates</label>
@@ -2318,6 +2329,7 @@ function GoalModalContent({ onClose, userId, goal }: { onClose: () => void, user
               >
                 <option value="savings">SAVINGS_CORE</option>
                 <option value="investment">GROWTH_ASSET</option>
+                <option value="debt">DEBT_LIQUIDATION</option>
                 <option value="lifestyle">LIFESTYLE_BURN</option>
               </select>
               <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-brand-primary/20">
