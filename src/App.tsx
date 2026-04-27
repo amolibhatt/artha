@@ -581,7 +581,7 @@ function MainApp() {
 
       {/* Bottom Navigation - Tactical Switcher */}
       <nav className="fixed bottom-0 left-0 right-0 z-50 bg-brand-surface/95 backdrop-blur-3xl border-t border-brand-border px-6 pb-safe">
-        <div className="max-w-xl mx-auto flex justify-between items-center h-24">
+        <div className="max-w-xl mx-auto flex items-center justify-between h-24">
           <button 
             onClick={() => setActiveTab('home')}
             className={cn(
@@ -590,7 +590,7 @@ function MainApp() {
             )}
           >
             <Home className={cn("w-5 h-5 transition-all duration-300", activeTab === 'home' ? "scale-110" : "group-hover:text-brand-primary/50")} />
-            <span className="text-[10px] font-bold uppercase tracking-wider">Dashboard</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider">Home</span>
             {activeTab === 'home' && (
               <motion.div layoutId="nav-glow" className="absolute -top-px left-1/2 -translate-x-1/2 w-8 h-0.5 bg-brand-accent shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
             )}
@@ -617,13 +617,13 @@ function MainApp() {
                 setCommandTab('transaction');
                 setShowCommandCenter(true);
               }}
-              className="w-16 h-16 bg-brand-primary text-brand-accent rounded-2xl flex items-center justify-center shadow-xl border-4 border-brand-bg active:scale-95 transition-all relative z-10"
+              className="w-16 h-16 bg-brand-primary text-brand-accent rounded-2xl flex items-center justify-center shadow-xl border-[6px] border-brand-bg active:scale-95 transition-all relative z-10"
               title="Tactical Entry"
             >
               <Plus className="w-8 h-8" />
             </button>
           </div>
-
+ 
           <button 
             onClick={() => setActiveTab('insights')}
             className={cn(
@@ -632,7 +632,7 @@ function MainApp() {
             )}
           >
             <Sparkles className={cn("w-5 h-5 transition-all duration-300", activeTab === 'insights' ? "scale-110" : "group-hover:text-brand-primary/50")} />
-            <span className="text-[10px] font-bold uppercase tracking-wider">Insights</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider">Analysis</span>
             {activeTab === 'insights' && (
               <motion.div layoutId="nav-glow" className="absolute -top-px left-1/2 -translate-x-1/2 w-8 h-0.5 bg-brand-accent shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
             )}
@@ -645,7 +645,7 @@ function MainApp() {
             )}
           >
             <Target className={cn("w-5 h-5 transition-all duration-300", activeTab === 'goals' ? "scale-110" : "group-hover:text-brand-primary/50")} />
-            <span className="text-[10px] font-bold uppercase tracking-wider">Goals</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider">Portfolio</span>
             {activeTab === 'goals' && (
               <motion.div layoutId="nav-glow" className="absolute -top-px left-1/2 -translate-x-1/2 w-8 h-0.5 bg-brand-accent shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
             )}
@@ -655,35 +655,35 @@ function MainApp() {
 
       <main className="max-w-4xl mx-auto px-4 md:px-6 py-4 md:py-8 space-y-4 md:space-y-8">
         {activeTab === 'home' && (
-          <div className="space-y-4 md:space-y-8">
+          <div className="space-y-3 md:space-y-6">
             {/* CFO Briefing Section - Compact */}
             <motion.section 
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="space-y-2 py-2"
+              className="space-y-1 py-1"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-[1px] bg-brand-accent/30" />
-                  <p className="data-label">{now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} // Morning Overview</p>
+                  <p className="data-label">{now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} // Overview</p>
                 </div>
               </div>
               <h1 className="section-header">Financial Position</h1>
             </motion.section>
 
             {/* Unified Strategic Dashboard */}
-            <div className="space-y-3 md:space-y-4">
-              <section className="bg-brand-primary text-brand-surface rounded-[2rem] md:rounded-[3rem] overflow-hidden shadow-2xl relative group border border-white/5 pt-8 md:pt-10">
+            <div className="space-y-2 md:space-y-3">
+              <section className="bg-brand-primary text-brand-surface rounded-[2rem] md:rounded-[3rem] overflow-hidden shadow-2xl relative group border border-white/5 pt-6 md:pt-8">
                 <div className="absolute inset-0 opacity-[0.05] pointer-events-none" 
                   style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '60px 60px' }} 
                 />
                 
-                <div className="p-6 md:p-10 space-y-8 relative z-10">
-                  <div className="flex flex-col gap-2">
+                <div className="p-5 md:p-8 space-y-5 relative z-10">
+                  <div className="flex flex-col gap-1">
                     <p className="data-label !text-brand-surface/40">Available to Spend</p>
                     <div className="flex justify-between items-end">
                       <h2 className={cn(
-                        "text-5xl md:text-7xl font-display font-bold tracking-tight leading-none py-2",
+                        "text-4xl md:text-6xl font-display font-bold tracking-tight leading-none py-1",
                         (monthlyBudget === 0) ? "text-brand-surface/10" : "text-brand-surface"
                       )}>
                         {monthlyBudget === 0 ? '₹0' : formatCurrency(adjustedLeftToSpend)}
@@ -691,24 +691,24 @@ function MainApp() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-6 border-t border-white/10 pt-8">
-                    <div className="space-y-4">
-                      <p className="data-label !text-brand-surface/30">Months of Buffer</p>
-                      <div className="flex items-baseline gap-1.5">
-                        <span className="text-2xl md:text-3xl font-mono font-bold text-brand-surface">{runwayMonths.toFixed(1)}</span>
-                        <p className="data-label !text-brand-surface/20">Mo</p>
+                  <div className="grid grid-cols-3 gap-4 md:gap-6 border-t border-white/10 pt-6">
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-brand-surface/30">Buffer</p>
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-xl md:text-3xl font-mono font-bold text-brand-surface">{runwayMonths.toFixed(1)}</span>
+                        <p className="text-[10px] font-bold text-brand-surface/20 uppercase">Mo</p>
                       </div>
                     </div>
-                    <div className="space-y-2">
-                      <p className="data-label !text-brand-surface/30">Savings Rate</p>
-                      <div className="flex items-baseline gap-1.5">
-                        <span className="text-2xl md:text-3xl font-mono font-bold text-brand-surface">{savingsEfficiency.toFixed(0)}</span>
-                        <p className="data-label !text-brand-surface/20">%</p>
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-brand-surface/30">Efficiency</p>
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-xl md:text-3xl font-mono font-bold text-brand-surface">{savingsEfficiency.toFixed(0)}</span>
+                        <p className="text-[10px] font-bold text-brand-surface/20 uppercase">%</p>
                       </div>
                     </div>
-                    <div className="space-y-4">
-                      <p className="data-label !text-brand-surface/30">Monthly Goal Status</p>
-                      <div className={cn("text-2xl md:text-3xl font-bold font-mono", balance >= 0 ? "text-brand-accent" : "text-rose-400")}>
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-brand-surface/30">Momentum</p>
+                      <div className={cn("text-xl md:text-3xl font-bold font-mono h-[30px] md:h-9 flex items-center", balance >= 0 ? "text-brand-accent" : "text-rose-400")}>
                         {balance >= 0 ? '+' : ''}{Math.abs(balance) > 1000 ? (balance/1000).toFixed(1) + 'k' : Math.abs(balance).toFixed(0)}
                       </div>
                     </div>
@@ -716,12 +716,12 @@ function MainApp() {
                 </div>
 
                 {monthlyBudget > 0 && (
-                  <div className="px-6 md:px-10 pb-8 md:pb-10">
-                    <div className="flex justify-between items-center mb-3">
+                  <div className="px-5 md:px-8 pb-6 md:pb-8">
+                    <div className="flex justify-between items-center mb-2">
                       <p className="data-label !text-brand-surface/20">Monthly Budget Progress</p>
                       <p className="font-mono data-label !text-brand-accent">{budgetPercentage.toFixed(1)}%</p>
                     </div>
-                    <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden p-[2px] border border-white/5">
+                    <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden p-[1px] border border-white/5">
                       <motion.div 
                         initial={{ width: 0 }}
                         animate={{ width: `${Math.min(budgetPercentage, 100)}%` }}
@@ -740,43 +740,43 @@ function MainApp() {
                 <motion.div 
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="bg-brand-surface border border-brand-border rounded-[2rem] p-6 md:p-8 space-y-6 shadow-sm relative overflow-hidden"
+                  className="bg-brand-surface border border-brand-border rounded-[2rem] p-5 md:p-8 space-y-4 shadow-sm relative overflow-hidden"
                 >
                   <div className="absolute top-0 right-0 w-32 h-32 bg-brand-bg rounded-full blur-3xl -mr-16 -mt-16" />
-                  <div className="flex items-center justify-between border-b border-brand-border pb-6 relative z-10">
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-[1.25rem] bg-brand-primary/5 flex items-center justify-center text-brand-primary/40 border border-brand-border shadow-inner">
-                        <Activity className="w-6 h-6" />
+                  <div className="flex items-center justify-between border-b border-brand-border pb-4 relative z-10">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-brand-primary/5 flex items-center justify-center text-brand-primary/40 border border-brand-border shadow-inner">
+                        <Activity className="w-5 h-5" />
                       </div>
                       <div>
                         <p className="data-label">Spending Analysis</p>
-                        <p className="text-xl font-bold text-brand-primary mt-1 tracking-tight">Daily Spending Pace</p>
+                        <p className="text-lg font-bold text-brand-primary tracking-tight">Daily Pace</p>
                       </div>
                     </div>
                     <div className={cn(
                       "px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider border shadow-sm",
                       isAheadOfBudget ? "text-brand-accent border-brand-accent/20 bg-brand-accent/5" : "text-rose-500 border-rose-500/20 bg-rose-500/5"
                     )}>
-                      {isAheadOfBudget ? 'ON TRACK' : 'OVER BUDGET'}
+                      {isAheadOfBudget ? 'ON TRACK' : 'LIMIT'}
                     </div>
                   </div>
                   
-                  <div className="grid grid-cols-2 gap-6 relative z-10">
-                    <div className="bg-brand-bg/50 p-5 rounded-2xl border border-brand-border/50 space-y-2">
-                      <p className="data-label">Daily Limit</p>
-                      <p className="text-2xl font-mono font-bold text-brand-primary">{formatCurrency(budgetDailyLimit)}</p>
+                  <div className="grid grid-cols-2 gap-4 relative z-10">
+                    <div className="bg-brand-bg/50 p-4 rounded-2xl border border-brand-border/50 space-y-1">
+                      <p className="data-label text-[8px] uppercase tracking-[0.15em]">Daily Limit</p>
+                      <p className="text-xl font-mono font-bold text-brand-primary">{formatCurrency(budgetDailyLimit)}</p>
                     </div>
-                    <div className="bg-brand-bg/50 p-5 rounded-2xl border border-brand-border/50 space-y-2">
-                      <p className="data-label">Current Pace</p>
-                      <p className={cn("text-2xl font-mono font-bold", isAheadOfBudget ? "text-brand-primary" : "text-rose-500")}>
+                    <div className="bg-brand-bg/50 p-4 rounded-2xl border border-brand-border/50 space-y-1">
+                      <p className="data-label text-[8px] uppercase tracking-[0.15em]">Current Pace</p>
+                      <p className={cn("text-xl font-mono font-bold", isAheadOfBudget ? "text-brand-primary" : "text-rose-500")}>
                         {formatCurrency(activeDailyPace)}
                       </p>
                     </div>
                   </div>
 
-                  <div className="flex justify-between items-center px-2 relative z-10">
-                    <p className="data-label">Net Variance</p>
-                    <p className={cn("text-sm font-mono font-bold", budgetVariance >= 0 ? "text-brand-accent" : "text-rose-500")}>
+                  <div className="flex justify-between items-center px-1 relative z-10 h-6">
+                    <p className="data-label text-[8px] uppercase tracking-[0.15em]">Net Variance</p>
+                    <p className={cn("text-xs font-mono font-bold", budgetVariance >= 0 ? "text-brand-accent" : "text-rose-500")}>
                       {budgetVariance >= 0 ? '+' : '-'}{formatCurrency(Math.abs(budgetVariance))}
                     </p>
                   </div>
@@ -787,18 +787,18 @@ function MainApp() {
 
             {/* CFO Insights & Goals - Show if any data exists */}
             {(transactions.length > 0 || goals.length > 0) && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                 {/* CFO Insight Card - Only show if we have transactions to analyze */}
                 {transactions.length > 0 && (
-                  <div className="bg-brand-accent/5 border border-brand-accent/10 rounded-[2rem] p-8 md:p-10 space-y-5 relative overflow-hidden group">
+                  <div className="bg-brand-accent/5 border border-brand-accent/10 rounded-[2rem] p-6 md:p-8 space-y-4 relative overflow-hidden group">
                     <div className="absolute top-0 right-0 w-32 h-32 bg-brand-accent/5 rounded-full blur-3xl -mr-16 -mt-16 transition-all group-hover:scale-150" />
-                    <div className="flex items-center gap-3 relative z-10">
+                    <div className="flex items-center gap-2 relative z-10">
                       <div className="w-8 h-8 bg-brand-accent/10 rounded-xl flex items-center justify-center">
                         <TrendingUp className="w-4 h-4 text-brand-accent" />
                       </div>
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-brand-accent leading-relaxed">AI Advisor</p>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-brand-accent">AI Advisor</p>
                     </div>
-                    <p className="text-base md:text-xl text-brand-primary/80 leading-relaxed font-display font-bold tracking-tight relative z-10">
+                    <p className="text-base md:text-lg text-brand-primary/80 leading-relaxed font-display font-bold tracking-tight relative z-10">
                       {goals.length > 0
                         ? (budgetPercentage < 50 
                             ? "You're spending less than planned. Consider moving some surplus into your long-term goals."
@@ -817,26 +817,26 @@ function MainApp() {
 
                 {/* Strategic Goals Section */}
                 {goals.length > 0 && (
-                  <div className="bg-brand-surface border border-brand-border rounded-[2rem] p-8 md:p-10 space-y-6 shadow-sm relative overflow-hidden group">
+                  <div className="bg-brand-surface border border-brand-border rounded-[2rem] p-6 md:p-8 space-y-4 shadow-sm relative overflow-hidden group">
                     <div className="absolute top-0 right-0 w-32 h-32 bg-brand-primary/5 rounded-full blur-3xl -mr-16 -mt-16 transition-all group-hover:scale-150" />
-                    <div className="flex items-center justify-between border-b border-brand-border pb-6 relative z-10">
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-[1.25rem] bg-brand-primary/5 flex items-center justify-center text-brand-primary/40 border border-brand-border shadow-inner">
-                          <Target className="w-6 h-6" />
+                    <div className="flex items-center justify-between border-b border-brand-border pb-4 relative z-10">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-brand-primary/5 flex items-center justify-center text-brand-primary/40 border border-brand-border shadow-inner">
+                          <Target className="w-5 h-5" />
                         </div>
                         <div>
                           <p className="data-label">Active Targets</p>
-                          <p className="text-xl font-bold text-brand-primary mt-1 tracking-tight">Strategic Goals</p>
+                          <p className="text-lg font-bold text-brand-primary tracking-tight">Strategic Goals</p>
                         </div>
                       </div>
                     </div>
                     
-                    <div className="grid grid-cols-1 gap-4 relative z-10">
+                    <div className="grid grid-cols-1 gap-3 relative z-10">
                       {goals.slice(0, 2).map((goal) => {
                         const progress = goal.targetAmount > 0 ? Math.min((goal.currentAmount / goal.targetAmount) * 100, 100) : 0;
                         return (
-                          <div key={goal.id} className="bg-brand-bg/50 p-4 rounded-2xl border border-brand-border/50 space-y-3">
-                            <div className="flex justify-between items-start">
+                          <div key={goal.id} className="bg-brand-bg/50 p-4 rounded-2xl border border-brand-border/50 space-y-2">
+                            <div className="flex justify-between items-center">
                               <p className="text-[10px] font-bold text-brand-primary uppercase tracking-wide truncate max-w-[150px]">{goal.name}</p>
                               <p className="font-mono text-[10px] font-bold text-brand-accent">{progress.toFixed(0)}%</p>
                             </div>
@@ -847,9 +847,9 @@ function MainApp() {
                                 className="h-full bg-brand-primary rounded-full"
                               />
                             </div>
-                            <div className="flex justify-between items-end">
-                              <p className="text-[9px] font-bold text-brand-primary/40 uppercase tracking-widest">{formatCurrency(goal.currentAmount)}</p>
-                              <p className="text-[7px] font-bold text-brand-primary/20 uppercase tracking-widest">OF {formatCurrency(goal.targetAmount)}</p>
+                            <div className="flex justify-between items-center">
+                              <p className="text-[9px] font-bold text-brand-primary/40 uppercase tracking-widest leading-none">{formatCurrency(goal.currentAmount)}</p>
+                              <p className="text-[7px] font-bold text-brand-primary/20 uppercase tracking-widest leading-none">OF {formatCurrency(goal.targetAmount)}</p>
                             </div>
                           </div>
                         );
@@ -862,11 +862,11 @@ function MainApp() {
 
             {/* Recent Activity Snippet - Only show if data exists */}
             {transactions.length > 0 && (
-              <section className="space-y-6">
+              <section className="space-y-4">
                 <div className="flex items-end justify-between px-1">
                   <div className="space-y-1">
                     <h3 className="text-2xl md:text-3xl font-display font-bold uppercase tracking-tight text-brand-primary">Transactions</h3>
-                    <p className="data-label">Recent entries from your ledger</p>
+                    <p className="data-label">Recent entries</p>
                   </div>
                   <button 
                     onClick={() => setActiveTab('history')}
@@ -875,9 +875,9 @@ function MainApp() {
                     View Ledger
                   </button>
                 </div>
-                <div className="space-y-3">
+                <div className="space-y-2">
                   {transactions.slice(0, 3).map(t => (
-                    <div key={t.id} className="bg-brand-surface p-4 border border-brand-border rounded-2xl flex items-center justify-between group hover:border-brand-primary/20 transition-all shadow-sm hover:shadow-md">
+                    <div key={t.id} className="bg-brand-surface p-3.5 border border-brand-border rounded-2xl flex items-center justify-between group hover:border-brand-primary/20 transition-all shadow-sm">
                       <div className="flex items-center gap-4">
                         <div className="w-10 h-10 bg-brand-bg rounded-xl flex items-center justify-center text-brand-primary/30 group-hover:bg-brand-primary group-hover:text-brand-surface transition-all border border-brand-border group-hover:border-brand-primary shadow-sm group-hover:shadow-lg">
                           {getCategoryIcon(t.category)}
@@ -931,16 +931,7 @@ function MainApp() {
                 <h2 className="section-header">Ledger</h2>
                 <p className="data-label">Comprehensive history of your money movement</p>
               </div>
-              <button 
-                onClick={() => {
-                  setCommandTab('transaction');
-                  setShowCommandCenter(true);
-                }}
-                className="px-6 py-3 bg-brand-primary text-brand-surface rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-brand-primary/90 transition-all flex items-center gap-3 shadow-xl"
-              >
-                <Plus className="w-4 h-4" />
-                Add Entry
-              </button>
+
             </div>
 
               <div className="bg-brand-surface rounded-[2rem] border border-brand-border shadow-sm overflow-hidden grid grid-cols-3 divide-x divide-brand-border font-mono relative">
