@@ -7,6 +7,8 @@ import { Transaction, Goal, GoalType, StressTestState } from './types';
 import { formatCurrency, cn } from './lib/utils';
 import { 
   Plus, 
+  ShieldCheck,
+  Plane,
   TrendingUp, 
   TrendingDown, 
   Wallet, 
@@ -20,7 +22,6 @@ import {
   Compass,
   PiggyBank,
   Landmark,
-  ShieldCheck,
   Calendar,
   Info,
   Trash2,
@@ -47,7 +48,11 @@ import {
   LineChart,
   Line,
   YAxis,
-  XAxis
+  XAxis,
+  BarChart,
+  Bar,
+  AreaChart,
+  Area
 } from 'recharts';
 import { motion, AnimatePresence } from 'motion/react';
 import { generateQuickInsights } from './services/aiService';
@@ -123,7 +128,7 @@ function MainApp() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [showCommandCenter, setShowCommandCenter] = useState(false);
-  const [commandTab, setCommandTab] = useState<'terminal' | 'transaction' | 'budget' | 'goal'>('terminal');
+  const [commandTab, setCommandTab] = useState<'transaction' | 'budget' | 'goal'>('transaction');
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
   const [showMobileTip, setShowMobileTip] = useState(false);
   const [monthlyBudget, setMonthlyBudget] = useState(() => Number(localStorage.getItem('monthlyBudget')) || 0);
@@ -332,6 +337,17 @@ function MainApp() {
   const budgetDailyLimit = monthlyBudget / daysInMonth;
   const isAheadOfBudget = activeDailyPace < budgetDailyLimit;
   const budgetVariance = (budgetDailyLimit * today.getDate()) - spentThisMonth;
+  const todaySpent = transactions
+    .filter(t => {
+      const d = new Date(t.date);
+      return d.getDate() === today.getDate() && 
+             d.getMonth() === today.getMonth() && 
+             d.getFullYear() === today.getFullYear() &&
+             t.type === 'expense';
+    })
+    .reduce((sum, t) => sum + t.amount, 0);
+
+  const dailyRemaining = Math.max(0, budgetDailyLimit - todaySpent);
 
   const listContainer = {
     hidden: { opacity: 0 },
@@ -369,6 +385,21 @@ function MainApp() {
     .sort((a, b) => b.value - a.value);
 
   const totalExpense = historyCategoryData.reduce((acc, i) => acc + i.value, 0);
+
+  const historyTrendData = [...transactions]
+    .filter(t => t.type === 'expense')
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    .reduce((acc: any[], t) => {
+      const date = new Date(t.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+      const existing = acc.find(i => i.date === date);
+      if (existing) {
+        existing.amount += t.amount;
+      } else {
+        acc.push({ date, dateValue: t.date, amount: t.amount });
+      }
+      return acc;
+    }, [])
+    .slice(-10); // Show last 10 days of activity
 
   const groupedTransactions = transactions
     .filter(t => {
@@ -655,210 +686,199 @@ function MainApp() {
 
       <main className="max-w-4xl mx-auto px-4 md:px-6 py-4 md:py-8 space-y-4 md:space-y-8">
         {activeTab === 'home' && (
-          <div className="space-y-3 md:space-y-6">
-            {/* CFO Briefing Section - Compact */}
-            <motion.section 
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="space-y-1 py-1"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-[1px] bg-brand-accent/30" />
-                  <p className="data-label">{now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} // Overview</p>
-                </div>
+          <div className="space-y-4 md:space-y-8">
+            {/* Quick Action Bar */}
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <h1 className="text-2xl font-display font-bold text-brand-primary tracking-tight">Dashboard</h1>
+                <p className="data-label">Your daily spending status</p>
               </div>
-              <h1 className="section-header">Financial Position</h1>
-            </motion.section>
+              <button 
+                onClick={() => {
+                  setCommandTab('transaction');
+                  setShowCommandCenter(true);
+                }}
+                className="group flex items-center gap-2 px-6 py-3 bg-brand-primary text-brand-surface rounded-2xl text-xs font-bold uppercase tracking-widest hover:scale-[1.02] active:scale-95 transition-all shadow-xl"
+              >
+                <Plus className="w-5 h-5 transition-transform group-hover:rotate-90" />
+                <span>Add Expense</span>
+              </button>
+            </div>
 
-            {/* Unified Strategic Dashboard */}
-            <div className="space-y-2 md:space-y-3">
-              <section className="bg-brand-primary text-brand-surface rounded-[2rem] md:rounded-[3rem] overflow-hidden shadow-2xl relative group border border-white/5 pt-6 md:pt-8">
-                <div className="absolute inset-0 opacity-[0.05] pointer-events-none" 
-                  style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '60px 60px' }} 
-                />
-                
-                <div className="p-5 md:p-8 space-y-5 relative z-10">
-                  <div className="flex flex-col gap-1">
-                    <p className="data-label !text-brand-surface/40">Available to Spend</p>
-                    <div className="flex justify-between items-end">
+            {monthlyBudget === 0 ? (
+              <div className="bg-brand-bg border-2 border-dashed border-brand-border rounded-[2.5rem] p-12 text-center space-y-6">
+                <div className="w-16 h-16 bg-brand-primary/5 rounded-3xl flex items-center justify-center text-brand-primary/20 mx-auto">
+                  <Wallet className="w-8 h-8" />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-xl font-display font-bold text-brand-primary">No budget established</h3>
+                  <p className="text-sm text-brand-primary/40 max-w-xs mx-auto">Set a monthly limit to enable strategic spending tracking and daily allowances.</p>
+                </div>
+                <button 
+                  onClick={() => {
+                    setCommandTab('budget');
+                    setShowCommandCenter(true);
+                  }}
+                  className="px-8 py-4 bg-brand-primary text-brand-surface rounded-2xl text-xs font-bold uppercase tracking-widest hover:bg-brand-primary/95 transition-all shadow-lg active:scale-95"
+                >
+                  Set Monthly Budget
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-4 md:gap-8">
+              {/* Primary Liquidity Card */}
+              <div className="md:col-span-7">
+                <section className="bg-brand-primary text-brand-surface rounded-[2.5rem] overflow-hidden shadow-2xl relative h-full border border-white/5">
+                  <div className="absolute inset-0 opacity-[0.03] pointer-events-none" 
+                    style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '40px 40px' }} 
+                  />
+                  
+                  <div className="p-8 md:p-10 space-y-8 relative z-10">
+                    <div className="space-y-1">
+                      <p className="data-label !text-brand-surface/40 uppercase tracking-[0.2em]">Monthly Budget Left</p>
                       <h2 className={cn(
-                        "text-4xl md:text-6xl font-display font-bold tracking-tight leading-none py-1",
+                        "text-5xl md:text-7xl font-display font-bold tracking-tighter leading-none",
                         (monthlyBudget === 0) ? "text-brand-surface/10" : "text-brand-surface"
                       )}>
                         {monthlyBudget === 0 ? '₹0' : formatCurrency(adjustedLeftToSpend)}
                       </h2>
+                      <p className="text-[10px] text-brand-surface/30 uppercase font-bold mt-2 tracking-widest">Available funds for the month</p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-8 border-t border-white/10 pt-8">
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-brand-surface/30 px-1">Planned Per Day</p>
+                        <p className="text-3xl font-mono font-bold text-brand-surface">{formatCurrency(budgetDailyLimit)}</p>
+                        <p className="text-[8px] text-brand-surface/20 uppercase font-medium px-1">Target spending speed</p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-brand-surface/30 px-1">Month Progress</p>
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-3xl font-mono font-bold text-brand-surface">{((now.getDate() / daysInMonth) * 100).toFixed(0)}</span>
+                          <p className="text-[10px] font-bold text-brand-surface/20 uppercase">%</p>
+                        </div>
+                        <div className="h-1 w-full bg-white/10 rounded-full mt-2 overflow-hidden">
+                          <div className="h-full bg-brand-accent w-full" style={{ width: `${(now.getDate() / daysInMonth) * 100}%` }} />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+              </div>
+
+              {/* Allowance Radar */}
+              <div className="md:col-span-5">
+                <div className="bg-brand-surface border border-brand-border rounded-[2.5rem] p-8 md:p-10 h-full shadow-sm flex flex-col justify-between relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-40 h-40 bg-brand-accent/5 rounded-full blur-[60px] -mr-20 -mt-20" />
+                  
+                  <div className="space-y-6 relative z-10">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-1">
+                        <p className="data-label">Daily Tracker</p>
+                        <h3 className="text-xl font-display font-bold text-brand-primary tracking-tight">Today's Wallet</h3>
+                      </div>
+                      <div className={cn(
+                        "w-12 h-12 rounded-2xl flex items-center justify-center border shadow-inner",
+                        dailyRemaining > 0 ? "bg-brand-accent/10 text-brand-accent border-brand-accent/20" : "bg-rose-500/10 text-rose-500 border-rose-500/20"
+                      )}>
+                        <Activity className="w-6 h-6" />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <p className={cn(
+                        "text-5xl font-mono font-bold tracking-tighter",
+                        dailyRemaining > 0 ? "text-brand-primary" : "text-rose-500"
+                      )}>
+                        {formatCurrency(dailyRemaining)}
+                      </p>
+                      <p className="text-[10px] font-bold text-brand-primary/30 uppercase tracking-widest px-1">Available to spend now</p>
+                    </div>
+                    
+                    <div className="pt-4 border-t border-brand-border">
+                      <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-wider">
+                        <span className="text-brand-primary/40 text-[8px]">Spent so far</span>
+                        <span className="text-brand-primary">{formatCurrency(todaySpent)}</span>
+                      </div>
+                      <div className="h-2 w-full bg-brand-bg rounded-full mt-3 overflow-hidden p-0.5 border border-brand-border">
+                        <motion.div 
+                          initial={{ width: 0 }}
+                          animate={{ width: `${Math.min((todaySpent / (budgetDailyLimit || 1)) * 100, 100)}%` }}
+                          className={cn(
+                            "h-full rounded-full",
+                            todaySpent > budgetDailyLimit ? "bg-rose-500" : "bg-brand-primary"
+                          )}
+                        />
+                      </div>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-4 md:gap-6 border-t border-white/10 pt-6">
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-brand-surface/30">Buffer</p>
-                      <div className="flex items-baseline gap-1">
-                        <span className="text-xl md:text-3xl font-mono font-bold text-brand-surface">{runwayMonths.toFixed(1)}</span>
-                        <p className="text-[10px] font-bold text-brand-surface/20 uppercase">Mo</p>
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-brand-surface/30">Efficiency</p>
-                      <div className="flex items-baseline gap-1">
-                        <span className="text-xl md:text-3xl font-mono font-bold text-brand-surface">{savingsEfficiency.toFixed(0)}</span>
-                        <p className="text-[10px] font-bold text-brand-surface/20 uppercase">%</p>
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-brand-surface/30">Momentum</p>
-                      <div className={cn("text-xl md:text-3xl font-bold font-mono h-[30px] md:h-9 flex items-center", balance >= 0 ? "text-brand-accent" : "text-rose-400")}>
-                        {balance >= 0 ? '+' : ''}{Math.abs(balance) > 1000 ? (balance/1000).toFixed(1) + 'k' : Math.abs(balance).toFixed(0)}
-                      </div>
-                    </div>
+                  <div className={cn(
+                    "mt-8 p-4 rounded-2xl border text-[10px] font-bold uppercase tracking-widest text-center",
+                    isAheadOfBudget ? "bg-brand-accent/5 border-brand-accent/10 text-brand-accent" : "bg-rose-500/5 border-rose-500/10 text-rose-500"
+                  )}>
+                    {isAheadOfBudget ? '✓ Operational Surplus' : '⚠ Capital Leak Detected'}
                   </div>
                 </div>
+              </div>
 
-                {monthlyBudget > 0 && (
-                  <div className="px-5 md:px-8 pb-6 md:pb-8">
-                    <div className="flex justify-between items-center mb-2">
-                      <p className="data-label !text-brand-surface/20">Monthly Budget Progress</p>
-                      <p className="font-mono data-label !text-brand-accent">{budgetPercentage.toFixed(1)}%</p>
+              {/* Insights & Strategy Grid */}
+              <div className="md:col-span-12 grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8">
+                {/* AI Briefing */}
+                <div className="bg-brand-accent/5 border border-brand-accent/10 rounded-[2.5rem] p-8 md:p-10 space-y-4 relative overflow-hidden group">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-10 h-10 bg-brand-accent/10 rounded-2xl flex items-center justify-center text-brand-accent">
+                      <TrendingUp className="w-5 h-5" />
                     </div>
-                    <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden p-[1px] border border-white/5">
-                      <motion.div 
-                        initial={{ width: 0 }}
-                        animate={{ width: `${Math.min(budgetPercentage, 100)}%` }}
-                        className={cn(
-                          "h-full rounded-full transition-all duration-1000",
-                          budgetPercentage > (now.getDate() / daysInMonth * 100) ? "bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.5)]" : "bg-brand-accent shadow-[0_0_10px_rgba(16,185,129,0.5)]"
-                        )}
-                      />
-                    </div>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-brand-accent">CFO Assessment</p>
                   </div>
-                )}
-              </section>
+                  <p className="text-xl md:text-2xl text-brand-primary font-display font-medium leading-tight tracking-tight">
+                    {budgetPercentage < 50 
+                      ? "Capital efficiency is high. Strategic reinvestment of surplus into current goals recommended."
+                      : budgetPercentage > 90 
+                      ? "Liquidity threshold reached. Immediate spending freeze on non-essentials required to stabilize month-end cash."
+                      : "Operational flow is stable. Maintain current daily velocity to meet all financial targets."
+                    }
+                  </p>
+                </div>
 
-              {/* Budget Tracking */}
-              {monthlyBudget > 0 && (
-                <motion.div 
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="bg-brand-surface border border-brand-border rounded-[2rem] p-5 md:p-8 space-y-4 shadow-sm relative overflow-hidden"
-                >
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-brand-bg rounded-full blur-3xl -mr-16 -mt-16" />
-                  <div className="flex items-center justify-between border-b border-brand-border pb-4 relative z-10">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-brand-primary/5 flex items-center justify-center text-brand-primary/40 border border-brand-border shadow-inner">
-                        <Activity className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <p className="data-label">Spending Analysis</p>
-                        <p className="text-lg font-bold text-brand-primary tracking-tight">Daily Pace</p>
-                      </div>
+                {/* Goals Snapview */}
+                <div className="bg-brand-surface border border-brand-border rounded-[2.5rem] p-8 md:p-10 space-y-6 shadow-sm">
+                  <div className="flex items-center justify-between border-b border-brand-border pb-6">
+                    <div className="space-y-1">
+                      <p className="data-label">Strategic Targets</p>
+                      <h3 className="text-xl font-display font-bold text-brand-primary tracking-tight">Portfolio Pulse</h3>
                     </div>
-                    <div className={cn(
-                      "px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider border shadow-sm",
-                      isAheadOfBudget ? "text-brand-accent border-brand-accent/20 bg-brand-accent/5" : "text-rose-500 border-rose-500/20 bg-rose-500/5"
-                    )}>
-                      {isAheadOfBudget ? 'ON TRACK' : 'LIMIT'}
+                    <div className="w-10 h-10 rounded-2xl bg-brand-primary/5 flex items-center justify-center text-brand-primary border border-brand-border">
+                      <Target className="w-5 h-5" />
                     </div>
                   </div>
                   
-                  <div className="grid grid-cols-2 gap-4 relative z-10">
-                    <div className="bg-brand-bg/50 p-4 rounded-2xl border border-brand-border/50 space-y-1">
-                      <p className="data-label text-[8px] uppercase tracking-[0.15em]">Daily Limit</p>
-                      <p className="text-xl font-mono font-bold text-brand-primary">{formatCurrency(budgetDailyLimit)}</p>
-                    </div>
-                    <div className="bg-brand-bg/50 p-4 rounded-2xl border border-brand-border/50 space-y-1">
-                      <p className="data-label text-[8px] uppercase tracking-[0.15em]">Current Pace</p>
-                      <p className={cn("text-xl font-mono font-bold", isAheadOfBudget ? "text-brand-primary" : "text-rose-500")}>
-                        {formatCurrency(activeDailyPace)}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex justify-between items-center px-1 relative z-10 h-6">
-                    <p className="data-label text-[8px] uppercase tracking-[0.15em]">Net Variance</p>
-                    <p className={cn("text-xs font-mono font-bold", budgetVariance >= 0 ? "text-brand-accent" : "text-rose-500")}>
-                      {budgetVariance >= 0 ? '+' : '-'}{formatCurrency(Math.abs(budgetVariance))}
-                    </p>
-                  </div>
-                </motion.div>
-              )}
-
-            </div>
-
-            {/* CFO Insights & Goals - Show if any data exists */}
-            {(transactions.length > 0 || goals.length > 0) && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-                {/* CFO Insight Card - Only show if we have transactions to analyze */}
-                {transactions.length > 0 && (
-                  <div className="bg-brand-accent/5 border border-brand-accent/10 rounded-[2rem] p-6 md:p-8 space-y-4 relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-brand-accent/5 rounded-full blur-3xl -mr-16 -mt-16 transition-all group-hover:scale-150" />
-                    <div className="flex items-center gap-2 relative z-10">
-                      <div className="w-8 h-8 bg-brand-accent/10 rounded-xl flex items-center justify-center">
-                        <TrendingUp className="w-4 h-4 text-brand-accent" />
-                      </div>
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-brand-accent">AI Advisor</p>
-                    </div>
-                    <p className="text-base md:text-lg text-brand-primary/80 leading-relaxed font-display font-bold tracking-tight relative z-10">
-                      {goals.length > 0
-                        ? (budgetPercentage < 50 
-                            ? "You're spending less than planned. Consider moving some surplus into your long-term goals."
-                            : budgetPercentage > 90 
-                            ? "Spending is high this month. Try to limit non-essential purchases for the next few days."
-                            : "Your spending is perfectly on track. Keep this momentum to hit your monthly savings goal.")
-                        : (budgetPercentage < 50
-                            ? "Surplus capital detected. Establish a savings goal to optimize this liquidity."
-                            : budgetPercentage > 90
-                            ? "Liquidity is tightening. Audit non-essential outflows to stabilize capital reserves."
-                            : "Cash flow is balanced. Protocol recommends defining a financial target.")
-                      }
-                    </p>
-                  </div>
-                )}
-
-                {/* Strategic Goals Section */}
-                {goals.length > 0 && (
-                  <div className="bg-brand-surface border border-brand-border rounded-[2rem] p-6 md:p-8 space-y-4 shadow-sm relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-brand-primary/5 rounded-full blur-3xl -mr-16 -mt-16 transition-all group-hover:scale-150" />
-                    <div className="flex items-center justify-between border-b border-brand-border pb-4 relative z-10">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-brand-primary/5 flex items-center justify-center text-brand-primary/40 border border-brand-border shadow-inner">
-                          <Target className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <p className="data-label">Active Targets</p>
-                          <p className="text-lg font-bold text-brand-primary tracking-tight">Strategic Goals</p>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 gap-3 relative z-10">
-                      {goals.slice(0, 2).map((goal) => {
-                        const progress = goal.targetAmount > 0 ? Math.min((goal.currentAmount / goal.targetAmount) * 100, 100) : 0;
-                        return (
-                          <div key={goal.id} className="bg-brand-bg/50 p-4 rounded-2xl border border-brand-border/50 space-y-2">
-                            <div className="flex justify-between items-center">
-                              <p className="text-[10px] font-bold text-brand-primary uppercase tracking-wide truncate max-w-[150px]">{goal.name}</p>
-                              <p className="font-mono text-[10px] font-bold text-brand-accent">{progress.toFixed(0)}%</p>
-                            </div>
-                            <div className="h-1 w-full bg-brand-primary/10 rounded-full overflow-hidden">
-                              <motion.div 
-                                initial={{ width: 0 }}
-                                animate={{ width: `${progress}%` }}
-                                className="h-full bg-brand-primary rounded-full"
-                              />
-                            </div>
-                            <div className="flex justify-between items-center">
-                              <p className="text-[9px] font-bold text-brand-primary/40 uppercase tracking-widest leading-none">{formatCurrency(goal.currentAmount)}</p>
-                              <p className="text-[7px] font-bold text-brand-primary/20 uppercase tracking-widest leading-none">OF {formatCurrency(goal.targetAmount)}</p>
-                            </div>
+                  <div className="space-y-4">
+                    {goals.length > 0 ? goals.slice(0, 2).map((goal) => {
+                      const progress = goal.targetAmount > 0 ? Math.min((goal.currentAmount / goal.targetAmount) * 100, 100) : 0;
+                      return (
+                        <div key={goal.id} className="bg-brand-bg/40 p-5 rounded-[1.5rem] border border-brand-border/50 space-y-3">
+                          <div className="flex justify-between items-center">
+                            <p className="text-xs font-bold text-brand-primary uppercase tracking-wide">{goal.name}</p>
+                            <span className="text-[10px] font-mono font-bold text-brand-accent bg-brand-accent/10 px-2 py-0.5 rounded-lg border border-brand-accent/20">{progress.toFixed(0)}%</span>
                           </div>
-                        );
-                      })}
-                    </div>
+                          <div className="h-1.5 w-full bg-brand-primary/5 rounded-full overflow-hidden">
+                            <div className="h-full bg-brand-primary" style={{ width: `${progress}%` }} />
+                          </div>
+                        </div>
+                      );
+                    }) : (
+                      <div className="py-4 text-center space-y-2">
+                        <p className="text-sm font-medium text-brand-primary/40 font-mono">NO ACTIVE TARGETS</p>
+                        <button onClick={() => setActiveTab('goals')} className="text-[10px] font-bold text-brand-accent uppercase underline decoration-brand-accent/30 underline-offset-4">Provision Portfolio</button>
+                      </div>
+                    )}
                   </div>
-                )}
+                </div>
               </div>
-            )}
+            </div>
+          )}
 
             {/* Recent Activity Snippet - Only show if data exists */}
             {transactions.length > 0 && (
@@ -932,6 +952,16 @@ function MainApp() {
                 <p className="data-label">Comprehensive history of your money movement</p>
               </div>
 
+              <button 
+                onClick={() => {
+                  setCommandTab('transaction');
+                  setShowCommandCenter(true);
+                }}
+                className="group relative flex items-center gap-3 px-5 py-2.5 bg-brand-primary text-brand-surface rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-brand-primary/95 transition-all shadow-xl active:scale-95"
+              >
+                <Plus className="w-4 h-4 transition-transform group-hover:rotate-90" />
+                <span>Log Entry</span>
+              </button>
             </div>
 
               <div className="bg-brand-surface rounded-[2rem] border border-brand-border shadow-sm overflow-hidden grid grid-cols-3 divide-x divide-brand-border font-mono relative">
@@ -953,6 +983,116 @@ function MainApp() {
                   </p>
                 </div>
               </div>
+              
+              {transactions.length > 0 && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Category Distribution */}
+                  <div className="bg-brand-surface border border-brand-border rounded-[2rem] p-6 space-y-6 shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <p className="data-label">Category Volume</p>
+                      <div className="w-8 h-8 rounded-lg bg-brand-bg flex items-center justify-center text-brand-primary/20">
+                        <PieChartIcon className="w-4 h-4" />
+                      </div>
+                    </div>
+                    <div className="h-48 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={historyCategoryData.slice(0, 5)}>
+                          <XAxis 
+                            dataKey="name" 
+                            hide 
+                          />
+                          <Tooltip 
+                            contentStyle={{ 
+                              backgroundColor: '#1E1E1E', 
+                              border: '1px solid #333', 
+                              borderRadius: '12px',
+                              fontSize: '10px',
+                              fontFamily: 'JetBrains Mono' 
+                            }}
+                            cursor={{ fill: 'rgba(255,255,255,0.05)' }}
+                          />
+                          <Bar 
+                            dataKey="value" 
+                            fill="var(--color-brand-primary)" 
+                            radius={[6, 6, 0, 0]}
+                            barSize={32}
+                          />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                       {historyCategoryData.slice(0, 4).map((item, idx) => (
+                         <div key={item.name} className="flex flex-col gap-1">
+                           <p className="text-[10px] font-bold text-brand-primary/40 uppercase truncate">{item.name}</p>
+                           <p className="text-xs font-mono font-bold text-brand-primary leading-none">
+                             {((item.value / (totalExpense || 1)) * 100).toFixed(0)}%
+                           </p>
+                         </div>
+                       ))}
+                    </div>
+                  </div>
+
+                  {/* Spending Velocity */}
+                  <div className="bg-brand-surface border border-brand-border rounded-[2rem] p-6 space-y-6 shadow-sm relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-brand-accent/5 rounded-full blur-3xl -mr-16 -mt-16" />
+                    <div className="flex items-center justify-between">
+                      <p className="data-label">Spending Trends</p>
+                      <div className="w-8 h-8 rounded-lg bg-brand-accent/5 flex items-center justify-center text-brand-accent/40">
+                        <Activity className="w-4 h-4" />
+                      </div>
+                    </div>
+                    <div className="h-48 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={historyTrendData}>
+                          <defs>
+                            <linearGradient id="colorAmount" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="var(--color-brand-accent)" stopOpacity={0.3}/>
+                              <stop offset="95%" stopColor="var(--color-brand-accent)" stopOpacity={0}/>
+                            </linearGradient>
+                          </defs>
+                          <XAxis 
+                            dataKey="date" 
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fontSize: 9, fill: 'var(--color-brand-primary)', opacity: 0.3 }}
+                          />
+                          <Tooltip 
+                            contentStyle={{ 
+                              backgroundColor: '#1E1E1E', 
+                              border: '1px solid #333', 
+                              borderRadius: '12px',
+                              fontSize: '10px',
+                              fontFamily: 'JetBrains Mono' 
+                            }}
+                          />
+                          <Area 
+                            type="monotone" 
+                            dataKey="amount" 
+                            stroke="var(--color-brand-accent)" 
+                            fillOpacity={1} 
+                            fill="url(#colorAmount)" 
+                            strokeWidth={3}
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="flex items-center justify-between pt-2">
+                       <div className="space-y-1">
+                         <p className="data-label !text-[8px]">Daily Spending</p>
+                         <p className="text-sm font-bold text-brand-primary lowercase bg-brand-bg px-2 py-1 rounded-lg border border-brand-border">
+                           {formatCurrency(historyTrendData[historyTrendData.length - 1]?.amount || 0)}/day
+                         </p>
+                       </div>
+                       <div className="text-right space-y-1">
+                         <p className="data-label !text-[8px]">Status</p>
+                         <p className="text-xs font-mono font-bold text-brand-accent">
+                           STEADY
+                         </p>
+                       </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
                 <div className="space-y-1">
@@ -1476,13 +1616,14 @@ function GoalItem({ goal, transactions, isDemo, onEdit }: { goal: Goal, transact
 }
 
 const EXPENSE_CATEGORIES = {
-  'Housing': ['Rent', 'Maintenance', 'Utilities', 'Taxes'],
-  'Food & Dining': ['Groceries', 'Swiggy/Zomato', 'Restaurants', 'Cafe'],
-  'Transport': ['Fuel', 'Cab/Auto', 'Public Transport', 'Service'],
-  'Shopping': ['Lifestyle', 'electronics', 'Home Decor', 'Amazon/Flipkart'],
+  'Living': ['Rent', 'Maintenance', 'Utilities', 'Taxes'],
+  'Food & Groceries': ['Groceries', 'Swiggy/Zomato', 'Restaurants', 'Cafe'],
+  'Cabs & Fuel': ['Fuel', 'Cab/Auto', 'Public Transport', 'Service'],
+  'Shopping': ['Lifestyle', 'Electronics', 'Home Decor', 'Amazon/Flipkart'],
   'Health': ['Medical', 'Gym', 'Insurance', 'Pharmacy'],
+  'Travel': ['Flight/Train', 'Hotel', 'Sightseeing', 'Commute'],
   'Entertainment': ['Streaming', 'Movies', 'Hobbies', 'Gaming'],
-  'Investments': ['SIP/Mutual Funds', 'Stocks', 'Debt Repayment', 'Insurance'],
+  'Saving & Investing': ['SIP/Mutual Funds', 'Stocks', 'Debt Repayment', 'Insurance'],
   'Other': ['Misc', 'Gifts', 'Unknown']
 };
 
@@ -1508,165 +1649,13 @@ function CommandCenter({
   userId: string, 
   transactions: Transaction[], 
   goals: Goal[],
-  initialTab: 'terminal' | 'transaction' | 'budget' | 'goal',
+  initialTab: 'transaction' | 'budget' | 'goal',
   monthlyBudget: number,
   setMonthlyBudget: (v: number) => void,
   editingGoal: Goal | null,
   avgDailySpend: number
 }) {
-  const [activeTab, setActiveTab] = useState<'terminal' | 'transaction' | 'budget' | 'goal'>(editingGoal ? 'goal' : 'terminal');
-  const [smartCommand, setSmartCommand] = useState('');
-  const [isProcessing, setIsProcessing] = useState(false);
-  const smartInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (activeTab === 'terminal' && smartInputRef.current) {
-      smartInputRef.current.focus();
-    }
-  }, [activeTab]);
-
-  const handleSmartEntry = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!smartCommand.trim() || isProcessing) return;
-
-    setIsProcessing(true);
-    try {
-      const tokens = smartCommand.trim().split(/\s+/);
-      let amount = 0;
-      let descriptionParts: string[] = [];
-      let type: 'expense' | 'income' = 'expense';
-
-      // Detect Goal Initiation
-      if (smartCommand.toLowerCase().startsWith('goal ')) {
-        const goalMatch = smartCommand.match(/goal\s+(.+?)\s+(\d+(\.\d+)?([kKmM])?)/i);
-        if (goalMatch) {
-          const name = goalMatch[1].toUpperCase();
-          let targetRaw = goalMatch[2].toLowerCase();
-          let target = parseFloat(targetRaw);
-          if (targetRaw.endsWith('k')) target *= 1000;
-          if (targetRaw.endsWith('m')) target *= 1000000;
-          
-          await addDoc(collection(db, 'goals'), {
-            name,
-            targetAmount: target,
-            currentAmount: 0,
-            userId,
-            createdAt: new Date().toISOString()
-          });
-          setSmartCommand('');
-          onClose();
-          return;
-        }
-      }
-
-      tokens.forEach(token => {
-        const cleanToken = token.replace(/[₹$,]/g, '');
-        if (!isNaN(parseFloat(cleanToken)) && cleanToken !== '') {
-          amount = Math.abs(parseFloat(cleanToken));
-          if (token.toLowerCase().includes('salary') || token.toLowerCase().includes('bonus')) type = 'income'; 
-        } else {
-          descriptionParts.push(token);
-        }
-      });
-
-      const description = descriptionParts.join(' ').toUpperCase() || 'UNTITLED ENTRY';
-      
-      let category = 'Other';
-      let subcategory = 'Misc';
-      const descLower = description.toLowerCase();
-      
-      if (descLower.includes('food') || descLower.includes('swiggy') || descLower.includes('zomato') || descLower.includes('dining') || descLower.includes('cafe')) {
-        category = 'Food & Dining';
-        subcategory = 'Dining/Swiggy';
-      } else if (descLower.includes('rent') || descLower.includes('utilities') || descLower.includes('electricity') || descLower.includes('water')) {
-        category = 'Housing';
-        subcategory = 'Rent/Bills';
-      } else if (descLower.includes('amazon') || descLower.includes('myntra') || descLower.includes('flipkart') || descLower.includes('shopping')) {
-        category = 'Shopping';
-        subcategory = 'Amazon/Flipkart';
-      } else if (descLower.includes('uber') || descLower.includes('ola') || descLower.includes('petrol') || descLower.includes('fuel')) {
-        category = 'Transport';
-        subcategory = 'Cab/Fuel';
-      } else if (descLower.includes('salary') || descLower.includes('bonus')) {
-        category = 'Employment';
-        subcategory = 'Salary';
-      } else if (descLower.includes('sip') || descLower.includes('invest') || descLower.includes('stock') || descLower.includes('mutual')) {
-        category = 'Investments';
-        subcategory = 'SIP/Mutual Funds';
-      } else if (descLower.includes('debt') || descLower.includes('emi') || descLower.includes('loan') || descLower.includes('credit card')) {
-        category = 'Investments';
-        subcategory = 'Debt Repayment';
-      }
-
-      // Terminal Attribution Support
-      let linkedGoalId = null;
-      if (type === 'expense') {
-        const goalTypeMapTerminal: Record<string, string> = {
-          'Investments': 'investment',
-          'Housing': 'savings', // Assuming saving for home if not regular expense
-        };
-        const goalType = goalTypeMapTerminal[category] || (category === 'Investments' && descLower.includes('debt') ? 'debt' : null);
-        
-        if (goalType || true) { // Try matching for any expense in terminal
-          const matchedGoal = goals.find(g => 
-            descLower.includes(g.name.toLowerCase()) || 
-            g.name.toLowerCase().includes(descLower)
-          );
-          if (matchedGoal) {
-            linkedGoalId = matchedGoal.id;
-            await updateDoc(doc(db, 'goals', matchedGoal.id), { currentAmount: increment(amount) });
-          }
-        }
-      }
-
-      await addDoc(collection(db, 'transactions'), {
-        amount,
-        category,
-        subcategory,
-        description,
-        type,
-        date: new Date().toISOString(),
-        userId,
-        isMandatory: category === 'Housing' || category === 'Bills & Utilities',
-        isRecurring: category === 'Housing',
-        isAvoidable: false,
-        linkedGoalId
-      });
-
-      setSmartCommand('');
-      onClose(); 
-    } catch (err) {
-      console.error("Smart Entry Failed:", err);
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const getSmartPreview = () => {
-    if (!smartCommand.trim()) return null;
-    const lower = smartCommand.toLowerCase();
-    const amountMatch = smartCommand.match(/\d+(\.\d+)?([kKmM])?/i);
-    let amount = 0;
-    if (amountMatch) {
-      let raw = amountMatch[0].toLowerCase();
-      amount = parseFloat(raw);
-      if (raw.endsWith('k')) amount *= 1000;
-      if (raw.endsWith('m')) amount *= 1000000;
-    }
-
-    if (lower.startsWith('goal ')) {
-      return { type: 'STRATEGIC_INIT', label: 'NEW ASSET TARGET', val: amount };
-    }
-
-    const isIncome = lower.includes('income') || lower.includes('salary') || lower.includes('+') || lower.includes('bonus');
-    return { 
-      type: isIncome ? 'CAPITAL_INFLOW' : 'OPERATIONAL_OUTFLOW', 
-      val: amount,
-      impact: !isIncome && avgDailySpend > 0 ? (amount / avgDailySpend).toFixed(1) : null
-    };
-  };
-
-  const preview = getSmartPreview();
+  const [activeTab, setActiveTab] = useState<'transaction' | 'budget' | 'goal'>(editingGoal ? 'goal' : initialTab);
 
   return (
     <div className="fixed inset-0 z-[100] flex items-end md:items-center justify-center bg-brand-primary/80 backdrop-blur-xl">
@@ -1684,18 +1673,16 @@ function CommandCenter({
               <div className="absolute top-0 right-0 w-20 h-20 bg-brand-accent/5 rounded-full blur-2xl -mr-10 -mt-10 group-hover/header:bg-brand-accent/10 transition-all" />
               <div className="flex items-center gap-3 relative z-10">
                 <div className="w-8 h-8 rounded-lg bg-brand-primary flex items-center justify-center text-brand-surface shadow-lg transform hover:rotate-6 transition-all duration-500">
-                  {activeTab === 'terminal' ? <Sparkles className="w-4 h-4 text-brand-accent" /> :
-                   activeTab === 'transaction' ? <Plus className="w-4 h-4 text-brand-accent" /> :
+                  {activeTab === 'transaction' ? <Plus className="w-4 h-4 text-brand-accent" /> :
                    activeTab === 'budget' ? <ShieldCheck className="w-4 h-4 text-brand-accent" /> : <Target className="w-4 h-4 text-brand-accent" />}
                 </div>
                 <div className="space-y-0.5">
                   <h3 className="text-[11px] font-bold text-brand-primary uppercase tracking-widest leading-none">
-                    {activeTab === 'terminal' ? 'Action Center' :
-                     activeTab === 'transaction' ? 'Quick Add' :
+                    {activeTab === 'transaction' ? 'Quick Add' :
                      activeTab === 'budget' ? 'Budgeting' : 'Financial Goals'}
                   </h3>
                   <p className="text-[8px] font-mono font-bold text-brand-primary/30 uppercase tracking-[0.25em] leading-none">
-                    {activeTab === 'terminal' ? 'AI Assistant' : 'Update your ledger'}
+                    Update your ledger
                   </p>
                 </div>
               </div>
@@ -1709,76 +1696,6 @@ function CommandCenter({
 
             {/* Content Area */}
             <div className="flex-1 overflow-y-auto no-scrollbar">
-              {activeTab === 'terminal' && (
-                <div className="space-y-4 px-1 py-1">
-                  <div className="relative group/field">
-                    <div className="absolute -top-3.5 left-1 opacity-0 group-focus-within/field:opacity-100 transition-all">
-                      <p className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-accent">Describe your transaction or goal</p>
-                    </div>
-                    <input 
-                      ref={smartInputRef}
-                      autoFocus
-                      type="text"
-                      value={smartCommand}
-                      onChange={(e) => setSmartCommand(e.target.value)}
-                      placeholder="e.g. Coffee 250 // Uber 450"
-                      className="w-full bg-brand-bg/50 border border-brand-border rounded-lg py-2 px-3 text-[12px] font-mono placeholder:text-brand-primary/10 focus:border-brand-accent/30 focus:ring-2 focus:ring-brand-accent/5 transition-all outline-none text-brand-primary tracking-tight"
-                    />
-                    
-                    <AnimatePresence>
-                      {preview && (
-                        <motion.div 
-                          initial={{ opacity: 0, scale: 0.98, y: 10 }}
-                          animate={{ opacity: 1, scale: 1, y: 0 }}
-                          exit={{ opacity: 0, scale: 0.98, y: 5 }}
-                          className="absolute -bottom-14 left-0 right-0 glass-panel p-2.5 rounded-xl flex items-center gap-3 shadow-xl z-20 border-brand-accent/20"
-                        >
-                          <div className={cn(
-                            "w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border shadow-inner",
-                            preview.type === 'STRATEGIC_INIT' ? "bg-brand-accent/10 text-brand-accent border-brand-accent/20" :
-                            preview.type === 'CAPITAL_INFLOW' ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : "bg-rose-500/10 text-rose-500 border-rose-500/20"
-                          )}>
-                            {preview.type === 'STRATEGIC_INIT' ? <Target className="w-4 h-4" /> : 
-                             preview.type === 'CAPITAL_INFLOW' ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownRight className="w-4 h-4" />}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 leading-none">{preview.type}</p>
-                            <p className="text-xs font-bold text-brand-primary tracking-tight uppercase mt-1 leading-tight">
-                              {preview.type === 'STRATEGIC_INIT' ? `INITIALIZE: ${formatCurrency(preview.val)}` : `LOG: ${formatCurrency(preview.val)}`}
-                            </p>
-                          </div>
-                          <div className="px-2.5 py-1.5 bg-brand-primary text-brand-surface rounded-md text-[8.5px] font-mono font-bold uppercase tracking-[0.2em] flex items-center gap-1.5 shrink-0">
-                            <CornerDownLeft className="w-2.5 h-2.5 text-brand-accent" />
-                            Execute
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-
-                  {/* Quick Macros */}
-                  <div className="pt-2 space-y-2">
-                    <p className="text-[8.5px] font-mono font-bold uppercase tracking-[0.2em] text-brand-primary/20 pl-1">Protocol Macros</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {[
-                        { l: 'Brew', v: 'Coffee 250' },
-                        { l: 'Transit', v: 'Uber 450' },
-                        { l: 'Dinner', v: 'Food 800' },
-                        { l: 'Yield', v: 'Salary 1.5L income' },
-                      ].map(macro => (
-                        <button 
-                          key={macro.l}
-                          onClick={() => setSmartCommand(macro.v)}
-                          className="px-2.5 py-1.5 rounded-md border border-brand-primary/5 bg-brand-primary/[0.02] text-[10px] font-mono font-bold text-brand-primary/40 hover:bg-brand-primary/5 hover:text-brand-primary transition-all active:scale-95 uppercase tracking-wide"
-                        >
-                          {macro.l}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-
               {activeTab === 'transaction' && (
                 <TransactionForm onClose={onClose} userId={userId} transactions={transactions} goals={goals} />
               )}
@@ -1792,7 +1709,6 @@ function CommandCenter({
             <div className="pt-2 border-t border-brand-primary/5">
               <div className="flex gap-1.5 pb-1">
                 {[
-                  { id: 'terminal', label: 'HUB', icon: Sparkles },
                   { id: 'transaction', label: 'ENTRY', icon: Plus },
                   { id: 'budget', label: 'GUARD', icon: ShieldCheck },
                   { id: 'goal', label: 'PORTFOLIO', icon: Target },
