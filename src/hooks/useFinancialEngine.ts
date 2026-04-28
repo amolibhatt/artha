@@ -50,7 +50,7 @@ export function useFinancialEngine(
   const projectedMonthlyBurn = activeDailyPace * 30;
   const monthlyBurn = useMemo(() => {
     const expenseTransactions = transactions.filter(t => t.type === 'expense');
-    if (expenseTransactions.length === 0) return 0;
+    if (expenseTransactions.length === 0 || transactions.length === 0) return 0;
 
     const firstDate = new Date(transactions[transactions.length - 1].date);
     const daysSinceFirst = Math.max(1, (today.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24));
@@ -78,10 +78,13 @@ export function useFinancialEngine(
   const savingsEfficiency = totalIncome > 0 ? (Math.max(0, totalIncome - totalExpenses) / totalIncome) * 100 : 0;
   const fixedRatio = totalExpenses > 0 ? (mandatoryExpenses / totalExpenses) * 100 : 0;
 
-  const spentToday = useMemo(() => 
-    transactions.filter(t => t.type === 'expense' && new Date(t.date).getTime() >= today.getTime())
-                .reduce((acc, t) => acc + t.amount, 0),
-  [transactions, today]);
+  const spentToday = useMemo(() => {
+    const todayStr = today.toDateString();
+    return transactions.filter(t => {
+      const d = new Date(t.date);
+      return t.type === 'expense' && d.toDateString() === todayStr;
+    }).reduce((acc, t) => acc + t.amount, 0);
+  }, [transactions, today]);
 
   const last7Days = useMemo(() => {
     const dates = Array.from({ length: 7 }, (_, i) => {
@@ -126,6 +129,9 @@ export function useFinancialEngine(
     return goals.reduce((acc, g) => {
       if (g.currentAmount >= g.targetAmount) return acc;
       
+      // Use explicit EMI for debt goals
+      if (g.type === 'debt' && g.emi) return acc + g.emi;
+      
       // Use explicit monthlyContribution if defined
       if (g.monthlyContribution) return acc + g.monthlyContribution;
 
@@ -154,7 +160,7 @@ export function useFinancialEngine(
     if (incomeThisMonth > 0) return incomeThisMonth;
     
     const incomes = transactions.filter(t => t.type === 'income');
-    if (incomes.length === 0) return 0;
+    if (incomes.length === 0 || transactions.length === 0) return 0;
     
     const firstDate = new Date(transactions[transactions.length-1].date);
     const monthsSinceFirst = Math.max(0.5, (today.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24 * 30.44));
@@ -178,6 +184,11 @@ export function useFinancialEngine(
   const strategicSpendingCeiling = Math.max(0, estimatedMonthlyIncome - estimatedFixedCosts - monthlyGoalCommitments);
   const dailySpendingPower = strategicSpendingCeiling / daysInMonth;
 
+  const totalDebtOutstanding = useMemo(() => 
+    goals.filter(g => g.type === 'debt')
+         .reduce((acc, g) => acc + (g.targetAmount - g.currentAmount), 0),
+  [goals]);
+
   return {
     totalIncome,
     totalExpenses,
@@ -186,6 +197,7 @@ export function useFinancialEngine(
     spentThisMonth,
     spentToday,
     liquidAssets,
+    totalDebtOutstanding,
     balance,
     runwayMonths,
     leftToSpend,

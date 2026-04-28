@@ -40,29 +40,43 @@ export const generateCFOStrategy = async (transactions: Transaction[], goals: Go
     .filter(t => t.type === 'expense' && t.amount > 5000)
     .slice(0, 5);
 
+  const avoidableLeaks = transactions
+    .filter(t => t.type === 'expense' && t.isAvoidable)
+    .reduce((acc, t) => acc + t.amount, 0);
+
   const prompt = `
-# PERSONAL CFO PROTOCOL (MCKINSEY-LEVEL STRATEGY)
-Analyze capital flows and provide a sequence-over-parallel plan.
+# PERSONAL CFO STRATEGY (MCKINSEY-LEVEL AUDIT)
+You are a top-tier financial strategist. Analyze the provided data and generate a world-class financial strategy.
 
-## DATA SUMMARY
-- Category Net Flows: ${JSON.stringify(categorySummary)}
-- Total Goals: ${goals.length}
-- Recent Large Outflows: ${JSON.stringify(recentAnomalies)}
-- Goal Status: ${goals.map(g => `${g.name}: ${g.currentAmount}/${g.targetAmount}`).join(', ')}
+## DATA INPUT
+- Category Net Flow: ${JSON.stringify(categorySummary)}
+- Avoidable Capital Leakage: ${avoidableLeaks}
+- Goal Inventory: ${goals.map(g => `${g.name} (${g.type}): ${g.currentAmount}/${g.targetAmount} @ ${g.interestRate || 'N/A'}%`).join(', ')}
+- High-Volume/High-Value Outflows: ${JSON.stringify(recentAnomalies)}
 
-## Mission
-Audit leakage and calculate 'Cost of Delay'. 
+## CORE OPERATING PRINCIPLES
+1. Dynamic over static -> Adapt to flow
+2. Sequence over parallel execution -> Prioritize junk debt payoff, then emergency fund, then growth
+3. Cash flow realism over theoretical optimization
+4. Capital protection for short-term goals
+5. Clear trade-offs instead of forced balance
 
-## OUTPUT STRUCTURE (MANDATORY JSON-like Markdown)
-1. EXECUTIVE SUMMARY (8 sharp bullets)
-2. FINANCIAL SNAPSHOT (Runway, Burn, Delta)
-3. CURRENT ALLOCATION MODEL
-4. GOAL TIMELINES
-5. PHASE-WISE STRATEGY (Stabilization → Acceleration → Optimization)
-6. HOME LOAN STRATEGY
-7. INVESTMENT ALLOCATION
-8. SCENARIO COMPARISON
-9. RISKS & ADJUSTMENTS
+## REQUIRED RESPONSE STRUCTURE
+1. **Executive Summary** (max 8 sharp bullets identifying the most critical tactical moves)
+2. **Financial Snapshot** (Income vs Core Burn vs Growth Allocation)
+3. **Current Allocation Model** (Analysis of where capital is flowing vs where it should flow)
+4. **Goal Timelines** (Calculated ETAs based on current velocity)
+5. **Phase-wise Strategy** (Stabilization -> Acceleration -> Optimization)
+6. **Home Loan Strategy** (Aggressive prepayment vs market arbitrage if interest rates < 8%)
+7. **Investment Allocation** (Core/Satellite model suggestions)
+8. **Scenario Comparison** (Impact of reducing discretionary spend by 20%)
+9. **Risks & Adjustments** (Tail-risk events and mitigation)
+
+## TONE & STYLE
+- Sharp, structured, and slightly opinionated.
+- Professional consultant style. No generic advice.
+- Focus on systems, trade-offs, and constraints.
+- Use Markdown for structure.
 `;
 
   return callPlatformAI("/api/strategy", prompt);
@@ -81,13 +95,14 @@ Example: ["Insight 1", "Insight 2"]
 
   try {
     const text = await callPlatformAI("/api/insights", prompt);
-    const cleaned = text.replace(/```json|```/g, "").trim();
+    const jsonMatch = text.match(/\[.*\]/s);
+    const cleaned = jsonMatch ? jsonMatch[0] : text.replace(/```json|```/g, "").trim();
     return JSON.parse(cleaned) as string[];
   } catch (error) {
     return [
-      "Protocol: Increase capital allocation toward high-interest debt vectors.",
-      "Audit: Discretionary leakage detected in lifestyle categories.",
-      "Strategy: Prioritize liquidity preservation until 6-month buffer realized."
+      "Try to put more money towards your high-interest loans first.",
+      "Small extra spends are adding up. Take a look at your recent entries!",
+      "Focus on building 6 months of savings for a safe emergency fund."
     ];
   }
 };

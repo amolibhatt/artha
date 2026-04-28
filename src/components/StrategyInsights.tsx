@@ -136,104 +136,168 @@ export function StrategyInsights({
     }
   };
 
+  // Capital Leak Detection: Expenses marked as avoidable
+  const leakAudit = React.useMemo(() => {
+    return transactions
+      .filter(t => t.type === 'expense' && t.isAvoidable)
+      .reduce((acc, t) => acc + t.amount, 0);
+  }, [transactions]);
+
   return (
-    <div className="space-y-12 pb-24">
+    <div className="space-y-16 pb-24">
+      {/* Strategic Vision Header */}
+      <div className="flex flex-col md:flex-row gap-8 items-start justify-between border-b border-brand-border pb-12">
+        <div className="max-w-xl space-y-4">
+           <div className="flex items-center gap-2">
+             <div className="w-1 h-1 rounded-full bg-brand-primary" />
+             <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-[0.3em]">CFO OPERATING MODEL v2.0</p>
+           </div>
+           <h2 className="text-3xl font-display font-bold text-brand-primary tracking-tight leading-tight uppercase">Capital Efficiency Framework</h2>
+           <p className="text-xs text-brand-primary/50 leading-relaxed font-medium">
+             This audit categorizes your financial flow into three distinct tiers: Operational Baseline (Must), Capital Growth (Goals), and Tactical Reserve (Discretionary). Our objective is to maximize the velocity of tier 2 while minimizing leakage in tier 3.
+           </p>
+        </div>
+        <div className="grid grid-cols-2 gap-4 w-full md:w-auto">
+           <div className="p-4 bg-brand-bg border border-brand-border rounded-2xl space-y-1">
+              <p className="text-[10px] font-bold text-brand-primary/30 uppercase tracking-widest">Active Leaks</p>
+              <p className="text-lg font-mono font-bold text-rose-500">{leakAudit > 0 ? 'ALERT' : 'NONE'}</p>
+           </div>
+           <div className="p-4 bg-brand-bg border border-brand-border rounded-2xl space-y-1">
+              <p className="text-[10px] font-bold text-brand-primary/30 uppercase tracking-widest">Net Surplus</p>
+              <p className="text-lg font-mono font-bold text-emerald-500">{formatCurrency(strategicSpendingCeiling)}</p>
+           </div>
+        </div>
+      </div>
+
       {/* Efficiency & Velocity Dashboard */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-        <div className="bg-brand-surface p-6 md:p-8 border border-brand-border rounded-3xl shadow-sm space-y-4 relative overflow-hidden group">
-          <p className="data-label">Financial Efficiency</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8">
+        <div className="bg-brand-surface p-8 border border-brand-border rounded-[2.5rem] shadow-sm space-y-6 relative overflow-hidden group">
+          <p className="data-label">Capital Efficiency</p>
           <div className="flex items-end justify-between relative z-10">
-            <h4 className="text-3xl md:text-4xl font-mono font-bold text-brand-primary leading-none">{efficiencyScore.toFixed(0)}%</h4>
+            <h4 className="text-4xl font-mono font-bold text-brand-primary leading-none">{efficiencyScore.toFixed(0)}%</h4>
             <div className={cn(
-              "px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border",
-              efficiencyScore > 40 ? "bg-brand-accent/10 text-brand-accent border-brand-accent/20" : "bg-rose-500/10 text-rose-500 border-rose-500/20"
+              "px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest border",
+              efficiencyScore > 40 ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : "bg-rose-500/10 text-rose-500 border-rose-500/20"
             )}>
-              {efficiencyScore > 40 ? 'Good' : 'Review'}
+              {efficiencyScore > 40 ? 'OPTIMAL' : 'BELOW PAR'}
             </div>
           </div>
-          <div className="h-1 w-full bg-brand-bg rounded-full overflow-hidden">
+          <p className="text-[10px] text-brand-primary/20 font-bold uppercase tracking-widest pl-0.5">Surplus availability score</p>
+          <div className="h-1.5 w-full bg-brand-bg rounded-full overflow-hidden p-0.5 border border-brand-border">
             <motion.div 
               initial={{ width: 0 }}
               animate={{ width: `${efficiencyScore}%` }}
-              className={cn("h-full", efficiencyScore > 40 ? "bg-brand-accent" : "bg-rose-500")}
+              className={cn("h-full rounded-full transition-all duration-1000", efficiencyScore > 40 ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" : "bg-rose-500")}
             />
           </div>
         </div>
 
-        <div className="bg-brand-surface p-6 md:p-8 border border-brand-border rounded-3xl shadow-sm space-y-4 relative overflow-hidden group">
-          <p className="data-label">Spending Velocity</p>
+        <div className="bg-brand-surface p-8 border border-brand-border rounded-[2.5rem] shadow-sm space-y-6 relative overflow-hidden group">
+          <p className="data-label">Spending Momentum</p>
           <div className="flex items-end justify-between relative z-10">
-            <h4 className="text-3xl md:text-4xl font-mono font-bold text-brand-primary leading-none">
+            <h4 className="text-4xl font-mono font-bold text-brand-primary leading-none">
               {velocityAudit.change > 0 ? '+' : ''}{velocityAudit.change.toFixed(0)}%
             </h4>
             <div className={cn(
-              "px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border",
-              velocityAudit.change <= 5 ? "bg-brand-accent/10 text-brand-accent border-brand-accent/20" : "bg-rose-500/10 text-rose-500 border-rose-500/20"
+              "px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest border",
+              velocityAudit.change <= 5 ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : "bg-rose-500/10 text-rose-500 border-rose-500/20"
             )}>
-              {velocityAudit.change <= 5 ? 'Stable' : 'Rapid'}
+              {velocityAudit.change <= 5 ? 'RESTRAINED' : 'ACCELERATING'}
             </div>
           </div>
-          <div className="h-1 w-full bg-brand-bg rounded-full overflow-hidden relative">
+          <p className="text-[10px] text-brand-primary/20 font-bold uppercase tracking-widest pl-0.5">Month-on-month velocity</p>
+          <div className="h-1.5 w-full bg-brand-bg rounded-full overflow-hidden relative p-0.5 border border-brand-border">
              <div className="absolute left-1/2 top-0 h-full w-[1px] bg-brand-border z-10" />
              <div className={cn(
-               "h-full transition-all",
-               velocityAudit.change > 0 ? "bg-rose-500" : "bg-brand-accent"
+               "h-full rounded-full transition-all duration-1000",
+               velocityAudit.change > 0 ? "bg-rose-500" : "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]"
              )} style={{ width: `${Math.min(Math.abs(velocityAudit.change), 100)}%`, marginLeft: velocityAudit.change > 0 ? '50%' : `${50 - Math.min(Math.abs(velocityAudit.change), 50)}%` }} />
           </div>
         </div>
 
-        <div className="bg-brand-surface p-6 md:p-8 border border-brand-border rounded-3xl shadow-sm space-y-4 relative overflow-hidden group">
-          <p className="data-label">Fixed Cost Ratio</p>
+        <div className="bg-brand-surface p-8 border border-brand-border rounded-[2.5rem] shadow-sm space-y-6 relative overflow-hidden group">
+          <p className="data-label">Fixed Cost Intensity</p>
           <div className="flex items-end justify-between relative z-10">
-            <h4 className="text-3xl md:text-4xl font-mono font-bold text-brand-primary leading-none">{fixedRatio.toFixed(0)}%</h4>
-            <p className="data-label !text-brand-primary/20">Fixed</p>
+            <h4 className="text-4xl font-mono font-bold text-brand-primary leading-none">{fixedRatio.toFixed(0)}%</h4>
+            <p className="data-label !text-brand-primary/20">OF TOTAL</p>
           </div>
-          <div className="h-1 w-full bg-brand-bg rounded-full overflow-hidden">
+          <p className="text-[10px] text-brand-primary/20 font-bold uppercase tracking-widest pl-0.5">Non-discretionary burn</p>
+          <div className="h-1.5 w-full bg-brand-bg rounded-full overflow-hidden p-0.5 border border-brand-border">
             <motion.div 
                initial={{ width: 0 }}
                animate={{ width: `${fixedRatio}%` }}
-               className="h-full bg-brand-primary"
+               className="h-full bg-brand-primary rounded-full"
             />
           </div>
         </div>
 
+        <div className="bg-brand-surface p-8 border border-brand-border rounded-[2.5rem] shadow-sm space-y-6 relative overflow-hidden group">
+          <p className="data-label">Avoidable Leakage</p>
+          <div className="flex items-end justify-between relative z-10">
+            <h4 className={cn(
+              "text-4xl font-mono font-bold leading-none",
+              leakAudit > 0 ? "text-rose-500" : "text-brand-primary"
+            )}>
+              {formatCurrency(leakAudit)}
+            </h4>
+            <div className={cn(
+              "px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest border",
+              leakAudit === 0 ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : "bg-rose-500/10 text-rose-500 border-rose-500/20"
+            )}>
+               {leakAudit === 0 ? 'CLEAN' : 'LEAK DETECTED'}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className={cn(
+              "w-1.5 h-1.5 rounded-full animate-pulse",
+              leakAudit > 0 ? "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.6)]" : "bg-emerald-500"
+            )} />
+            <p className="text-[7px] font-bold text-brand-primary/20 uppercase tracking-[0.2em]">Non-essential accumulation</p>
+          </div>
+        </div>
+
         {/* Global Strategy Allocation */}
-        <div className="col-span-full bg-brand-primary text-brand-surface p-10 rounded-[2.5rem] relative overflow-hidden shadow-2xl">
-          <div className="absolute inset-0 opacity-[0.05] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '15px 15px' }} />
-          <div className="space-y-6 relative z-10">
-            <div className="flex items-center gap-3">
-              <Compass className="w-5 h-5 text-brand-accent/60" />
-              <h3 className="text-xl font-display font-bold uppercase tracking-widest">Global Allocation Model</h3>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-              <div className="space-y-1">
-                <p className="text-[10px] font-bold text-brand-surface/40 uppercase tracking-widest">Total Income</p>
-                <p className="text-2xl font-mono font-bold">{formatCurrency(totalIncome)}</p>
+        <div className="col-span-full bg-brand-primary text-brand-surface p-12 rounded-[3.5rem] relative overflow-hidden shadow-2xl group/alloc">
+          <div className="absolute inset-0 opacity-[0.03] pointer-events-none group-hover:opacity-[0.06] transition-opacity" style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
+          <div className="space-y-10 relative z-10">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center border border-white/10 group-hover:rotate-12 transition-transform duration-500">
+                <Compass className="w-6 h-6 text-brand-accent/60" />
               </div>
-              <div className="space-y-1">
-                <p className="text-[10px] font-bold text-brand-surface/40 uppercase tracking-widest">Fixed Obligations</p>
-                <p className="text-2xl font-mono font-bold text-rose-400">-{formatCurrency(mandatoryExpenses)}</p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-[10px] font-bold text-brand-surface/40 uppercase tracking-widest">Goal Commitments</p>
-                <p className="text-2xl font-mono font-bold text-brand-accent">-{formatCurrency(monthlyGoalCommitments)}</p>
-              </div>
-              <div className="space-y-1 pt-4 md:pt-0 md:pl-8 md:border-l border-white/10">
-                <p className="text-[10px] font-bold text-brand-accent uppercase tracking-widest">Safe Spending Limit</p>
-                <p className="text-4xl font-mono font-bold text-brand-surface">{formatCurrency(strategicSpendingCeiling)}</p>
+              <div className="space-y-0.5">
+                <h3 className="text-2xl font-sans font-bold uppercase tracking-tight leading-none">Capital Deployment Map</h3>
+                <p className="text-[10px] text-white/30 font-bold uppercase tracking-[0.3em]">Current Interval Allocation</p>
               </div>
             </div>
             
-            <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden flex p-0.5 border border-white/10 mt-6">
-              <div className="h-full bg-rose-500/60" style={{ width: `${(mandatoryExpenses/(totalIncome || 1))*100}%` }} />
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-12">
+              <div className="space-y-2">
+                <p className="text-[10px] font-bold text-white/20 uppercase tracking-widest">Total Liquidity In</p>
+                <p className="text-3xl font-mono font-bold tracking-tighter tabular-nums">{formatCurrency(totalIncome)}</p>
+              </div>
+              <div className="space-y-2">
+                <p className="text-[10px] font-bold text-white/20 uppercase tracking-widest">Fixed Asset Absorption</p>
+                <p className="text-3xl font-mono font-bold text-rose-400 tracking-tighter tabular-nums">-{formatCurrency(mandatoryExpenses)}</p>
+              </div>
+              <div className="space-y-2">
+                <p className="text-[10px] font-bold text-white/20 uppercase tracking-widest">Growth Commitment</p>
+                <p className="text-3xl font-mono font-bold text-brand-accent tracking-tighter tabular-nums">-{formatCurrency(monthlyGoalCommitments)}</p>
+              </div>
+              <div className="space-y-2 md:pl-10 md:border-l border-white/10">
+                <p className="text-[10px] font-bold text-brand-accent uppercase tracking-widest">Strategic Capacity</p>
+                <p className="text-5xl font-mono font-bold text-brand-surface tracking-tighter tabular-nums">{formatCurrency(strategicSpendingCeiling)}</p>
+              </div>
+            </div>
+            
+            <div className="h-3 w-full bg-white/5 rounded-full overflow-hidden flex p-0.5 border border-white/10 mt-10 shadow-inner">
+              <div className="h-full bg-rose-500/80 rounded-l-full" style={{ width: `${(mandatoryExpenses/(totalIncome || 1))*100}%` }} />
               <div className="h-full bg-brand-accent" style={{ width: `${(monthlyGoalCommitments/(totalIncome || 1))*100}%` }} />
-              <div className="h-full bg-brand-surface" style={{ width: `${(strategicSpendingCeiling/(totalIncome || 1))*100}%` }} />
+              <div className="h-full bg-white/40 rounded-r-full" style={{ width: `${(strategicSpendingCeiling/(totalIncome || 1))*100}%` }} />
             </div>
-            <div className="flex justify-between items-center text-[8px] font-bold uppercase tracking-[0.2em] opacity-40">
-              <span>Fixed Costs</span>
-              <span>Prioritized Wealth</span>
-              <span>Pure Disposable Income</span>
+            <div className="flex justify-between items-center text-[9px] font-bold uppercase tracking-[0.3em] opacity-40">
+              <span className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 bg-rose-500 rounded-full" /> Operational Base</span>
+              <span className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 bg-brand-accent rounded-full" /> Capital Growth</span>
+              <span className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 bg-white/40 rounded-full" /> Tactical Reserve</span>
             </div>
           </div>
         </div>
@@ -243,8 +307,8 @@ export function StrategyInsights({
       <div className="space-y-4">
         <div className="flex items-center justify-between px-1">
           <div className="space-y-0.5">
-            <h3 className="text-xl font-display font-bold text-brand-primary tracking-tight">Debt Architecture</h3>
-            <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest pl-0.5">Liability Audit & Optimization</p>
+            <h3 className="text-xl font-display font-bold text-brand-primary tracking-tight">Pay off Debt</h3>
+            <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest pl-0.5">Loan Check & Optimization</p>
           </div>
           {goals.some(g => g.type === 'debt') && (
             <Landmark className="w-5 h-5 text-brand-primary/20" />
@@ -257,7 +321,7 @@ export function StrategyInsights({
               <div key={loan.id} className="bg-brand-surface p-8 md:p-12 border border-brand-border rounded-[2.5rem] shadow-sm space-y-8 relative overflow-hidden group">
                 <div className="flex items-center justify-between border-b border-brand-border pb-6">
                   <div className="space-y-1">
-                    <p className="data-label">Liability Audit</p>
+                    <p className="data-label">Loan Status</p>
                     <h3 className="text-xl font-display font-bold text-brand-primary tracking-tight">{loan.name}</h3>
                   </div>
                   <div className="w-12 h-12 rounded-2xl bg-brand-primary/5 flex items-center justify-center text-brand-primary border border-brand-border">
@@ -267,11 +331,11 @@ export function StrategyInsights({
                 
                 <div className="grid grid-cols-2 gap-8">
                   <div className="space-y-1">
-                    <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest">Rate of Capital Loss</p>
+                    <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest">Interest Rate</p>
                     <p className="text-2xl font-mono font-bold text-brand-primary">{loan.interestRate || 8.5}% <span className="text-[10px] opacity-30 text-brand-primary">p.a.</span></p>
                   </div>
                   <div className="space-y-1">
-                    <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest">Target Resolution</p>
+                    <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest">Time Left</p>
                     <p className="text-2xl font-mono font-bold text-brand-primary">{loan.tenureMonths || 240} <span className="text-[10px] opacity-30 text-brand-primary">Months</span></p>
                   </div>
                 </div>
@@ -279,8 +343,8 @@ export function StrategyInsights({
                 <div className="p-4 bg-brand-accent/5 rounded-2xl border border-brand-accent/10 flex items-center gap-4">
                   <Zap className="w-5 h-5 text-brand-accent" />
                   <div className="space-y-0.5">
-                    <p className="text-[10px] font-bold text-brand-accent uppercase tracking-widest">Prepayment Potential</p>
-                    <p className="text-[11px] font-medium text-brand-primary/70">Check the <span className="font-bold underline cursor-pointer" onClick={() => (document.getElementById('debt-optimization-engine') as any)?.scrollIntoView({ behavior: 'smooth' })}>Debt Architect</span> below to simulate interest savings.</p>
+                    <p className="text-[10px] font-bold text-brand-accent uppercase tracking-widest">Pay Extra & Save</p>
+                    <p className="text-[11px] font-medium text-brand-primary/70">Check the <span className="font-bold underline cursor-pointer" onClick={() => (document.getElementById('debt-optimization-engine') as any)?.scrollIntoView({ behavior: 'smooth' })}>Debt Planner</span> below to see how much you can save.</p>
                   </div>
                 </div>
               </div>
@@ -292,25 +356,25 @@ export function StrategyInsights({
                 <Landmark className="w-8 h-8" />
               </div>
               <div className="space-y-2 max-w-sm">
-                <h3 className="text-xl font-display font-medium text-brand-primary">No Active Debt Protocol</h3>
-                <p className="text-xs text-brand-primary/40 leading-relaxed font-medium">Tracking and prepaying your Home Loan is the most effective way to protect your long-term capital from interest loss.</p>
+                <h3 className="text-xl font-display font-medium text-brand-primary">No Loans Tracked</h3>
+                <p className="text-xs text-brand-primary/40 leading-relaxed font-medium">Tracking and prepaying your Home Loan is the best way to save on interest over the long term.</p>
               </div>
-              <p className="text-[10px] font-bold text-brand-accent uppercase tracking-[0.2em]">Start Tracking Strategy //</p>
+              <p className="text-[10px] font-bold text-brand-accent uppercase tracking-[0.2em]">Start a plan //</p>
             </div>
           )}
 
           <div className="bg-brand-accent/5 border border-brand-accent/10 rounded-[2.5rem] p-8 md:p-12 flex flex-col justify-center space-y-6">
             <div className="space-y-2">
-              <h3 className="text-xl font-display font-bold text-brand-accent tracking-tight">The 1-Step Advantage</h3>
+              <h3 className="text-xl font-display font-bold text-brand-accent tracking-tight">Expert Tip</h3>
               <p className="text-xs text-brand-primary/60 leading-relaxed font-medium">
-                Every extra payment towards your principal in the first 5 years of a Home Loan can save you up to 3x that amount in future interest. Use the architect below to plan your attack.
+                Every extra payment you make in the first 5 years of a Home Loan can save you up to 3x that amount in interest. Use the calculator below to plan.
               </p>
             </div>
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-full bg-brand-accent/20 flex items-center justify-center text-brand-accent">
                 <ArrowUpRight className="w-4 h-4" />
               </div>
-              <span className="text-[10px] font-bold text-brand-accent uppercase tracking-widest">Interest minimization active</span>
+              <span className="text-[10px] font-bold text-brand-accent uppercase tracking-widest">Saving on interest</span>
             </div>
           </div>
         </div>
@@ -319,8 +383,8 @@ export function StrategyInsights({
       <div className="bg-brand-surface p-8 md:p-16 border border-brand-border rounded-[2.5rem] shadow-sm space-y-12 md:space-y-16 relative overflow-hidden">
         <div className="absolute inset-0 opacity-[0.02] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#000 1px, transparent 1px)', backgroundSize: '20px 20px' }} />
         <div className="space-y-3 relative z-10">
-          <h3 className="section-header">Expense Audit</h3>
-          <p className="data-label">Analysing fixed costs and discretionary spending patterns</p>
+          <h3 className="section-header">Spending Check</h3>
+          <p className="data-label">Reviewing needs vs wants in your spending</p>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 md:gap-20 relative z-10">
@@ -343,7 +407,7 @@ export function StrategyInsights({
               <div className="space-y-3">
                 <div className="flex items-center gap-3">
                   <div className="w-4 h-[2px] rounded-full bg-brand-primary" />
-                  <p className="data-label">Fixed Costs</p>
+                  <p className="data-label">Must Pay (Needs)</p>
                 </div>
                 <p className="text-4xl font-mono font-bold text-brand-primary tracking-tight tabular-nums">{fixedRatio.toFixed(0)}%</p>
                 <p className="data-label !text-brand-primary/40 uppercase tracking-widest">{formatCurrency(mandatoryExpenses)}</p>
@@ -351,7 +415,7 @@ export function StrategyInsights({
               <div className="space-y-3">
                 <div className="flex items-center gap-3">
                   <div className="w-4 h-[2px] rounded-full bg-brand-accent/40" />
-                  <p className="data-label">Flex Spending</p>
+                  <p className="data-label">Fun Spending (Wants)</p>
                 </div>
                 <p className="text-4xl font-mono font-bold text-brand-primary tracking-tight tabular-nums">{discretionaryRatio.toFixed(0)}%</p>
                 <p className="data-label !text-brand-primary/40 uppercase tracking-widest">{formatCurrency(discretionaryExpenses)}</p>
@@ -365,19 +429,19 @@ export function StrategyInsights({
               <div className="absolute top-0 right-0 w-24 h-24 bg-rose-500/5 rounded-full blur-3xl -mr-12 -mt-12 transition-all group-hover:scale-150" />
               <div className="flex items-center gap-4 relative z-10">
                 <AlertTriangle className="w-6 h-6 text-rose-500" />
-                <p className="data-label">Savings Opportunities</p>
+                <p className="data-label">Save More Here</p>
               </div>
               <div className="space-y-6 relative z-10">
                 {topWaste.length > 0 ? topWaste.map(([cat, amt]) => (
                   <div key={cat} className="flex justify-between items-center border-b border-brand-border/10 pb-4 last:border-0 last:pb-0">
                     <div className="space-y-1">
                       <p className="text-sm font-bold uppercase tracking-tight text-brand-primary leading-none">{cat}</p>
-                      <p className="data-label !text-[8.5px]">Potential for deduction</p>
+                      <p className="data-label !text-[8.5px]">Try to spend less here</p>
                     </div>
                     <p className="text-sm font-mono font-bold text-rose-500">{formatCurrency(amt)}</p>
                   </div>
                 )) : (
-                  <p className="data-label !text-brand-primary/30">No significant flexible spending found.</p>
+                  <p className="data-label !text-brand-primary/30">Good job, no high extra spending!</p>
                 )}
               </div>
             </div>
@@ -386,19 +450,19 @@ export function StrategyInsights({
               <div className="absolute top-0 right-0 w-24 h-24 bg-brand-primary/5 rounded-full blur-3xl -mr-12 -mt-12 transition-all group-hover:scale-150" />
               <div className="flex items-center gap-4 relative z-10">
                 <ShieldCheck className="w-6 h-6 text-brand-accent/40" />
-                <p className="data-label">Subscription Audit</p>
+                <p className="data-label">Subscriptions</p>
               </div>
               <div className="space-y-6 relative z-10">
                 {subscriptionAudit.length > 0 ? subscriptionAudit.map((sub) => (
                   <div key={sub.name} className="flex justify-between items-center border-b border-brand-border/10 pb-4 last:border-0 last:pb-0">
                     <div className="space-y-1">
                       <p className="text-sm font-bold uppercase tracking-tight text-brand-primary leading-none truncate max-w-[120px]">{sub.name}</p>
-                      <p className="data-label !text-[8.5px]">Regular recurring cost</p>
+                      <p className="data-label !text-[8.5px]">Repeat monthly cost</p>
                     </div>
                     <p className="text-sm font-mono font-bold text-brand-primary">{formatCurrency(sub.amount)}</p>
                   </div>
                 )) : (
-                  <p className="data-label !text-brand-primary/30">No active subscriptions detected.</p>
+                  <p className="data-label !text-brand-primary/30">No subscriptions found.</p>
                 )}
               </div>
             </div>
@@ -417,8 +481,8 @@ export function StrategyInsights({
               <Sparkles className="w-8 h-8 md:w-12 md:h-12 text-brand-accent animate-pulse" />
             </div>
             <div className="space-y-3">
-              <h3 className="text-4xl md:text-6xl font-sans font-bold uppercase tracking-tighter text-brand-surface leading-none">AI Advisor</h3>
-              <p className="data-label !text-brand-surface/30">Intelligent Portfolio Analysis & Growth Strategy</p>
+              <h3 className="text-4xl md:text-6xl font-sans font-bold uppercase tracking-tighter text-brand-surface leading-none">CFO Strategist</h3>
+              <p className="data-label !text-brand-surface/30">McKinsey-grade capital optimization audit</p>
             </div>
           </div>
           <button
@@ -427,7 +491,7 @@ export function StrategyInsights({
             className="bg-brand-accent text-brand-primary px-10 md:px-14 py-6 md:py-8 rounded-[2rem] shadow-2xl hover:scale-105 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-4 font-bold text-xs md:text-sm uppercase tracking-[0.4em] w-full md:w-auto"
           >
             {isLoading ? <Loader2 className="w-6 h-6 animate-spin" /> : <TrendingUp className="w-6 h-6" />}
-            {isLoading ? 'Analysing...' : 'Generate Strategy'}
+            {isLoading ? 'Thinking...' : 'Get Advice'}
           </button>
         </div>
 
@@ -444,7 +508,7 @@ export function StrategyInsights({
                 <p className="text-3xl font-sans font-bold uppercase tracking-tight text-brand-surface animate-pulse">Running Calculations</p>
                 <div className="flex items-center gap-3 justify-center opacity-30">
                   <div className="w-8 h-[1px] bg-white" />
-                  <p className="data-label !text-brand-surface">Reviewing spending & goal timelines</p>
+                  <p className="data-label !text-brand-surface">Reviewing your spending & goals</p>
                   <div className="w-8 h-[1px] bg-white" />
                 </div>
               </div>
@@ -465,13 +529,13 @@ export function StrategyInsights({
                     <div className="w-8 h-8 rounded-lg bg-brand-accent/20 flex items-center justify-center">
                       <AlertCircle className="w-5 h-5 text-brand-accent" />
                     </div>
-                    <p className="data-label !text-brand-accent">Data Change Detected: Your financial situation has updated.</p>
+                    <p className="data-label !text-brand-accent">Changes Detected: Your spending has changed.</p>
                   </div>
                   <button 
                     onClick={handleGenerate}
                     className="data-label !text-brand-accent underline hover:text-white transition-colors"
                   >
-                    Refresh Advice
+                    Update Advice
                   </button>
                 </motion.div>
               )}
@@ -489,14 +553,14 @@ export function StrategyInsights({
                   <ShieldCheck className="w-12 h-12 text-brand-surface/10 group-hover/init:text-brand-accent transition-all" />
                 </div>
                 <div className="space-y-4">
-                  <p className="text-4xl font-sans font-bold uppercase tracking-tight text-brand-surface">Strategy Offline</p>
-                  <p className="data-label !text-brand-surface/20">Add transactions to generate your personalized strategy</p>
+                  <p className="text-4xl font-sans font-bold uppercase tracking-tight text-brand-surface">Audit Engine Ready</p>
+                  <p className="data-label !text-brand-surface/20">Awaiting data reconciliation & analysis</p>
                 </div>
                 <button
                   className="bg-brand-surface text-brand-primary px-12 py-5 rounded-2xl shadow-2xl font-bold text-xs uppercase tracking-[0.4em] mx-auto flex items-center gap-4 hover:scale-105 transition-all"
                 >
-                  <Plus className="w-5 h-5" />
-                  Request Advice
+                  <TrendingUp className="w-5 h-5" />
+                  Initiate Strategy Audit
                 </button>
               </div>
             </div>

@@ -10,8 +10,15 @@ interface DebtOptimizationProps {
 
 export function DebtOptimization({ goals }: DebtOptimizationProps) {
   const loans = goals.filter(g => g.type === 'debt');
-  const [selectedLoanId, setSelectedLoanId] = useState<string | null>(loans[0]?.id || null);
+  const [selectedLoanId, setSelectedLoanId] = useState<string | null>(null);
   const [prepayment, setPrepayment] = useState(10000);
+
+  // Sync selected loan if list changes or nothing selected
+  React.useEffect(() => {
+    if (loans.length > 0 && (!selectedLoanId || !loans.find(l => l.id === selectedLoanId))) {
+      setSelectedLoanId(loans[0].id || null);
+    }
+  }, [loans, selectedLoanId]);
 
   const selectedLoan = loans.find(l => l.id === selectedLoanId);
 
@@ -22,8 +29,8 @@ export function DebtOptimization({ goals }: DebtOptimizationProps) {
           <Landmark className="w-8 h-8 text-brand-primary/20" />
         </div>
         <div className="space-y-2">
-          <p className="text-xl font-sans font-bold uppercase tracking-tight text-brand-primary">No Debt Protocols Identified</p>
-          <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-widest">Add a debt-type goal to enable optimization</p>
+          <p className="text-xl font-sans font-bold uppercase tracking-tight text-brand-primary">No Loans Found</p>
+          <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-widest">Add a loan goal to start planning</p>
         </div>
       </div>
     );
@@ -37,22 +44,39 @@ export function DebtOptimization({ goals }: DebtOptimizationProps) {
 
     if (p <= 0) return null;
 
-    const emi = r > 0 
-      ? (p * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1)
-      : p / n;
+    // Use user-provided EMI or calculate basic amortization
+    const emi = loan.emi && loan.emi > 0 
+      ? loan.emi 
+      : (r > 0 
+        ? (p * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1)
+        : p / n);
     
-    const totalInterestWithoutPrepayment = r > 0 ? (emi * n) - p : 0;
+    // Normal case: total interest if just paying EMI
+    let normalBalance = p;
+    let normalMonths = 0;
+    let totalInterestWithoutPrepayment = 0;
+    while (normalBalance > 0 && normalMonths < 600) { // Safety limit 50 years
+      const interest = r > 0 ? normalBalance * r : 0;
+      const principal = emi - interest;
+      if (principal <= 0) {
+        // If EMI is less than interest, interest is infinite.
+        totalInterestWithoutPrepayment = 999999999;
+        break;
+      }
+      totalInterestWithoutPrepayment += interest;
+      normalBalance -= principal;
+      normalMonths++;
+    }
 
-    // Simplified prepayment impact (reducing tenure)
+    // Prepayment case
     let balance = p;
     let months = 0;
     let totalInterestWithPrepayment = 0;
 
-    while (balance > 0 && months < n) {
+    while (balance > 0 && months < 600) {
       const interest = r > 0 ? balance * r : 0;
       const principal = emi + extraPayment - interest;
       
-      // Safety break for negative amortization
       if (principal <= 0) break;
       
       totalInterestWithPrepayment += interest;
@@ -60,14 +84,27 @@ export function DebtOptimization({ goals }: DebtOptimizationProps) {
       months++;
     }
 
-    const interestSaved = totalInterestWithoutPrepayment - totalInterestWithPrepayment;
-    const monthsSaved = n - months;
+    const payoffDate = new Date();
+    payoffDate.setMonth(payoffDate.getMonth() + months);
+    const normalPayoffDate = new Date();
+    normalPayoffDate.setMonth(normalPayoffDate.getMonth() + normalMonths);
+
+    const formatDate = (date: Date) => {
+      return date.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }).toUpperCase();
+    };
+
+    const interestSaved = Math.max(0, totalInterestWithoutPrepayment - totalInterestWithPrepayment);
+    const monthsSaved = Math.max(0, normalMonths - months);
 
     return {
       interestSaved,
       monthsSaved,
       totalInterestWithoutPrepayment,
-      totalInterestWithPrepayment
+      totalInterestWithPrepayment,
+      emi,
+      normalMonths,
+      payoffDate: formatDate(payoffDate),
+      normalPayoffDate: formatDate(normalPayoffDate)
     };
   };
 
@@ -79,8 +116,8 @@ export function DebtOptimization({ goals }: DebtOptimizationProps) {
       
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
         <div className="space-y-1">
-          <h3 className="section-header">Debt Architect</h3>
-          <p className="data-label">Interest Minimization Engine</p>
+          <h3 className="section-header">Debt Payoff Plan</h3>
+          <p className="data-label">Save on Interest</p>
         </div>
         
         <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
@@ -107,11 +144,33 @@ export function DebtOptimization({ goals }: DebtOptimizationProps) {
             <div className="space-y-8">
               <div className="flex justify-between items-end border-b border-brand-border pb-6">
                 <div className="space-y-2">
-                  <p className="data-label">Monthly Prepayment</p>
+                  <p className="data-label">Outstanding Balance</p>
+                  <p className="text-3xl md:text-4xl font-mono font-bold text-brand-primary tracking-tight">{formatCurrency(selectedLoan.targetAmount - selectedLoan.currentAmount)}</p>
+                </div>
+                <div className="text-right space-y-2">
+                  <p className="data-label">Interest Rate</p>
+                  <p className="text-xl md:text-2xl font-mono font-bold text-brand-primary">{selectedLoan.interestRate || 8.5}%</p>
+                </div>
+              </div>
+
+              <div className="flex justify-between items-end border-b border-brand-border pb-6">
+                <div className="space-y-2">
+                  <p className="data-label">Monthly EMI</p>
+                  <p className="text-3xl md:text-4xl font-mono font-bold text-brand-primary tracking-tight">{formatCurrency(impact.emi)}</p>
+                </div>
+                <div className="text-right space-y-2">
+                  <p className="data-label">Normal Tenure</p>
+                  <p className="text-xl md:text-2xl font-mono font-bold text-brand-primary">{impact.normalMonths} Months</p>
+                </div>
+              </div>
+
+              <div className="flex justify-between items-end border-b border-brand-border pb-6">
+                <div className="space-y-2">
+                  <p className="data-label">Extra Monthly Payment</p>
                   <p className="text-3xl md:text-4xl font-mono font-bold text-brand-primary tracking-tight">{formatCurrency(prepayment)}</p>
                 </div>
                 <div className="text-right space-y-2">
-                  <p className="data-label !text-brand-accent">Capital Reclaimed</p>
+                  <p className="data-label !text-brand-accent">Money Saved</p>
                   <p className="text-xl md:text-2xl font-mono font-bold text-brand-accent">{formatCurrency(impact.interestSaved)}</p>
                 </div>
               </div>
@@ -127,8 +186,8 @@ export function DebtOptimization({ goals }: DebtOptimizationProps) {
                   className="w-full h-1 bg-brand-bg rounded-full appearance-none cursor-pointer accent-brand-accent"
                 />
                 <div className="flex justify-between items-center opacity-30">
-                  <p className="data-label">Conservative</p>
-                  <p className="data-label">Aggressive</p>
+                  <p className="data-label">Low</p>
+                  <p className="data-label">High</p>
                 </div>
               </div>
               
@@ -136,11 +195,17 @@ export function DebtOptimization({ goals }: DebtOptimizationProps) {
                 <div className="w-10 h-10 bg-brand-accent/20 rounded-xl flex items-center justify-center border border-brand-accent/20 relative z-10">
                   <Zap className="w-5 h-5 text-brand-accent" />
                 </div>
-                <div className="relative z-10">
-                  <p className="data-label !text-brand-accent">Tenure Reduction</p>
-                  <p className="text-base font-bold uppercase tracking-tight mt-0.5">
-                    acceleration: <span className="text-brand-accent font-mono">{impact.monthsSaved} Months</span>
-                  </p>
+                <div className="relative z-10 flex-1">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="data-label !text-brand-accent">Debt-Free Date</p>
+                      <p className="text-lg font-mono font-bold text-brand-surface tracking-tight">{impact.payoffDate}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="data-label !text-white/30 text-[7px]">Time Saved</p>
+                      <p className="text-xs font-mono font-bold text-brand-accent">-{impact.monthsSaved}M</p>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -148,10 +213,10 @@ export function DebtOptimization({ goals }: DebtOptimizationProps) {
             <div className="space-y-4 bg-brand-bg/30 p-5 rounded-2xl border border-brand-border">
               <div className="flex items-center gap-2">
                 <Info className="w-3.5 h-3.5 text-brand-primary/20" />
-                <p className="data-label">Opportunity Cost Audit</p>
+                <p className="data-label">Why pay extra?</p>
               </div>
               <p className="text-xs text-brand-primary/60 font-medium leading-relaxed">
-                Deploying <span className="font-bold text-brand-primary">{formatCurrency(prepayment)}</span> monthly into this protocol generates a risk-adjusted return of <span className="font-bold text-brand-accent">{(selectedLoan.interestRate || 8.5)}%</span> IRR.
+                Paying <span className="font-bold text-brand-primary">{formatCurrency(prepayment)}</span> extra each month goes straight to your principal, stopping interest from building up and saving you money.
               </p>
             </div>
           </div>
@@ -160,17 +225,17 @@ export function DebtOptimization({ goals }: DebtOptimizationProps) {
             <div className="absolute top-0 right-0 w-48 h-48 bg-brand-accent rounded-full blur-[100px] -mr-24 -mt-24 opacity-10" />
             
             <div className="space-y-6 text-center relative z-10">
-              <p className="data-label !text-brand-surface/30">Interest Trajectory</p>
+              <p className="data-label !text-brand-surface/30">Interest & Timeline Comparison</p>
               <div className="flex items-center justify-center gap-6 md:gap-10">
                 <div className="text-center space-y-2 opacity-30">
-                  <p className="data-label !text-brand-surface/60">Passive</p>
+                  <p className="data-label !text-brand-surface/60">Normal ({impact.normalPayoffDate})</p>
                   <p className="text-lg md:text-xl font-mono font-bold line-through">{formatCurrency(impact.totalInterestWithoutPrepayment)}</p>
                 </div>
                 <div className="w-12 h-[1px] bg-white/20 relative">
                   <ArrowRight className="w-4 h-4 text-brand-accent absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" />
                 </div>
                 <div className="text-center space-y-2">
-                  <p className="data-label !text-brand-accent">Active</p>
+                  <p className="data-label !text-brand-accent">Strategic ({impact.payoffDate})</p>
                   <p className="text-2xl md:text-3xl font-mono font-bold text-brand-surface">{formatCurrency(impact.totalInterestWithPrepayment)}</p>
                 </div>
               </div>
@@ -184,10 +249,10 @@ export function DebtOptimization({ goals }: DebtOptimizationProps) {
                         ? (( (impact.totalInterestWithoutPrepayment - impact.totalInterestWithPrepayment) / impact.totalInterestWithoutPrepayment * 100 ).toFixed(0))
                         : '0'}
                     </p>
-                    <p className="data-label !text-brand-surface/30">% RECLAIMED</p>
+                    <p className="data-label !text-brand-surface/30">% SAVED</p>
                  </div>
                </div>
-               <p className="data-label !text-brand-surface/10">Systemic Liability Reduction</p>
+               <p className="data-label !text-brand-surface/10">Reducing your debt</p>
             </div>
           </div>
         </div>

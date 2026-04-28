@@ -29,6 +29,7 @@ export interface Goal {
   // Loan specific fields
   interestRate?: number;
   tenureMonths?: number;
+  emi?: number;
   startDate?: string;
 }
 

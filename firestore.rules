@@ -40,8 +40,7 @@ service cloud.firestore {
       // Pillar 4: Tiered Identity Logic & Mutability
       allow update: if isOwner(existing().userId) && 
                       isValidTransaction(incoming()) && 
-                      incoming().userId == existing().userId && 
-                      incoming().date == existing().date; // Immutable date
+                      incoming().userId == existing().userId;
       
       allow delete: if isOwner(existing().userId);
     }
