@@ -33,6 +33,18 @@ export interface Goal {
   startDate?: string;
 }
 
+export interface SIP {
+  id?: string;
+  name: string;
+  amount: number;
+  category: string;
+  dayOfMonth: number;
+  startDate: string;
+  status: 'active' | 'paused' | 'stopped';
+  userId: string;
+  linkedGoalId?: string;
+}
+
 export interface StressTestState {
   incomeShock: number; // e.g., 0.8 for 20% drop
   expenseShock: number; // e.g., 1.2 for 20% increase

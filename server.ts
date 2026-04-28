@@ -2,7 +2,6 @@ import express from "express";
 import path from "path";
 import cors from "cors";
 import { createServer as createViteServer } from "vite";
-import { GoogleGenAI } from "@google/genai";
 
 async function startServer() {
   const app = express();
@@ -10,45 +9,6 @@ async function startServer() {
 
   app.use(cors());
   app.use(express.json());
-
-  // Secure AI Initialization
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
-
-  // API Proxy for Financial Strategy
-  app.post("/api/strategy", async (req, res) => {
-    try {
-      if (!process.env.GEMINI_API_KEY) {
-        throw new Error("GEMINI_API_KEY is not configured in the environment.");
-      }
-      const { prompt } = req.body;
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt
-      });
-      res.json({ text: response.text });
-    } catch (error: any) {
-      console.error("Strategy API Error:", error);
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  // API Proxy for Quick Insights
-  app.post("/api/insights", async (req, res) => {
-    try {
-      if (!process.env.GEMINI_API_KEY) {
-        throw new Error("GEMINI_API_KEY is not configured in the environment.");
-      }
-      const { prompt } = req.body;
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt
-      });
-      res.json({ text: response.text });
-    } catch (error: any) {
-      console.error("Insights API Error:", error);
-      res.status(500).json({ error: error.message });
-    }
-  });
 
   // Vite Integration
   if (process.env.NODE_ENV !== "production") {

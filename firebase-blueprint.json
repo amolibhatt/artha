@@ -27,6 +27,22 @@
         "deadline": { "type": "string", "format": "date", "description": "Target date" }
       },
       "required": ["name", "targetAmount", "currentAmount", "type", "userId"]
+    },
+    "SIP": {
+      "title": "SIP",
+      "description": "Systematic Investment Plan",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "amount": { "type": "number" },
+        "category": { "type": "string" },
+        "dayOfMonth": { "type": "number" },
+        "startDate": { "type": "string", "format": "date" },
+        "status": { "type": "string", "enum": ["active", "paused", "stopped"] },
+        "userId": { "type": "string" },
+        "linkedGoalId": { "type": "string" }
+      },
+      "required": ["name", "amount", "category", "dayOfMonth", "startDate", "status", "userId"]
     }
   },
   "firestore": {
@@ -37,6 +53,10 @@
     "/goals/{goalId}": {
       "schema": "Goal",
       "description": "Collection of user financial goals"
+    },
+    "/sips/{sipId}": {
+      "schema": "SIP",
+      "description": "Collection of systematic investment plans"
     }
   }
 }

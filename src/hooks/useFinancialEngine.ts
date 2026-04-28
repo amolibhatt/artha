@@ -163,7 +163,7 @@ export function useFinancialEngine(
     if (incomes.length === 0 || transactions.length === 0) return 0;
     
     const firstDate = new Date(transactions[transactions.length-1].date);
-    const monthsSinceFirst = Math.max(0.5, (today.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24 * 30.44));
+    const monthsSinceFirst = Math.max(1, (today.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24 * 30.44));
     return totalIncome / monthsSinceFirst;
   }, [transactions, today, totalIncome]);
 

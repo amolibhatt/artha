@@ -125,7 +125,13 @@ export function StrategyInsights({
     setIsLoading(true);
     setError(null);
     try {
-      const result = await generateCFOStrategy(transactions, goals);
+      const result = await generateCFOStrategy(
+        transactions, 
+        goals,
+        mandatoryExpenses,
+        discretionaryExpenses,
+        totalIncome
+      );
       setStrategy(result || "Unable to generate strategy at this time.");
       setLastAuditSnapshot({ balance, count: transactions.length });
     } catch (err) {

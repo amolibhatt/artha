@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { collection, query, where, onSnapshot, addDoc, orderBy, limit, getDocFromServer, doc, updateDoc, increment, getDocs, deleteDoc, writeBatch } from 'firebase/firestore';
 import { auth, db, signIn, logout, handleFirestoreError, OperationType } from './lib/firebase';
-import { Transaction, Goal, GoalType, StressTestState } from './types';
+import { Transaction, Goal, GoalType, StressTestState, SIP } from './types';
 import { formatCurrency, cn } from './lib/utils';
 import { 
   Plus, 
@@ -70,10 +70,12 @@ const StrategyInsights = React.lazy(() => import('./components/StrategyInsights'
 const DebtOptimization = React.lazy(() => import('./components/DebtOptimization').then(m => ({ default: m.DebtOptimization })));
 const StressTestConsole = React.lazy(() => import('./components/StressTestConsole').then(m => ({ default: m.StressTestConsole })));
 
-const getContributionDelta = (amount: number, type: 'income' | 'expense', category: string) => {
+const getContributionDelta = (amount: number, type: 'income' | 'expense', category: string, isForcedLink: boolean = false) => {
+  if (isForcedLink) return amount;
   if (type === 'income') return amount;
   if (type === 'expense') {
-    if (category === 'Debt Repayment' || category === 'Investments' || category === 'Savings' || category === 'Investments & EMI') {
+    const contributionCategories = ['Debt Repayment', 'Investments', 'Savings', 'Investments & EMI', 'Loan Repayment', 'Strategic Savings'];
+    if (contributionCategories.includes(category)) {
       return amount;
     }
   }
@@ -137,7 +139,7 @@ export default function App() {
 }
 
 function MainApp() {
-  const [activeTab, setActiveTab] = useState<'home' | 'history' | 'insights' | 'goals'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'history' | 'insights' | 'goals' | 'sips'>('home');
   const [showBudgetAlert, setShowBudgetAlert] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -145,10 +147,12 @@ function MainApp() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
+  const [sips, setSips] = useState<SIP[]>([]);
   const [showCommandCenter, setShowCommandCenter] = useState(false);
-  const [commandTab, setCommandTab] = useState<'transaction' | 'goal'>('transaction');
+  const [commandTab, setCommandTab] = useState<'transaction' | 'goal' | 'sip'>('transaction');
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [editingSip, setEditingSip] = useState<SIP | null>(null);
   const [showMobileTip, setShowMobileTip] = useState(false);
   const [filter, setFilter] = useState<'All' | 'Expenses' | 'Income'>('All');
   const [searchQuery, setSearchQuery] = useState('');
@@ -176,7 +180,7 @@ function MainApp() {
       try {
         if (t.linkedGoalId) {
           // Revert any contribution this transaction made to a goal
-          const delta = getContributionDelta(t.amount, t.type, t.category);
+          const delta = getContributionDelta(t.amount, t.type, t.category, true);
           await updateDoc(doc(db, 'goals', t.linkedGoalId), {
             currentAmount: increment(-delta)
           });
@@ -193,11 +197,39 @@ function MainApp() {
     }
   };
 
+  const handleDeleteGoal = async (goalId: string) => {
+    try {
+      // Before deleting goal, find any transactions linked to it and decouple them
+      const q = query(collection(db, 'transactions'), where('linkedGoalId', '==', goalId));
+      const snapshot = await getDocs(q);
+      const updates = snapshot.docs.map(d => updateDoc(doc(db, 'transactions', d.id), {
+        linkedGoalId: null
+      }));
+      await Promise.all(updates);
+      await deleteDoc(doc(db, 'goals', goalId));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `goals/${goalId}`);
+      throw error;
+    }
+  };
+
+  const handleDeleteSIP = async (sipId: string) => {
+    try {
+      await deleteDoc(doc(db, 'sips', sipId));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `sips/${sipId}`);
+      throw error;
+    }
+  };
+
   useEffect(() => {
     localStorage.setItem('stressTest', JSON.stringify(stressTest));
   }, [stressTest]);
   const [showStressTest, setShowStressTest] = useState(false);
-  const [streakCount, setStreakCount] = useState(() => Number(localStorage.getItem('streakCount') || 0));
+  const [streakCount, setStreakCount] = useState(() => {
+    const val = localStorage.getItem('streakCount');
+    return (val && !isNaN(Number(val))) ? Number(val) : 0;
+  });
   const [lastCheckIn, setLastCheckIn] = useState(() => localStorage.getItem('lastCheckIn') || '');
   const [isReadyForCheckIn, setIsReadyForCheckIn] = useState(false);
 
@@ -233,6 +265,10 @@ function MainApp() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUser(user);
+      if (user) {
+        // Reset local streak if different user? 
+        // For simplicity, we just clear it from memory but per-user storage is ideal
+      }
       setLoading(false);
     });
     return () => unsubscribe();
@@ -277,9 +313,20 @@ function MainApp() {
       setGoals(data);
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'goals'));
 
+    const sQuery = query(
+      collection(db, 'sips'),
+      where('userId', '==', user.uid)
+    );
+
+    const unsubscribeS = onSnapshot(sQuery, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SIP));
+      setSips(data);
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'sips'));
+
     return () => {
       unsubscribeT();
       unsubscribeG();
+      unsubscribeS();
     };
   }, [user]);
 
@@ -708,6 +755,20 @@ function MainApp() {
               <motion.div layoutId="nav-glow" className="absolute -top-px left-1/2 -translate-x-1/2 w-8 h-0.5 bg-brand-accent shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
             )}
           </button>
+
+          <button 
+            onClick={() => setActiveTab('sips')}
+            className={cn(
+              "flex flex-col items-center justify-center gap-1.5 flex-1 h-full transition-all relative group",
+              activeTab === 'sips' ? "text-brand-primary" : "text-brand-primary/25"
+            )}
+          >
+            <Calendar className={cn("w-5 h-5 transition-all duration-300", activeTab === 'sips' ? "scale-110" : "group-hover:text-brand-primary/50")} />
+            <span className="text-[10px] font-bold uppercase tracking-wider">SIP</span>
+            {activeTab === 'sips' && (
+              <motion.div layoutId="nav-glow" className="absolute -top-px left-1/2 -translate-x-1/2 w-8 h-0.5 bg-brand-accent shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+            )}
+          </button>
         </div>
       </nav>
 
@@ -824,36 +885,36 @@ function MainApp() {
               {/* Tactical Sidebar */}
               <div className="md:col-span-4 space-y-6">
                 {/* Daily Pulse Card */}
-                <div className="bg-brand-surface border border-brand-border rounded-[2.5rem] p-8 shadow-sm flex flex-col justify-between relative overflow-hidden group">
+                <div className="bg-brand-surface border border-brand-border rounded-[2.5rem] p-6 shadow-sm flex flex-col justify-between relative overflow-hidden group">
                   <div className="absolute top-0 right-0 w-32 h-32 bg-brand-primary/5 rounded-full blur-[50px] -mr-16 -mt-16" />
                   
-                  <div className="space-y-6 relative z-10">
+                  <div className="space-y-5 relative z-10">
                     <div className="flex items-center justify-between">
                       <p className="text-[10px] font-bold uppercase tracking-widest text-brand-primary/40">Today's Velocity</p>
                       <div className={cn(
-                        "w-10 h-10 rounded-2xl flex items-center justify-center border shadow-inner transition-colors",
+                        "w-8 h-8 rounded-xl flex items-center justify-center border shadow-inner transition-colors",
                         dailyRemaining > 0 ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : "bg-rose-500/10 text-rose-500 border-rose-500/20"
                       )}>
-                        <Activity className="w-5 h-5" />
+                        <Activity className="w-4 h-4" />
                       </div>
                     </div>
 
-                    <div className="space-y-1">
+                    <div className="space-y-0.5">
                       <h3 className={cn(
-                        "text-4xl font-mono font-bold tracking-tighter tabular-nums",
+                        "text-3xl font-mono font-bold tracking-tighter tabular-nums",
                         dailyRemaining > 0 ? "text-brand-primary" : "text-rose-500"
                       )}>
                         {formatCurrency(dailyRemaining)}
                       </h3>
-                      <p className="text-[9px] font-bold text-brand-primary/30 uppercase tracking-[0.2em] px-1">Daily Buffer</p>
+                      <p className="text-[8px] font-bold text-brand-primary/30 uppercase tracking-[0.2em] px-1">Daily Buffer</p>
                     </div>
                     
-                    <div className="pt-6 border-t border-brand-border/50">
-                      <div className="flex justify-between items-center text-[9px] font-bold uppercase tracking-widest mb-3">
+                    <div className="pt-5 border-t border-brand-border/50">
+                      <div className="flex justify-between items-center text-[9px] font-bold uppercase tracking-widest mb-2">
                         <span className="text-brand-primary/30">Limit</span>
                         <span className="text-brand-primary">{formatCurrency(dailySpendingPower)}</span>
                       </div>
-                      <div className="h-2 w-full bg-brand-bg rounded-full overflow-hidden p-[1px] border border-brand-border">
+                      <div className="h-1.5 w-full bg-brand-bg rounded-full overflow-hidden p-[1px] border border-brand-border">
                         <motion.div 
                           initial={{ width: 0 }}
                           animate={{ width: `${Math.min((spentToday / (dailySpendingPower || 1)) * 100, 100)}%` }}
@@ -1362,12 +1423,12 @@ function MainApp() {
                   <GoalItem 
                     key={goal.id} 
                     goal={goal} 
-                    transactions={transactions}
                     onEdit={() => { 
                       setEditingGoal(goal); 
                       setCommandTab('goal');
                       setShowCommandCenter(true); 
                     }} 
+                    onDelete={() => handleDeleteGoal(goal.id!)}
                   />
                 ))}
                 {goals.filter(g => g.type !== 'debt').length === 0 && (
@@ -1401,12 +1462,12 @@ function MainApp() {
                   <GoalItem 
                     key={goal.id} 
                     goal={goal} 
-                    transactions={transactions}
                     onEdit={() => { 
                       setEditingGoal(goal); 
                       setCommandTab('goal');
                       setShowCommandCenter(true); 
                     }} 
+                    onDelete={() => handleDeleteGoal(goal.id!)}
                   />
                 ))}
                 {goals.filter(g => g.type === 'debt').length === 0 && (
@@ -1433,6 +1494,51 @@ function MainApp() {
           </div>
         )}
 
+        {activeTab === 'sips' && (
+          <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
+             <div className="flex flex-col md:flex-row md:items-end justify-between px-1 gap-4">
+                <div className="space-y-1">
+                  <h2 className="text-3xl font-sans font-bold uppercase tracking-tight text-brand-primary leading-tight py-1">SIP Portfolio</h2>
+                  <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-wider py-0.5">Automated Investment Protocols</p>
+                </div>
+                <button 
+                  onClick={() => {
+                    setCommandTab('sip');
+                    setShowCommandCenter(true);
+                  }}
+                  className="flex items-center gap-2 px-6 py-3 bg-brand-primary text-brand-surface rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-brand-primary/90 transition-all shadow-lg group shadow-emerald-500/10"
+                >
+                  <Plus className="w-4 h-4" />
+                  New SIP Strategy
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
+                {sips.map(sip => (
+                  <SIPItem 
+                    key={sip.id} 
+                    sip={sip} 
+                    onEdit={() => { 
+                      setEditingSip(sip); 
+                      setCommandTab('sip');
+                      setShowCommandCenter(true); 
+                    }} 
+                    onDelete={() => handleDeleteSIP(sip.id!)}
+                  />
+                ))}
+                {sips.length === 0 && (
+                  <div className="col-span-full py-20 text-center border-2 border-dashed border-brand-border rounded-[2.5rem] bg-brand-surface/30">
+                    <div className="w-16 h-16 bg-brand-primary/5 rounded-full flex items-center justify-center mx-auto mb-4 border border-brand-border">
+                      <Calendar className="w-8 h-8 text-brand-primary/20" />
+                    </div>
+                    <p className="data-label">No automated investment plans configured</p>
+                    <p className="text-[8px] font-mono text-brand-primary/20 uppercase tracking-widest mt-2">Proper SIP management requires active mandates</p>
+                  </div>
+                )}
+              </div>
+          </div>
+        )}
+
         {activeTab === 'insights' && (
           <React.Suspense fallback={
             <div className="flex items-center justify-center py-20">
@@ -1454,6 +1560,9 @@ function MainApp() {
                   monthlyFixedExpenses={mandatoryExpenses}
                   monthlyGoalCommitments={monthlyGoalCommitments}
                   liquidAssets={liquidAssets}
+                  incomeShock={stressTest.incomeShock}
+                  expenseShock={stressTest.expenseShock}
+                  onShockChange={(income, expense) => setStressTest({ incomeShock: income, expenseShock: expense })}
                 />
 
                 <div className="pt-16 border-t border-brand-border">
@@ -1573,6 +1682,10 @@ function MainApp() {
             editingGoal={editingGoal}
             editingTransaction={editingTransaction}
             avgDailySpend={avgDailySpend}
+            onDeleteGoal={handleDeleteGoal}
+            sips={sips}
+            onDeleteSIP={handleDeleteSIP}
+            editingSip={editingSip}
           />
         )}
       </AnimatePresence>
@@ -1608,10 +1721,70 @@ function MainApp() {
   );
 }
 
-function GoalItem({ goal, onEdit }: { goal: Goal, transactions: Transaction[], isDemo?: boolean, onEdit?: () => void }) {
+function SIPItem({ sip, onEdit, onDelete }: { sip: SIP, onEdit?: () => void, onDelete?: () => void }) {
+  const statusColor = {
+    active: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20',
+    paused: 'text-amber-500 bg-amber-500/10 border-amber-500/20',
+    stopped: 'text-rose-500 bg-rose-500/10 border-rose-500/20'
+  };
+
+  return (
+    <motion.div 
+      whileHover={{ y: -2 }}
+      className="bg-brand-surface p-5 border border-brand-border rounded-[1.5rem] shadow-sm hover:shadow-xl transition-all group relative overflow-hidden flex flex-col justify-between h-full"
+    >
+      <div className="absolute top-0 right-0 w-32 h-32 rounded-full blur-[80px] -mr-16 -mt-16 bg-brand-accent/10 opacity-30 group-hover:opacity-50 transition-all pointer-events-none" />
+      
+      <div className="space-y-4 relative z-10">
+        <div className="flex justify-between items-start">
+          <div className="space-y-1.5 cursor-pointer flex-1" onClick={onEdit}>
+            <div className="flex items-center gap-2">
+              <h4 className="text-sm font-sans font-bold uppercase tracking-tight text-brand-primary leading-tight">{sip.name}</h4>
+              <div className={cn(
+                "px-1.5 py-0.5 rounded text-[7px] font-bold uppercase tracking-widest border",
+                statusColor[sip.status]
+              )}>
+                {sip.status}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              <div className="flex items-center gap-1.5 bg-brand-bg/50 px-2 py-0.5 rounded-lg border border-brand-border">
+                <span className="text-[7px] font-bold text-brand-primary/30 uppercase tracking-widest">Monthly</span>
+                <span className="text-[10px] font-mono font-bold text-brand-primary">{formatCurrency(sip.amount)}</span>
+              </div>
+              <div className="flex items-center gap-1.5 bg-brand-bg/50 px-2 py-0.5 rounded-lg border border-brand-border">
+                <span className="text-[7px] font-bold text-brand-primary/30 uppercase tracking-widest">Cycle Date</span>
+                <span className="text-[10px] font-mono font-bold text-brand-primary">{sip.dayOfMonth}<sup>th</sup></span>
+              </div>
+            </div>
+          </div>
+          <div className="text-right">
+            <p className="text-[10px] font-bold text-brand-primary/30 uppercase tracking-widest">{sip.category}</p>
+            <Calendar className="w-4 h-4 text-brand-accent ml-auto mt-2 opacity-20" />
+          </div>
+        </div>
+
+        <div className="pt-4 border-t border-brand-border/30 flex justify-between items-center">
+          <div className="flex items-center gap-2">
+             <div className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-pulse" />
+             <span className="text-[8px] font-bold text-brand-primary/40 uppercase tracking-widest">Next Run: {sip.dayOfMonth}/{new Date().getMonth() + 1}</span>
+          </div>
+          <button 
+            onClick={(e) => { e.stopPropagation(); onDelete?.(); }}
+            className="p-2 text-brand-primary/10 hover:text-rose-500 transition-colors"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function GoalItem({ goal, onEdit, onDelete }: { goal: Goal, onEdit?: () => void, onDelete?: () => void }) {
   const [isDeleting, setIsDeleting] = useState(false);
   const progress = goal.targetAmount > 0 ? Math.min((goal.currentAmount / goal.targetAmount) * 100, 100) : 0;
-
+  
   const calculatePayoffDate = (g: Goal) => {
     if (g.type !== 'debt' || !g.emi || g.emi <= 0) return null;
     
@@ -1745,11 +1918,7 @@ function GoalItem({ goal, onEdit }: { goal: Goal, transactions: Transaction[], i
               e.preventDefault();
               e.stopPropagation();
               if (isDeleting) {
-                try {
-                  await deleteDoc(doc(db, 'goals', goal.id!));
-                } catch (err) {
-                  handleFirestoreError(err, OperationType.DELETE, 'goals');
-                }
+                onDelete?.();
               } else {
                 setIsDeleting(true);
                 setTimeout(() => setIsDeleting(false), 3000);
@@ -1785,6 +1954,7 @@ const EXPENSE_CATEGORIES = {
   'Travel & Stays': ['Flights', 'Trains', 'Hotels/Airbnb', 'Vacation', 'Other'],
   'Entertainment': ['Netflix/Hotstar', 'Movies', 'Gaming', 'Events', 'Other'],
   'Investments & EMI': ['SIP/Mutual Funds', 'Stocks', 'Gold', 'EMI/Loan', 'Other'],
+  'Strategic Savings': ['Emergency Fund', 'Long-term Savings', 'Other'],
   'Other': ['Gifts', 'Donations', 'Misc', 'Other']
 };
 
@@ -1792,7 +1962,7 @@ const INCOME_CATEGORIES = {
   'Employment': ['Salary', 'Bonus', 'Overtime', 'Other'],
   'Business': ['Client Payment', 'Profit', 'Dividend', 'Other'],
   'Investment': ['Interest', 'Capital Gains', 'Rental Income', 'Other'],
-  'Other': ['Gift', 'Tax Refund', 'Cashback', 'Other']
+  'Misc Income': ['Gift', 'Tax Refund', 'Cashback', 'Other']
 };
 
 function CommandCenter({ 
@@ -1803,18 +1973,28 @@ function CommandCenter({
   initialTab,
   editingGoal,
   editingTransaction,
-  avgDailySpend
+  avgDailySpend,
+  onDeleteGoal,
+  sips,
+  onDeleteSIP,
+  editingSip
 }: { 
   onClose: () => void, 
   userId: string, 
   transactions: Transaction[], 
   goals: Goal[],
-  initialTab: 'transaction' | 'goal',
+  initialTab: 'transaction' | 'goal' | 'sip',
   editingGoal: Goal | null,
   editingTransaction: Transaction | null,
-  avgDailySpend: number
+  avgDailySpend: number,
+  onDeleteGoal: (id: string) => Promise<void>,
+  sips: SIP[],
+  onDeleteSIP: (id: string) => Promise<void>,
+  editingSip: SIP | null
 }) {
-  const [activeTab, setActiveTab] = useState<'transaction' | 'goal'>(editingGoal ? 'goal' : editingTransaction ? 'transaction' : initialTab);
+  const [activeTab, setActiveTab] = useState<'transaction' | 'goal' | 'sip'>(
+    editingGoal ? 'goal' : editingTransaction ? 'transaction' : editingSip ? 'sip' : initialTab
+  );
 
   return (
     <div className="fixed inset-0 z-[100] flex items-end md:items-center justify-center bg-brand-primary/80 backdrop-blur-xl">
@@ -1832,14 +2012,14 @@ function CommandCenter({
               <div className="absolute top-0 right-0 w-20 h-20 bg-brand-accent/5 rounded-full blur-2xl -mr-10 -mt-10 group-hover/header:bg-brand-accent/10 transition-all" />
               <div className="flex items-center gap-3 relative z-10">
                 <div className="w-8 h-8 rounded-lg bg-brand-primary flex items-center justify-center text-brand-surface shadow-lg transform hover:rotate-6 transition-all duration-500">
-                  {activeTab === 'transaction' ? <Plus className="w-4 h-4 text-brand-accent" /> : <Target className="w-4 h-4 text-brand-accent" />}
+                  {activeTab === 'transaction' ? <Plus className="w-4 h-4 text-brand-accent" /> : activeTab === 'goal' ? <Target className="w-4 h-4 text-brand-accent" /> : <Calendar className="w-4 h-4 text-brand-accent" />}
                 </div>
                 <div className="space-y-0.5">
                   <h3 className="text-[11px] font-bold text-brand-primary uppercase tracking-widest leading-none">
-                    {activeTab === 'transaction' ? 'Quick Add' : 'Savings Goals'}
+                    {activeTab === 'transaction' ? 'Quick Add' : activeTab === 'goal' ? 'Savings Goals' : 'SIP Manager'}
                   </h3>
                   <p className="text-[8px] font-mono font-bold text-brand-primary/30 uppercase tracking-[0.25em] leading-none">
-                    Update your history
+                    {activeTab === 'sip' ? 'SYSTEMATIC INVESTMENTS' : 'Update your history'}
                   </p>
                 </div>
               </div>
@@ -1857,7 +2037,21 @@ function CommandCenter({
                 <TransactionForm onClose={onClose} userId={userId} transactions={transactions} goals={goals} editingTransaction={editingTransaction} />
               )}
               {activeTab === 'goal' && (
-                <GoalModalContent onClose={onClose} userId={userId} goal={editingGoal} />
+              <GoalModalContent 
+                onClose={onClose} 
+                userId={userId} 
+                goal={editingGoal} 
+                onDeleteGoal={onDeleteGoal}
+              />
+              )}
+              {activeTab === 'sip' && (
+                <SIPModalContent 
+                  onClose={onClose} 
+                  userId={userId} 
+                  sip={editingSip} 
+                  onDeleteSIP={onDeleteSIP}
+                  goals={goals}
+                />
               )}
             </div>
 
@@ -1866,6 +2060,7 @@ function CommandCenter({
               <div className="flex gap-1.5 pb-1">
                 {[
                   { id: 'transaction', label: 'ADD', icon: Plus },
+                  { id: 'sip', label: 'SIP', icon: Calendar },
                   { id: 'goal', label: 'GOALS', icon: Target },
                 ].map((t) => (
                   <button
@@ -1905,6 +2100,7 @@ function TransactionForm({ onClose, userId, transactions, goals, editingTransact
   const [isMandatory, setIsMandatory] = useState(editingTransaction?.isMandatory || false);
   const [isRecurring, setIsRecurring] = useState(editingTransaction?.isRecurring || false);
   const [isAvoidable, setIsAvoidable] = useState(editingTransaction?.isAvoidable || false);
+  const [manualGoalId, setManualGoalId] = useState<string | null>(editingTransaction?.linkedGoalId || null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const currentCategories = type === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
@@ -1912,16 +2108,35 @@ function TransactionForm({ onClose, userId, transactions, goals, editingTransact
   // Sync subcategory when category changes
   useEffect(() => {
     const currentCats = type === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
-    const subs = (currentCats as any)[category];
-    if (subs && !subs.includes(subcategory)) {
+    const subs = [...(currentCats as any)[category] || []];
+    
+    // Inject goals into subcategories for relevant categories
+    const relevantGoals = goals.filter(g => g.type === goalTypeMap[category]);
+    relevantGoals.forEach(g => {
+      subs.push(`GOAL:${g.name}:${g.id}`);
+    });
+
+    if (subs.length > 0 && !subs.includes(subcategory)) {
       setSubcategory(subs[0]);
     }
-  }, [category, type]);
+  }, [category, type, goals]);
+
+  // Handle goals within subcategory selection
+  useEffect(() => {
+    if (subcategory.startsWith('GOAL:')) {
+      const parts = subcategory.split(':');
+      setManualGoalId(parts[2]);
+    } else if (!editingTransaction?.linkedGoalId) {
+      setManualGoalId(null);
+    }
+  }, [subcategory]);
 
   const goalTypeMap: Record<string, string> = {
     'Investments & EMI': 'investment',
     'Investments': 'investment',
     'Debt Repayment': 'debt',
+    'Loan Repayment': 'debt',
+    'Strategic Savings': 'savings',
     'Savings': 'savings'
   };
   const matchingGoal = goals.find(g => g.type === goalTypeMap[category]);
@@ -1954,39 +2169,50 @@ function TransactionForm({ onClose, userId, transactions, goals, editingTransact
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const amountNum = parseFloat(amount);
-    const finalDescription = description || subcategory.toUpperCase();
+    let finalSubcategory = subcategory;
+    let finalDescription = description;
+
+    if (subcategory.startsWith('GOAL:')) {
+      const parts = subcategory.split(':');
+      finalSubcategory = parts[1]; // Use goal name as subcategory
+      if (!description) finalDescription = `Contribution to ${parts[1]}`;
+    } else {
+      if (!description) finalDescription = subcategory.toUpperCase();
+    }
+
     if (isNaN(amountNum) || amountNum <= 0 || isSubmitting) return;
 
     setIsSubmitting(true);
     setErrorMsg(null);
     try {
-      let linkedGoalId = editingTransaction?.linkedGoalId || null;
-      
-      // Logic for goal allocation
       const goalTypeMap: Record<string, string> = {
         'Investments & EMI': 'investment',
         'Investments': 'investment',
         'Debt Repayment': 'debt',
+        'Loan Repayment': 'debt',
+        'Strategic Savings': 'savings',
         'Savings': 'savings',
         'Salary': 'savings', 
-        'Freelance': 'savings' 
+        'Freelance': 'savings'
       };
 
       const resolvedGoalType = goalTypeMap[category];
-      const goalDoc = goals.find(g => {
-        const nameMatch = finalDescription.toLowerCase().includes(g.name.toLowerCase()) ||
-                         g.name.toLowerCase().includes(finalDescription.toLowerCase());
+      const smartGoal = goals.find(g => {
+        const nameMatch = g.name.length > 2 && (
+          finalDescription.toLowerCase().includes(g.name.toLowerCase()) ||
+          g.name.toLowerCase().includes(finalDescription.toLowerCase())
+        );
         const typeMatch = g.type === resolvedGoalType;
         return nameMatch || (resolvedGoalType && typeMatch);
       });
 
-      const newGoalId = goalDoc?.id || null;
-      const newDelta = getContributionDelta(amountNum, type, category);
+      const newGoalId = manualGoalId || smartGoal?.id || null;
+      const newDelta = getContributionDelta(amountNum, type, category, !!newGoalId);
 
       // Handle goal balance updates atomically if possible
       if (editingTransaction?.linkedGoalId === newGoalId && newGoalId) {
         // Same goal
-        const oldDelta = getContributionDelta(editingTransaction.amount, editingTransaction.type, editingTransaction.category);
+        const oldDelta = getContributionDelta(editingTransaction.amount, editingTransaction.type, editingTransaction.category, true);
         const diff = newDelta - oldDelta;
         if (diff !== 0) {
           await updateDoc(doc(db, 'goals', newGoalId), { currentAmount: increment(diff) });
@@ -1994,7 +2220,7 @@ function TransactionForm({ onClose, userId, transactions, goals, editingTransact
       } else {
         // Different goals or new transaction
         if (editingTransaction?.linkedGoalId) {
-          const oldDelta = getContributionDelta(editingTransaction.amount, editingTransaction.type, editingTransaction.category);
+          const oldDelta = getContributionDelta(editingTransaction.amount, editingTransaction.type, editingTransaction.category, true);
           await updateDoc(doc(db, 'goals', editingTransaction.linkedGoalId), { 
             currentAmount: increment(-oldDelta) 
           });
@@ -2004,12 +2230,10 @@ function TransactionForm({ onClose, userId, transactions, goals, editingTransact
         }
       }
 
-      linkedGoalId = newGoalId;
-
       const transactionData = {
         amount: amountNum,
         category,
-        subcategory,
+        subcategory: finalSubcategory,
         description: finalDescription,
         type,
         date: new Date(date).toISOString(),
@@ -2017,7 +2241,7 @@ function TransactionForm({ onClose, userId, transactions, goals, editingTransact
         isMandatory: type === 'expense' ? isMandatory : false,
         isRecurring: type === 'expense' ? isRecurring : false,
         isAvoidable: type === 'expense' ? isAvoidable : false,
-        linkedGoalId
+        linkedGoalId: newGoalId
       };
 
       if (editingTransaction?.id) {
@@ -2120,11 +2344,24 @@ function TransactionForm({ onClose, userId, transactions, goals, editingTransact
               <select 
                 value={subcategory}
                 onChange={(e) => setSubcategory(e.target.value)}
-                className="w-full h-10 bg-brand-bg/30 border border-brand-border rounded-lg px-4 text-[9px] font-mono font-bold text-brand-primary/40 outline-none appearance-none cursor-pointer focus:bg-brand-surface transition-all"
+                className={cn(
+                  "w-full h-10 bg-brand-bg/30 border border-brand-border rounded-lg px-4 text-[9px] font-mono font-bold outline-none appearance-none cursor-pointer focus:bg-brand-surface transition-all",
+                  subcategory.startsWith('GOAL:') ? "text-emerald-500 border-emerald-500/20" : "text-brand-primary/40"
+                )}
               >
-                {(currentCategories as any)[category]?.map((sub: string) => (
-                  <option key={sub} value={sub}>{sub.toUpperCase()}</option>
-                ))}
+                {(() => {
+                  const currentCats = type === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
+                  const baseSubs = (currentCats as any)[category] || [];
+                  const goalSubs = goals
+                    .filter(g => g.type === goalTypeMap[category])
+                    .map(g => `GOAL:${g.name}:${g.id}`);
+                  
+                  return [...baseSubs, ...goalSubs].map((sub: string) => (
+                    <option key={sub} value={sub}>
+                      {sub.startsWith('GOAL:') ? `🎯 ALLOCATE: ${sub.split(':')[1].toUpperCase()}` : sub.toUpperCase()}
+                    </option>
+                  ));
+                })()}
               </select>
               <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-brand-primary/10">
                 <ChevronRight className="w-3.5 h-3.5 rotate-90" />
@@ -2174,6 +2411,7 @@ function TransactionForm({ onClose, userId, transactions, goals, editingTransact
           </div>
         )}
 
+
         <div className="space-y-2">
           <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Details</label>
           <div className="grid grid-cols-3 gap-2">
@@ -2212,7 +2450,7 @@ function TransactionForm({ onClose, userId, transactions, goals, editingTransact
   );
 }
 
-function GoalModalContent({ onClose, userId, goal }: { onClose: () => void, userId: string, goal: Goal | null }) {
+function GoalModalContent({ onClose, userId, goal, onDeleteGoal }: { onClose: () => void, userId: string, goal: Goal | null, onDeleteGoal: (id: string) => Promise<void> }) {
   const [name, setName] = useState(goal?.name || '');
   const [targetAmount, setTargetAmount] = useState(goal?.targetAmount.toString() || '');
   const [currentAmount, setCurrentAmount] = useState(goal?.currentAmount.toString() || '');
@@ -2281,15 +2519,7 @@ function GoalModalContent({ onClose, userId, goal }: { onClose: () => void, user
     }
     setIsSubmitting(true);
     try {
-      // QA FIX: Before deleting goal, find any transactions linked to it and decouple them
-      const q = query(collection(db, 'transactions'), where('linkedGoalId', '==', goal.id));
-      const snapshot = await getDocs(q);
-      const updates = snapshot.docs.map(d => updateDoc(doc(db, 'transactions', d.id), {
-        linkedGoalId: null
-      }));
-      await Promise.all(updates);
-      
-      await deleteDoc(doc(db, 'goals', goal.id));
+      await onDeleteGoal(goal.id);
       onClose();
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, 'goals');
@@ -2484,6 +2714,167 @@ function GoalModalContent({ onClose, userId, goal }: { onClose: () => void, user
             {showConfirmDelete ? 'Confirm Delete' : 'Delete Goal'}
           </button>
         )}
+      </div>
+    </form>
+  );
+}
+
+function SIPModalContent({ onClose, userId, sip, onDeleteSIP, goals }: { onClose: () => void, userId: string, sip: SIP | null, onDeleteSIP: (id: string) => Promise<void>, goals: Goal[] }) {
+  const [name, setName] = useState(sip?.name || '');
+  const [amount, setAmount] = useState(sip?.amount.toString() || '');
+  const [category, setCategory] = useState(sip?.category || 'Mutual Fund');
+  const [dayOfMonth, setDayOfMonth] = useState(sip?.dayOfMonth.toString() || '1');
+  const [startDate, setStartDate] = useState(sip?.startDate || new Date().toISOString().split('T')[0]);
+  const [status, setStatus] = useState<'active' | 'paused' | 'stopped'>(sip?.status || 'active');
+  const [linkedGoalId, setLinkedGoalId] = useState(sip?.linkedGoalId || '');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      const sipData = {
+        name,
+        amount: parseFloat(amount),
+        category,
+        dayOfMonth: parseInt(dayOfMonth),
+        startDate,
+        status,
+        userId,
+        linkedGoalId: linkedGoalId || null
+      };
+
+      if (sip?.id) {
+        await updateDoc(doc(db, 'sips', sip.id), sipData);
+      } else {
+        await addDoc(collection(db, 'sips'), sipData);
+      }
+      onClose();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'sips');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-6 pb-8 px-1">
+      <div className="space-y-4">
+        <div className="group/input space-y-2">
+          <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">SIP Identity</label>
+          <input 
+            autoFocus
+            type="text" 
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g., QUANT SMALL CAP FUND"
+            className="w-full bg-brand-surface border border-brand-border rounded-lg py-2.5 px-4 font-sans font-bold text-sm text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none uppercase tracking-tight"
+            required
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="group/input space-y-2">
+            <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Monthly Auto-Debet</label>
+            <div className="relative">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 font-mono font-bold text-brand-primary/10 group-focus-within/input:text-brand-accent transition-colors text-base">₹</span>
+              <input 
+                type="number" 
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="0.00"
+                className="w-full bg-brand-surface border border-brand-border rounded-lg py-2.5 pl-8 pr-4 font-mono font-bold text-sm text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none"
+                required
+              />
+            </div>
+          </div>
+          <div className="group/input space-y-2">
+            <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Cycle Date</label>
+            <input 
+              type="number" 
+              min="1"
+              max="31"
+              value={dayOfMonth}
+              onChange={(e) => setDayOfMonth(e.target.value)}
+              className="w-full bg-brand-surface border border-brand-border rounded-lg py-2.5 px-4 font-mono font-bold text-sm text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none"
+              required
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="group/input space-y-2">
+            <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Category</label>
+            <select 
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="w-full h-10 bg-brand-bg/30 border border-brand-border rounded-lg px-4 text-[9px] font-mono font-bold text-brand-primary outline-none appearance-none cursor-pointer focus:bg-brand-surface transition-all uppercase"
+            >
+              <option value="Mutual Fund">MUTUAL FUND</option>
+              <option value="Stocks">STOCKS / ETF</option>
+              <option value="Gold">DIGITAL GOLD</option>
+              <option value="PPF/EPF">PPF / EPF</option>
+              <option value="Other">OTHER INVESTMENT</option>
+            </select>
+          </div>
+          <div className="group/input space-y-2">
+            <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Status</label>
+            <select 
+              value={status}
+              onChange={(e) => setStatus(e.target.value as any)}
+              className="w-full h-10 bg-brand-bg/30 border border-brand-border rounded-lg px-4 text-[9px] font-mono font-bold text-brand-primary outline-none appearance-none cursor-pointer focus:bg-brand-surface transition-all uppercase"
+            >
+              <option value="active">ACTIVE</option>
+              <option value="paused">PAUSED</option>
+              <option value="stopped">STOPPED</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="group/input space-y-2">
+          <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Link to Goal</label>
+          <select 
+            value={linkedGoalId}
+            onChange={(e) => setLinkedGoalId(e.target.value)}
+            className="w-full h-10 bg-brand-bg/30 border border-brand-border rounded-lg px-4 text-[9px] font-mono font-bold text-brand-primary outline-none appearance-none cursor-pointer focus:bg-brand-surface transition-all uppercase"
+          >
+            <option value="">NO LINKED GOAL</option>
+            {goals.filter(g => g.type === 'investment' || g.type === 'savings').map(g => (
+              <option key={g.id} value={g.id}>{g.name.toUpperCase()}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="flex gap-3">
+        {sip?.id && (
+          <button
+            type="button"
+            onClick={async () => {
+              if (!window.confirm('Delete this SIP configuration? Historial transactions remain but auto-reconciliation will stop.')) return;
+              setIsSubmitting(true);
+              try {
+                await onDeleteSIP(sip.id);
+                onClose();
+              } catch (error) {
+                handleFirestoreError(error, OperationType.DELETE, 'sips');
+              } finally {
+                setIsSubmitting(false);
+              }
+            }}
+            className="py-4 px-6 bg-rose-500/10 text-rose-500 rounded-lg font-bold text-[9px] uppercase tracking-widest border border-rose-500/20 active:scale-95 transition-all"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        )}
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          className="flex-1 py-4 bg-brand-primary text-brand-surface rounded-lg font-bold text-[9px] uppercase tracking-[0.4em] shadow-lg active:scale-[0.98] transition-all border border-white/10 hover:bg-brand-primary/95"
+        >
+          {isSubmitting ? 'SAVING...' : sip ? 'UPDATE SIP' : 'CREATE SIP'}
+        </button>
       </div>
     </form>
   );

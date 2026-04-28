@@ -1,36 +1,22 @@
+import { GoogleGenAI } from "@google/genai";
 import { Transaction, Goal } from "../types";
+import { formatCurrency } from "../lib/utils";
 
 /**
  * Unified Financial Intelligence Service
- * Handles communication with the Artha AI backend proxy to ensure API key security.
+ * Powered by Google Gemini
  */
 
-interface AIResponse {
-  text: string;
-}
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
-const callPlatformAI = async (endpoint: string, prompt: string): Promise<string> => {
-  try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Platform AI error: ${response.statusText}`);
-    }
-
-    const data: AIResponse = await response.json();
-    return data.text;
-  } catch (error) {
-    console.error("AI Communication Failure:", error);
-    throw error;
-  }
-};
-
-export const generateCFOStrategy = async (transactions: Transaction[], goals: Goal[]): Promise<string> => {
-  // Deep Audit Summarization to avoid token overflow while maintaining strategic depth
+export const generateCFOStrategy = async (
+  transactions: Transaction[], 
+  goals: Goal[],
+  mandatoryExpenses: number,
+  discretionaryExpenses: number,
+  totalIncome: number
+): Promise<string> => {
+  // Deep Audit Summarization
   const categorySummary = transactions.reduce((acc: any, t) => {
     acc[t.category] = (acc[t.category] || 0) + (t.type === 'income' ? t.amount : -t.amount);
     return acc;
@@ -46,63 +32,84 @@ export const generateCFOStrategy = async (transactions: Transaction[], goals: Go
 
   const prompt = `
 # PERSONAL CFO STRATEGY (MCKINSEY-LEVEL AUDIT)
-You are a top-tier financial strategist. Analyze the provided data and generate a world-class financial strategy.
+You are a world-class financial strategist. Perform a ruthless strategic audit on the provided capital flows.
 
-## DATA INPUT
+## FINANCIAL METRICS
+- Total Income: ${formatCurrency(totalIncome)}
+- Core Expenditures (Mandatory): ${formatCurrency(mandatoryExpenses)}
+- Discretionary Burn: ${formatCurrency(discretionaryExpenses)}
+- Avoidable Capital Leakage: ${formatCurrency(avoidableLeaks)}
+- Efficiency Score (Safe Flow Ratio): ${totalIncome > 0 ? (((totalIncome - mandatoryExpenses) / totalIncome) * 100).toFixed(1) : 0}%
+
+## ALLOCATION DATA
 - Category Net Flow: ${JSON.stringify(categorySummary)}
-- Avoidable Capital Leakage: ${avoidableLeaks}
-- Goal Inventory: ${goals.map(g => `${g.name} (${g.type}): ${g.currentAmount}/${g.targetAmount} @ ${g.interestRate || 'N/A'}%`).join(', ')}
+- Goal Inventory: ${goals.map(g => `${g.name} (${g.type}): ${formatCurrency(g.currentAmount)}/${formatCurrency(g.targetAmount)} @ ${g.interestRate || 'N/A'}%`).join(', ')}
 - High-Volume/High-Value Outflows: ${JSON.stringify(recentAnomalies)}
 
 ## CORE OPERATING PRINCIPLES
-1. Dynamic over static -> Adapt to flow
+1. Dynamic over static -> Adapt to current flows
 2. Sequence over parallel execution -> Prioritize junk debt payoff, then emergency fund, then growth
 3. Cash flow realism over theoretical optimization
 4. Capital protection for short-term goals
 5. Clear trade-offs instead of forced balance
 
 ## REQUIRED RESPONSE STRUCTURE
-1. **Executive Summary** (max 8 sharp bullets identifying the most critical tactical moves)
-2. **Financial Snapshot** (Income vs Core Burn vs Growth Allocation)
-3. **Current Allocation Model** (Analysis of where capital is flowing vs where it should flow)
-4. **Goal Timelines** (Calculated ETAs based on current velocity)
-5. **Phase-wise Strategy** (Stabilization -> Acceleration -> Optimization)
-6. **Home Loan Strategy** (Aggressive prepayment vs market arbitrage if interest rates < 8%)
-7. **Investment Allocation** (Core/Satellite model suggestions)
-8. **Scenario Comparison** (Impact of reducing discretionary spend by 20%)
-9. **Risks & Adjustments** (Tail-risk events and mitigation)
+1. Executive Summary (max 8 sharp bullets)
+2. Strategic Allocation Model
+3. Goal Timelines & Velocity
+4. Phase-wise Implementation
+5. Competitive Scenario Comparison
+6. Tail-risk Mitigation
 
 ## TONE & STYLE
-- Sharp, structured, and slightly opinionated.
+- Sharp, structured, and opinionated. 
 - Professional consultant style. No generic advice.
-- Focus on systems, trade-offs, and constraints.
-- Use Markdown for structure.
+- Always conclude with a "Strategic Bottom Line".
+- Use Tailwind-compatible Markdown.
 `;
 
-  return callPlatformAI("/api/strategy", prompt);
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: prompt,
+    });
+    return response.text || "Strategic generation failed. Please review your manual entries.";
+  } catch (error) {
+    console.error("AI Strategy Error:", error);
+    throw error;
+  }
 };
 
 export const generateQuickInsights = async (transactions: Transaction[], goals: Goal[]): Promise<string[]> => {
   const prompt = `
-Analyze data and provide 3-4 sharp, structured insights.
+Analyze financial data and provide 3-4 sharp, structured 1-sentence insights.
 DATA:
 Goals: ${goals.map(g => `- ${g.name}: ${g.currentAmount}/${g.targetAmount}`).join('\n')}
 Recent: ${transactions.slice(0, 10).map(t => `- ${t.category}: ${t.amount}`).join('\n')}
 
-Format as a JSON array of strings ONLY.
+Return a JSON array of strings ONLY.
 Example: ["Insight 1", "Insight 2"]
 `;
 
   try {
-    const text = await callPlatformAI("/api/insights", prompt);
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json"
+      }
+    });
+    
+    const text = response.text || "[]";
     const jsonMatch = text.match(/\[.*\]/s);
-    const cleaned = jsonMatch ? jsonMatch[0] : text.replace(/```json|```/g, "").trim();
+    const cleaned = jsonMatch ? jsonMatch[0] : text;
     return JSON.parse(cleaned) as string[];
   } catch (error) {
+    console.error("AI Insights Error:", error);
     return [
-      "Try to put more money towards your high-interest loans first.",
-      "Small extra spends are adding up. Take a look at your recent entries!",
-      "Focus on building 6 months of savings for a safe emergency fund."
+      "Aggressive debt payoff recommended for high-interest loans.",
+      "Discretionary leakage detected in lifestyle categories.",
+      "Emergency fund buffer should be prioritized this quarter."
     ];
   }
 };

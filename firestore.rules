@@ -72,8 +72,29 @@ service cloud.firestore {
       
       allow delete: if isOwner(existing().userId);
     }
+
+    // 3. SIPs - Systematic Investment Plans
+    match /sips/{sipId} {
+      function isValidSIP(data) {
+        return data.keys().hasAll(['name', 'amount', 'category', 'dayOfMonth', 'startDate', 'status', 'userId']) &&
+               data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+               data.amount is number && data.amount > 0 &&
+               data.category is string && data.category.size() <= 64 &&
+               data.dayOfMonth is number && data.dayOfMonth >= 1 && data.dayOfMonth <= 31 &&
+               data.startDate is string &&
+               data.status in ['active', 'paused', 'stopped'] &&
+               isOwner(data.userId);
+      }
+
+      allow read: if isOwner(existing().userId);
+      allow create: if isValidSIP(incoming());
+      allow update: if isOwner(existing().userId) && 
+                      isValidSIP(incoming()) && 
+                      incoming().userId == existing().userId;
+      allow delete: if isOwner(existing().userId);
+    }
     
-    // 3. User Prefs / Metadata
+    // 4. User Prefs / Metadata
     match /users/{userId} {
       allow read, write: if isOwner(userId);
     }

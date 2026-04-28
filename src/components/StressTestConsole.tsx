@@ -9,16 +9,20 @@ interface StressTestConsoleProps {
   monthlyFixedExpenses: number;
   monthlyGoalCommitments: number;
   liquidAssets: number;
+  incomeShock: number;
+  expenseShock: number;
+  onShockChange: (income: number, expense: number) => void;
 }
 
 export function StressTestConsole({ 
   monthlyIncome, 
   monthlyFixedExpenses, 
   monthlyGoalCommitments, 
-  liquidAssets 
+  liquidAssets,
+  incomeShock,
+  expenseShock,
+  onShockChange
 }: StressTestConsoleProps) {
-  const [incomeShock, setIncomeShock] = useState(1); // 1 = 100% (no shock)
-  const [expenseShock, setExpenseShock] = useState(1); // 1 = 100% (no shock)
   
   const shockedIncome = monthlyIncome * incomeShock;
   const shockedExpenses = monthlyFixedExpenses * expenseShock;
@@ -73,7 +77,7 @@ export function StressTestConsole({
                 max="1.5"
                 step="0.1"
                 value={incomeShock}
-                onChange={(e) => setIncomeShock(parseFloat(e.target.value))}
+                onChange={(e) => onShockChange(parseFloat(e.target.value), expenseShock)}
                 className="w-full h-1 bg-brand-bg rounded-full appearance-none cursor-pointer accent-brand-primary"
               />
               <div className="flex justify-between items-center text-[8px] font-bold text-brand-primary/20 uppercase tracking-widest">
@@ -97,7 +101,7 @@ export function StressTestConsole({
                 max="2"
                 step="0.05"
                 value={expenseShock}
-                onChange={(e) => setExpenseShock(parseFloat(e.target.value))}
+                onChange={(e) => onShockChange(incomeShock, parseFloat(e.target.value))}
                 className="w-full h-1 bg-brand-bg rounded-full appearance-none cursor-pointer accent-brand-accent"
               />
               <div className="flex justify-between items-center text-[8px] font-bold text-brand-primary/20 uppercase tracking-widest">
