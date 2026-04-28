@@ -139,7 +139,8 @@ export default function App() {
 }
 
 function MainApp() {
-  const [activeTab, setActiveTab] = useState<'home' | 'history' | 'insights' | 'goals' | 'sips'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'history' | 'insights' | 'goals'>('home');
+  const [goalsSubTab, setGoalsSubTab] = useState<'strategy' | 'mandates'>('strategy');
   const [showBudgetAlert, setShowBudgetAlert] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -371,8 +372,9 @@ function MainApp() {
     strategicSpendingCeiling,
     dailySpendingPower,
     monthlyGoalCommitments,
+    sipMandates,
     estimatedMonthlyIncome
-  } = useFinancialEngine(transactions, goals, 0, stressTest);
+  } = useFinancialEngine(transactions, goals, 0, stressTest, sips);
 
   // QA Logic: McKinsey-level strategic thresholds
   const healthStatus = runwayMonths >= 6 ? 'STABILIZED' : runwayMonths >= 3 ? 'WARNING' : 'CRITICAL';
@@ -752,20 +754,6 @@ function MainApp() {
             <Target className={cn("w-5 h-5 transition-all duration-300", activeTab === 'goals' ? "scale-110" : "group-hover:text-brand-primary/50")} />
             <span className="text-[10px] font-bold uppercase tracking-wider">Goals</span>
             {activeTab === 'goals' && (
-              <motion.div layoutId="nav-glow" className="absolute -top-px left-1/2 -translate-x-1/2 w-8 h-0.5 bg-brand-accent shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-            )}
-          </button>
-
-          <button 
-            onClick={() => setActiveTab('sips')}
-            className={cn(
-              "flex flex-col items-center justify-center gap-1.5 flex-1 h-full transition-all relative group",
-              activeTab === 'sips' ? "text-brand-primary" : "text-brand-primary/25"
-            )}
-          >
-            <Calendar className={cn("w-5 h-5 transition-all duration-300", activeTab === 'sips' ? "scale-110" : "group-hover:text-brand-primary/50")} />
-            <span className="text-[10px] font-bold uppercase tracking-wider">SIP</span>
-            {activeTab === 'sips' && (
               <motion.div layoutId="nav-glow" className="absolute -top-px left-1/2 -translate-x-1/2 w-8 h-0.5 bg-brand-accent shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
             )}
           </button>
@@ -1408,134 +1396,165 @@ function MainApp() {
         )}
 
         {activeTab === 'goals' && (
-          <div className="space-y-16">
-            {/* Asset Accumulation Section */}
-            <div className="space-y-8">
-              <div className="flex flex-col md:flex-row md:items-end justify-between px-1 gap-4">
-                <div className="space-y-1">
-                  <h2 className="text-3xl font-sans font-bold uppercase tracking-tight text-brand-primary leading-tight py-1">Capital Portfolio</h2>
-                  <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-wider py-0.5">Wealth & Savings Goals</p>
-                </div>
-              </div>
+          <div className="space-y-12">
+            <div className="flex gap-2 p-1 bg-brand-bg/50 border border-brand-border rounded-xl w-fit mb-8">
+              <button 
+                onClick={() => setGoalsSubTab('strategy')}
+                className={cn(
+                  "px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all",
+                  goalsSubTab === 'strategy' ? "bg-brand-primary text-brand-surface shadow-lg" : "text-brand-primary/40 hover:text-brand-primary"
+                )}
+              >
+                Capital Strategy
+              </button>
+              <button 
+                onClick={() => setGoalsSubTab('mandates')}
+                className={cn(
+                  "px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all",
+                  goalsSubTab === 'mandates' ? "bg-brand-primary text-brand-surface shadow-lg" : "text-brand-primary/40 hover:text-brand-primary"
+                )}
+              >
+                SIP Mandates
+              </button>
+            </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
-                {goals.filter(g => g.type !== 'debt').map(goal => (
-                  <GoalItem 
-                    key={goal.id} 
-                    goal={goal} 
-                    onEdit={() => { 
-                      setEditingGoal(goal); 
-                      setCommandTab('goal');
-                      setShowCommandCenter(true); 
-                    }} 
-                    onDelete={() => handleDeleteGoal(goal.id!)}
-                  />
-                ))}
-                {goals.filter(g => g.type !== 'debt').length === 0 && (
-                  <div className="col-span-full py-20 text-center border-2 border-dashed border-brand-border rounded-[2.5rem] bg-brand-surface/30">
-                    <p className="data-label">No accumulation goals defined</p>
+            {goalsSubTab === 'strategy' ? (
+              <div className="space-y-16 animate-in fade-in slide-in-from-left-4 duration-500">
+                {/* Asset Accumulation Section */}
+                <div className="space-y-8">
+                  <div className="flex flex-col md:flex-row md:items-end justify-between px-1 gap-4">
+                    <div className="space-y-1">
+                      <h2 className="text-3xl font-sans font-bold uppercase tracking-tight text-brand-primary leading-tight py-1">Capital Portfolio</h2>
+                      <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-wider py-0.5">Wealth & Savings Goals</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
+                    {goals.filter(g => g.type !== 'debt').map(goal => (
+                      <GoalItem 
+                        key={goal.id} 
+                        goal={goal} 
+                        onEdit={() => { 
+                          setEditingGoal(goal); 
+                          setCommandTab('goal');
+                          setShowCommandCenter(true); 
+                        }} 
+                        onDelete={() => handleDeleteGoal(goal.id!)}
+                      />
+                    ))}
+                    {goals.filter(g => g.type !== 'debt').length === 0 && (
+                      <div className="col-span-full py-20 text-center border-2 border-dashed border-brand-border rounded-[2.5rem] bg-brand-surface/30">
+                        <p className="data-label text-brand-primary/20">No accumulation goals defined</p>
+                        <p className="text-[8px] font-mono text-brand-primary/20 uppercase tracking-widest mt-2">Capital growth requires intentional allocation</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Liability Management Section */}
+                <div className="space-y-8 pt-8 border-t border-brand-border/30">
+                  <div className="flex flex-col md:flex-row md:items-end justify-between px-1 gap-4">
+                    <div className="space-y-1">
+                      <h2 className="text-3xl font-sans font-bold uppercase tracking-tight text-brand-primary leading-tight py-1 text-brand-accent">Debt Portfolio</h2>
+                      <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-wider py-0.5">Liability Amortization Schedule</p>
+                    </div>
+                    {goals.some(g => g.type === 'debt') && (
+                      <button 
+                        onClick={() => setActiveTab('insights')}
+                        className="flex items-center gap-2 px-6 py-3 bg-brand-accent text-brand-surface rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-brand-accent/90 transition-all shadow-lg group"
+                      >
+                        <Zap className="w-4 h-4 transition-transform group-hover:scale-110" />
+                        Optimize Liability Map
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
+                    {goals.filter(g => g.type === 'debt').map(goal => (
+                      <GoalItem 
+                        key={goal.id} 
+                        goal={goal} 
+                        onEdit={() => { 
+                          setEditingGoal(goal); 
+                          setCommandTab('goal');
+                          setShowCommandCenter(true); 
+                        }} 
+                        onDelete={() => handleDeleteGoal(goal.id!)}
+                      />
+                    ))}
+                    {goals.filter(g => g.type === 'debt').length === 0 && (
+                      <div className="col-span-full py-20 text-center border-2 border-dashed border-brand-border rounded-[2.5rem] bg-brand-surface/30">
+                        <p className="data-label text-brand-primary/20">No active liabilities tracked</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {goals.length === 0 && (
+                  <div className="py-20 text-center">
+                    <button 
+                      onClick={() => {
+                        setCommandTab('goal');
+                        setShowCommandCenter(true);
+                      }}
+                      className="px-10 py-5 bg-brand-primary text-brand-surface rounded-2xl text-xs font-bold uppercase tracking-[0.2em] shadow-2xl hover:scale-105 transition-all"
+                    >
+                      Architect Strategic Portfolio
+                    </button>
                   </div>
                 )}
               </div>
-            </div>
-
-            {/* Liability Management Section */}
-            <div className="space-y-8 pt-8 border-t border-brand-border/30">
-              <div className="flex flex-col md:flex-row md:items-end justify-between px-1 gap-4">
-                <div className="space-y-1">
-                  <h2 className="text-3xl font-sans font-bold uppercase tracking-tight text-brand-primary leading-tight py-1 text-brand-accent">Debt Portfolio</h2>
-                  <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-wider py-0.5">Liability Amortization Schedule</p>
-                </div>
-                {goals.some(g => g.type === 'debt') && (
-                  <button 
-                    onClick={() => setActiveTab('insights')}
-                    className="flex items-center gap-2 px-6 py-3 bg-brand-accent text-brand-surface rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-brand-accent/90 transition-all shadow-lg group"
-                  >
-                    <Zap className="w-4 h-4 transition-transform group-hover:scale-110" />
-                    Optimize Liability Map
-                  </button>
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
-                {goals.filter(g => g.type === 'debt').map(goal => (
-                  <GoalItem 
-                    key={goal.id} 
-                    goal={goal} 
-                    onEdit={() => { 
-                      setEditingGoal(goal); 
-                      setCommandTab('goal');
-                      setShowCommandCenter(true); 
-                    }} 
-                    onDelete={() => handleDeleteGoal(goal.id!)}
-                  />
-                ))}
-                {goals.filter(g => g.type === 'debt').length === 0 && (
-                  <div className="col-span-full py-20 text-center border-2 border-dashed border-brand-border rounded-[2.5rem] bg-brand-surface/30">
-                    <p className="data-label text-brand-primary/20">No active liabilities tracked</p>
+            ) : (
+              <div className="space-y-12 animate-in fade-in slide-in-from-right-4 duration-500">
+                <div className="flex flex-col md:flex-row md:items-end justify-between px-1 gap-4">
+                    <div className="space-y-1">
+                      <h2 className="text-3xl font-sans font-bold uppercase tracking-tight text-brand-primary leading-tight py-1">SIP Portfolio</h2>
+                      <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-wider py-0.5">Automated Investment Protocols</p>
+                    </div>
+                    <button 
+                      onClick={() => {
+                        setCommandTab('sip');
+                        setShowCommandCenter(true);
+                      }}
+                      className="flex items-center gap-2 px-6 py-3 bg-brand-primary text-brand-surface rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-brand-primary/90 transition-all shadow-lg group shadow-emerald-500/10"
+                    >
+                      <Plus className="w-4 h-4" />
+                      New SIP Strategy
+                    </button>
                   </div>
-                )}
-              </div>
-            </div>
 
-            {goals.length === 0 && (
-              <div className="py-20 text-center">
-                <button 
-                  onClick={() => {
-                    setCommandTab('goal');
-                    setShowCommandCenter(true);
-                  }}
-                  className="px-10 py-5 bg-brand-primary text-brand-surface rounded-2xl text-xs font-bold uppercase tracking-[0.2em] shadow-2xl hover:scale-105 transition-all"
-                >
-                  Architect Strategic Portfolio
-                </button>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
+                    {sips.map(sip => (
+                      <SIPItem 
+                        key={sip.id} 
+                        sip={sip} 
+                        transactions={transactions}
+                        onLogPayment={(s) => {
+                          setEditingSip(s);
+                          setEditingTransaction(null);
+                          setCommandTab('transaction');
+                          setShowCommandCenter(true);
+                        }}
+                        onEdit={() => { 
+                          setEditingSip(sip); 
+                          setCommandTab('sip');
+                          setShowCommandCenter(true); 
+                        }} 
+                        onDelete={() => handleDeleteSIP(sip.id!)}
+                      />
+                    ))}
+                    {sips.length === 0 && (
+                      <div className="col-span-full py-20 text-center border-2 border-dashed border-brand-border rounded-[2.5rem] bg-brand-surface/30">
+                        <div className="w-16 h-16 bg-brand-primary/5 rounded-full flex items-center justify-center mx-auto mb-4 border border-brand-border">
+                          <Calendar className="w-8 h-8 text-brand-primary/20" />
+                        </div>
+                        <p className="data-label">No automated investment plans configured</p>
+                        <p className="text-[8px] font-mono text-brand-primary/20 uppercase tracking-widest mt-2">Proper SIP management requires active mandates</p>
+                      </div>
+                    )}
+                  </div>
               </div>
             )}
-          </div>
-        )}
-
-        {activeTab === 'sips' && (
-          <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
-             <div className="flex flex-col md:flex-row md:items-end justify-between px-1 gap-4">
-                <div className="space-y-1">
-                  <h2 className="text-3xl font-sans font-bold uppercase tracking-tight text-brand-primary leading-tight py-1">SIP Portfolio</h2>
-                  <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-wider py-0.5">Automated Investment Protocols</p>
-                </div>
-                <button 
-                  onClick={() => {
-                    setCommandTab('sip');
-                    setShowCommandCenter(true);
-                  }}
-                  className="flex items-center gap-2 px-6 py-3 bg-brand-primary text-brand-surface rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-brand-primary/90 transition-all shadow-lg group shadow-emerald-500/10"
-                >
-                  <Plus className="w-4 h-4" />
-                  New SIP Strategy
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
-                {sips.map(sip => (
-                  <SIPItem 
-                    key={sip.id} 
-                    sip={sip} 
-                    onEdit={() => { 
-                      setEditingSip(sip); 
-                      setCommandTab('sip');
-                      setShowCommandCenter(true); 
-                    }} 
-                    onDelete={() => handleDeleteSIP(sip.id!)}
-                  />
-                ))}
-                {sips.length === 0 && (
-                  <div className="col-span-full py-20 text-center border-2 border-dashed border-brand-border rounded-[2.5rem] bg-brand-surface/30">
-                    <div className="w-16 h-16 bg-brand-primary/5 rounded-full flex items-center justify-center mx-auto mb-4 border border-brand-border">
-                      <Calendar className="w-8 h-8 text-brand-primary/20" />
-                    </div>
-                    <p className="data-label">No automated investment plans configured</p>
-                    <p className="text-[8px] font-mono text-brand-primary/20 uppercase tracking-widest mt-2">Proper SIP management requires active mandates</p>
-                  </div>
-                )}
-              </div>
           </div>
         )}
 
@@ -1559,6 +1578,7 @@ function MainApp() {
                   monthlyIncome={estimatedMonthlyIncome}
                   monthlyFixedExpenses={mandatoryExpenses}
                   monthlyGoalCommitments={monthlyGoalCommitments}
+                  sipMandates={sipMandates}
                   liquidAssets={liquidAssets}
                   incomeShock={stressTest.incomeShock}
                   expenseShock={stressTest.expenseShock}
@@ -1721,12 +1741,20 @@ function MainApp() {
   );
 }
 
-function SIPItem({ sip, onEdit, onDelete }: { sip: SIP, onEdit?: () => void, onDelete?: () => void }) {
+function SIPItem({ sip, onEdit, onDelete, transactions, onLogPayment }: { sip: SIP, onEdit?: () => void, onDelete?: () => void, transactions: Transaction[], onLogPayment?: (sip: SIP) => void }) {
   const statusColor = {
     active: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20',
     paused: 'text-amber-500 bg-amber-500/10 border-amber-500/20',
     stopped: 'text-rose-500 bg-rose-500/10 border-rose-500/20'
   };
+
+  const currentMonth = new Date().getMonth();
+  const currentYear = new Date().getFullYear();
+  const isFulfilled = transactions.some(t => 
+    t.sipId === sip.id && 
+    new Date(t.date).getMonth() === currentMonth &&
+    new Date(t.date).getFullYear() === currentYear
+  );
 
   return (
     <motion.div 
@@ -1747,6 +1775,12 @@ function SIPItem({ sip, onEdit, onDelete }: { sip: SIP, onEdit?: () => void, onD
                 {sip.status}
               </div>
             </div>
+            {isFulfilled && (
+              <div className="flex items-center gap-1 text-[8px] font-bold text-emerald-500 uppercase tracking-widest">
+                <CheckCircle2 className="w-3 h-3" />
+                Fulfilled this month
+              </div>
+            )}
             <div className="flex flex-wrap gap-1.5">
               <div className="flex items-center gap-1.5 bg-brand-bg/50 px-2 py-0.5 rounded-lg border border-brand-border">
                 <span className="text-[7px] font-bold text-brand-primary/30 uppercase tracking-widest">Monthly</span>
@@ -1766,8 +1800,21 @@ function SIPItem({ sip, onEdit, onDelete }: { sip: SIP, onEdit?: () => void, onD
 
         <div className="pt-4 border-t border-brand-border/30 flex justify-between items-center">
           <div className="flex items-center gap-2">
-             <div className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-pulse" />
-             <span className="text-[8px] font-bold text-brand-primary/40 uppercase tracking-widest">Next Run: {sip.dayOfMonth}/{new Date().getMonth() + 1}</span>
+             {!isFulfilled && sip.status === 'active' && (
+               <button 
+                 onClick={(e) => { e.stopPropagation(); onLogPayment?.(sip); }}
+                 className="px-3 py-1.5 bg-brand-primary text-brand-surface rounded-lg text-[8px] font-bold uppercase tracking-widest hover:bg-brand-primary/90 transition-all flex items-center gap-1.5 shadow-md shadow-brand-primary/10"
+               >
+                 <Plus className="w-3 h-3" />
+                 Log Installment
+               </button>
+             )}
+             {isFulfilled && (
+               <span className="text-[8px] font-bold text-brand-primary/40 uppercase tracking-widest">Next Run: {sip.dayOfMonth}/{new Date().getMonth() + 2}</span>
+             )}
+             {!isFulfilled && sip.status !== 'active' && (
+               <span className="text-[8px] font-bold text-brand-primary/40 uppercase tracking-widest">SIP {sip.status.toUpperCase()}</span>
+             )}
           </div>
           <button 
             onClick={(e) => { e.stopPropagation(); onDelete?.(); }}
@@ -2034,7 +2081,15 @@ function CommandCenter({
             {/* Content Area */}
             <div className="flex-1 overflow-y-auto no-scrollbar">
               {activeTab === 'transaction' && (
-                <TransactionForm onClose={onClose} userId={userId} transactions={transactions} goals={goals} editingTransaction={editingTransaction} />
+                <TransactionForm 
+                  onClose={onClose} 
+                  userId={userId} 
+                  transactions={transactions} 
+                  goals={goals} 
+                  editingTransaction={editingTransaction} 
+                  sips={sips}
+                  editingSip={editingSip}
+                />
               )}
               {activeTab === 'goal' && (
               <GoalModalContent 
@@ -2090,17 +2145,18 @@ function CommandCenter({
   );
 }
 
-function TransactionForm({ onClose, userId, transactions, goals, editingTransaction }: { onClose: () => void, userId: string, transactions: Transaction[], goals: Goal[], editingTransaction: Transaction | null }) {
-  const [amount, setAmount] = useState(editingTransaction?.amount.toString() || '');
-  const [category, setCategory] = useState(editingTransaction?.category || 'Dining & Delivery');
-  const [subcategory, setSubcategory] = useState(editingTransaction?.subcategory || 'Swiggy');
-  const [description, setDescription] = useState(editingTransaction?.description || '');
+function TransactionForm({ onClose, userId, transactions, goals, editingTransaction, sips, editingSip }: { onClose: () => void, userId: string, transactions: Transaction[], goals: Goal[], editingTransaction: Transaction | null, sips: SIP[], editingSip: SIP | null }) {
+  const [amount, setAmount] = useState(editingTransaction?.amount.toString() || editingSip?.amount.toString() || '');
+  const [category, setCategory] = useState(editingTransaction?.category || (editingSip ? 'Investments & EMI' : 'Dining & Delivery'));
+  const [subcategory, setSubcategory] = useState(editingTransaction?.subcategory || (editingSip ? `SIP:${editingSip.name}:${editingSip.id}:${editingSip.amount}:${editingSip.linkedGoalId || ''}` : 'Swiggy'));
+  const [description, setDescription] = useState(editingTransaction?.description || editingSip?.name || '');
   const [date, setDate] = useState(editingTransaction?.date ? new Date(editingTransaction.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
   const [type, setType] = useState<'income' | 'expense'>(editingTransaction?.type || 'expense');
-  const [isMandatory, setIsMandatory] = useState(editingTransaction?.isMandatory || false);
-  const [isRecurring, setIsRecurring] = useState(editingTransaction?.isRecurring || false);
+  const [isMandatory, setIsMandatory] = useState(editingTransaction?.isMandatory || (!!editingSip) || false);
+  const [isRecurring, setIsRecurring] = useState(editingTransaction?.isRecurring || (!!editingSip) || false);
   const [isAvoidable, setIsAvoidable] = useState(editingTransaction?.isAvoidable || false);
-  const [manualGoalId, setManualGoalId] = useState<string | null>(editingTransaction?.linkedGoalId || null);
+  const [manualGoalId, setManualGoalId] = useState<string | null>(editingTransaction?.linkedGoalId || editingSip?.linkedGoalId || null);
+  const [sipId, setSipId] = useState<string | null>(editingTransaction?.sipId || editingSip?.id || null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const currentCategories = type === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
@@ -2116,18 +2172,35 @@ function TransactionForm({ onClose, userId, transactions, goals, editingTransact
       subs.push(`GOAL:${g.name}:${g.id}`);
     });
 
+    // Inject active SIPs into subcategories
+    if (category === 'Investments & EMI' || category === 'Investments') {
+      const activeSips = sips.filter(s => s.status === 'active');
+      activeSips.forEach(s => {
+        subs.push(`SIP:${s.name}:${s.id}:${s.amount}:${s.linkedGoalId || ''}`);
+      });
+    }
+
     if (subs.length > 0 && !subs.includes(subcategory)) {
       setSubcategory(subs[0]);
     }
-  }, [category, type, goals]);
+  }, [category, type, goals, sips]);
 
-  // Handle goals within subcategory selection
+  // Handle goals/SIPs within subcategory selection
   useEffect(() => {
     if (subcategory.startsWith('GOAL:')) {
       const parts = subcategory.split(':');
       setManualGoalId(parts[2]);
-    } else if (!editingTransaction?.linkedGoalId) {
+      setSipId(null);
+    } else if (subcategory.startsWith('SIP:')) {
+      const parts = subcategory.split(':');
+      setSipId(parts[2]);
+      setAmount(parts[3]);
+      setManualGoalId(parts[4] || null);
+      setIsMandatory(true);
+      setIsRecurring(true);
+    } else if (!editingTransaction) {
       setManualGoalId(null);
+      setSipId(null);
     }
   }, [subcategory]);
 
@@ -2176,6 +2249,10 @@ function TransactionForm({ onClose, userId, transactions, goals, editingTransact
       const parts = subcategory.split(':');
       finalSubcategory = parts[1]; // Use goal name as subcategory
       if (!description) finalDescription = `Contribution to ${parts[1]}`;
+    } else if (subcategory.startsWith('SIP:')) {
+      const parts = subcategory.split(':');
+      finalSubcategory = 'SIP Installment';
+      if (!description) finalDescription = parts[1];
     } else {
       if (!description) finalDescription = subcategory.toUpperCase();
     }
@@ -2241,7 +2318,8 @@ function TransactionForm({ onClose, userId, transactions, goals, editingTransact
         isMandatory: type === 'expense' ? isMandatory : false,
         isRecurring: type === 'expense' ? isRecurring : false,
         isAvoidable: type === 'expense' ? isAvoidable : false,
-        linkedGoalId: newGoalId
+        linkedGoalId: newGoalId,
+        sipId
       };
 
       if (editingTransaction?.id) {
@@ -2358,7 +2436,11 @@ function TransactionForm({ onClose, userId, transactions, goals, editingTransact
                   
                   return [...baseSubs, ...goalSubs].map((sub: string) => (
                     <option key={sub} value={sub}>
-                      {sub.startsWith('GOAL:') ? `🎯 ALLOCATE: ${sub.split(':')[1].toUpperCase()}` : sub.toUpperCase()}
+                      {sub.startsWith('GOAL:') 
+                        ? `🎯 ALLOCATE: ${sub.split(':')[1].toUpperCase()}` 
+                        : sub.startsWith('SIP:') 
+                          ? `🔄 SIP: ${sub.split(':')[1].toUpperCase()}`
+                          : sub.toUpperCase()}
                     </option>
                   ));
                 })()}

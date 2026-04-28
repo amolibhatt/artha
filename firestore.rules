@@ -30,7 +30,13 @@ service cloud.firestore {
                isValidDateString(data.date) &&
                data.description is string && data.description.size() <= 256 &&
                data.type in ['income' , 'expense'] &&
-               isOwner(data.userId);
+               isOwner(data.userId) &&
+               (!('subcategory' in data) || data.subcategory is string) &&
+               (!('isMandatory' in data) || data.isMandatory is bool) &&
+               (!('isRecurring' in data) || data.isRecurring is bool) &&
+               (!('isAvoidable' in data) || data.isAvoidable is bool) &&
+               (!('linkedGoalId' in data) || data.linkedGoalId == null || isValidId(data.linkedGoalId)) &&
+               (!('sipId' in data) || data.sipId == null || isValidId(data.sipId));
       }
 
       // Pillar 6: UID Scoping & PII Protection

@@ -1,11 +1,12 @@
 import { useMemo } from 'react';
-import { Transaction, Goal, StressTestState } from '../types';
+import { Transaction, Goal, StressTestState, SIP } from '../types';
 
 export function useFinancialEngine(
   transactions: Transaction[], 
   goals: Goal[], 
   monthlyBudget: number,
-  stressTest: StressTestState
+  stressTest: StressTestState,
+  sips: SIP[] = []
 ) {
   const today = useMemo(() => {
     const d = new Date();
@@ -126,7 +127,7 @@ export function useFinancialEngine(
 
   // Strategic Spending Ceiling Logic (Personal CFO Mode)
   const monthlyGoalCommitments = useMemo(() => {
-    return goals.reduce((acc, g) => {
+    const goalsCommitment = goals.reduce((acc, g) => {
       if (g.currentAmount >= g.targetAmount) return acc;
       
       // Use explicit EMI for debt goals
@@ -145,7 +146,16 @@ export function useFinancialEngine(
       // Final fallback: 5% of target per month if no deadline
       return acc + (g.targetAmount * 0.05);
     }, 0);
-  }, [goals, today]);
+
+    const sipsCommitment = sips
+      .filter(s => s.status === 'active')
+      .reduce((acc, s) => acc + s.amount, 0);
+
+    return {
+      goalsCommitment,
+      sipsCommitment
+    };
+  }, [goals, today, sips]);
 
   // Use the average income of the last 3 months (or max available) as baseline
   const estimatedMonthlyIncome = useMemo(() => {
@@ -181,7 +191,7 @@ export function useFinancialEngine(
       .reduce((acc, t) => acc + t.amount, 0);
   }, [transactions, today]);
 
-  const strategicSpendingCeiling = Math.max(0, estimatedMonthlyIncome - estimatedFixedCosts - monthlyGoalCommitments);
+  const strategicSpendingCeiling = Math.max(0, estimatedMonthlyIncome - estimatedFixedCosts - monthlyGoalCommitments.goalsCommitment - monthlyGoalCommitments.sipsCommitment);
   const dailySpendingPower = strategicSpendingCeiling / daysInMonth;
 
   const totalDebtOutstanding = useMemo(() => 
@@ -214,7 +224,8 @@ export function useFinancialEngine(
     remainingDays,
     strategicSpendingCeiling,
     dailySpendingPower,
-    monthlyGoalCommitments,
+    monthlyGoalCommitments: monthlyGoalCommitments.goalsCommitment,
+    sipMandates: monthlyGoalCommitments.sipsCommitment,
     estimatedMonthlyIncome
   };
 }

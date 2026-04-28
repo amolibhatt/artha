@@ -8,6 +8,7 @@ interface StressTestConsoleProps {
   monthlyIncome: number;
   monthlyFixedExpenses: number;
   monthlyGoalCommitments: number;
+  sipMandates: number;
   liquidAssets: number;
   incomeShock: number;
   expenseShock: number;
@@ -18,6 +19,7 @@ export function StressTestConsole({
   monthlyIncome, 
   monthlyFixedExpenses, 
   monthlyGoalCommitments, 
+  sipMandates,
   liquidAssets,
   incomeShock,
   expenseShock,
@@ -26,13 +28,15 @@ export function StressTestConsole({
   
   const shockedIncome = monthlyIncome * incomeShock;
   const shockedExpenses = monthlyFixedExpenses * expenseShock;
-  const shockedCommitments = monthlyGoalCommitments; // Goals usually fixed priority
+  const totalCommitments = monthlyGoalCommitments + sipMandates;
+  const shockedCommitments = totalCommitments; // Portfolio commitments fixed priority
   
-  const survivingMonths = shockedIncome - (shockedExpenses + shockedCommitments) > 0 
+  const netCFOFlow = shockedIncome - (shockedExpenses + shockedCommitments);
+  const survivingMonths = netCFOFlow > 0 
     ? Infinity 
-    : Math.abs(liquidAssets / (shockedIncome - (shockedExpenses + shockedCommitments)));
+    : Math.abs(liquidAssets / netCFOFlow);
 
-  const isDrowning = shockedIncome < (shockedExpenses + shockedCommitments);
+  const isDrowning = netCFOFlow < 0;
   const survivalStatus = isDrowning ? (survivingMonths < 3 ? 'CRITICAL' : 'WARNING') : 'STABLE';
 
   return (
@@ -134,7 +138,7 @@ export function StressTestConsole({
                     "text-2xl font-mono font-bold tabular-nums",
                     isDrowning ? "text-rose-500" : "text-brand-accent"
                   )}>
-                    {formatCurrency(shockedIncome - (shockedExpenses + shockedCommitments))}
+                    {formatCurrency(netCFOFlow)}
                   </p>
                 </div>
                 <div className="space-y-1 text-right">
@@ -142,6 +146,17 @@ export function StressTestConsole({
                   <p className="text-2xl font-mono font-bold text-white uppercase">
                     {isDrowning ? "NEGATIVE" : "POSITIVE"}
                   </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 py-4 border-y border-white/5">
+                <div className="space-y-0.5">
+                   <p className="text-[7px] font-bold text-white/20 uppercase tracking-[0.2em]">Goal Support</p>
+                   <p className="text-[10px] font-mono text-white/60">{formatCurrency(monthlyGoalCommitments)}</p>
+                </div>
+                <div className="space-y-0.5 text-right">
+                   <p className="text-[7px] font-bold text-white/20 uppercase tracking-[0.2em]">SIP Mandates</p>
+                   <p className="text-[10px] font-mono text-emerald-400">{formatCurrency(sipMandates)}</p>
                 </div>
               </div>
 

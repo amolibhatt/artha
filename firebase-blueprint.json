@@ -10,7 +10,13 @@
         "date": { "type": "string", "format": "date-time", "description": "ISO date string" },
         "description": { "type": "string", "description": "Optional note" },
         "type": { "type": "string", "enum": ["income", "expense"], "description": "Type of transaction" },
-        "userId": { "type": "string", "description": "Owner UID" }
+        "userId": { "type": "string", "description": "Owner UID" },
+        "subcategory": { "type": "string" },
+        "isMandatory": { "type": "boolean" },
+        "isRecurring": { "type": "boolean" },
+        "isAvoidable": { "type": "boolean" },
+        "linkedGoalId": { "type": "string" },
+        "sipId": { "type": "string" }
       },
       "required": ["amount", "category", "date", "type", "userId"]
     },

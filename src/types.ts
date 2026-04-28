@@ -14,6 +14,7 @@ export interface Transaction {
   isRecurring?: boolean;
   isAvoidable?: boolean;
   linkedGoalId?: string;
+  sipId?: string;
 }
 
 export interface Goal {
