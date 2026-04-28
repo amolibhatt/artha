@@ -144,7 +144,10 @@ export function useFinancialEngine(
   // Use the average income of the last 3 months (or max available) as baseline
   const estimatedMonthlyIncome = useMemo(() => {
     const incomeThisMonth = transactions
-      .filter(t => t.type === 'income' && new Date(t.date).getMonth() === today.getMonth())
+      .filter(t => {
+        const d = new Date(t.date);
+        return t.type === 'income' && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
+      })
       .reduce((acc, t) => acc + t.amount, 0);
     
     // If we have income this month, use it. Otherwise look at historical average.
@@ -152,7 +155,10 @@ export function useFinancialEngine(
     
     const incomes = transactions.filter(t => t.type === 'income');
     if (incomes.length === 0) return 0;
-    return totalIncome / Math.max(1, (today.getTime() - new Date(transactions[transactions.length-1].date).getTime()) / (1000 * 60 * 60 * 24 * 30.44));
+    
+    const firstDate = new Date(transactions[transactions.length-1].date);
+    const monthsSinceFirst = Math.max(0.5, (today.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24 * 30.44));
+    return totalIncome / monthsSinceFirst;
   }, [transactions, today, totalIncome]);
 
   // Fixed Costs = Mandatory expenses frequency normalized

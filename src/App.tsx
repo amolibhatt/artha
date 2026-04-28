@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { collection, query, where, onSnapshot, addDoc, orderBy, limit, getDocFromServer, doc, updateDoc, increment, getDocs, deleteDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, addDoc, orderBy, limit, getDocFromServer, doc, updateDoc, increment, getDocs, deleteDoc, writeBatch } from 'firebase/firestore';
 import { auth, db, signIn, logout, handleFirestoreError, OperationType } from './lib/firebase';
 import { Transaction, Goal, GoalType, StressTestState } from './types';
 import { formatCurrency, cn } from './lib/utils';
@@ -135,6 +135,7 @@ function MainApp() {
   const [showCommandCenter, setShowCommandCenter] = useState(false);
   const [commandTab, setCommandTab] = useState<'transaction' | 'goal'>('transaction');
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [showMobileTip, setShowMobileTip] = useState(false);
   const [filter, setFilter] = useState<'All' | 'Expenses' | 'Income'>('All');
   const [stressTest, setStressTest] = useState<StressTestState>(() => {
@@ -538,16 +539,23 @@ function MainApp() {
         <div className="max-w-6xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-4 group cursor-pointer" onClick={() => setActiveTab('home')}>
             <div className="relative">
-              <div className="w-11 h-11 md:w-13 md:h-13 bg-brand-primary text-brand-surface rounded-xl flex items-center justify-center shadow-xl transform group-hover:rotate-6 transition-all duration-500">
-                <PiggyBank className="w-6 h-6 md:w-7 md:h-7 text-brand-accent transition-transform group-hover:scale-110" />
-              </div>
-              <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-brand-accent rounded-full border-2 border-brand-surface" />
+              <motion.div 
+                className="w-10 h-10 border-[2px] border-brand-primary rounded-sm flex items-center justify-center p-1.5 group-hover:bg-brand-primary transition-all duration-500"
+              >
+                <motion.div 
+                  className="w-full h-full border-t-[2px] border-r-[2px] border-brand-primary/20 group-hover:border-brand-surface/40 flex items-center justify-center"
+                >
+                  <div className="w-1 h-1 bg-brand-accent rounded-full group-hover:bg-brand-surface" />
+                </motion.div>
+              </motion.div>
+              <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-brand-accent rounded-full border-2 border-brand-surface group-hover:scale-110 transition-transform" />
             </div>
-            <div className="space-y-0.5">
-              <span className="text-xl md:text-2xl font-sans font-bold tracking-tight text-brand-primary leading-none block uppercase">Artha</span>
-              <div className="flex items-center gap-1.5">
-                <div className="w-1 h-1 rounded-full bg-brand-accent animate-pulse" />
-                <p className="data-label !text-[9px]">Your Personal CFO</p>
+            <div className="flex flex-col -space-y-1">
+              <span className="text-xl font-sans font-black uppercase tracking-[-0.05em] text-brand-primary">ARTHA</span>
+              <div className="flex items-center gap-1.5 pl-0.5">
+                <span className="text-[7px] font-bold text-brand-accent uppercase tracking-[0.3em]">Capital</span>
+                <div className="h-[1px] w-4 bg-brand-accent/30" />
+                <span className="text-[7px] font-bold text-brand-primary/30 uppercase tracking-[0.3em]">AI</span>
               </div>
             </div>
           </div>
@@ -1090,38 +1098,57 @@ function MainApp() {
                           </div>
                         </div>
                         <div className="text-right flex items-center gap-4">
-                          <div className="text-right flex flex-col items-end gap-0.5">
+                          <div className="text-right flex flex-col items-end gap-1">
                             <p className={cn(
                               "text-lg md:text-xl font-mono font-bold tabular-nums leading-none",
                               t.type === 'income' ? "text-brand-accent" : "text-brand-primary"
                             )}>
                               {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
                             </p>
-                            <p className="text-[8px] font-bold text-brand-primary/10 uppercase tracking-widest leading-none">
-                              {new Date(t.date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-                            </p>
+                            <div className="flex flex-col items-end gap-0.5">
+                              {t.description && t.description !== t.subcategory.toUpperCase() && (
+                                <p className="text-[7px] font-bold text-brand-primary/30 uppercase tracking-widest truncate max-w-[150px] leading-none">
+                                  {t.description}
+                                </p>
+                              )}
+                              <p className="text-[8px] font-bold text-brand-primary/10 uppercase tracking-widest leading-none">
+                                {new Date(t.date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                              </p>
+                            </div>
                           </div>
-                          <button 
-                            type="button"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              handleDeleteTransaction(t);
-                            }}
-                            className={cn(
-                              "p-2.5 transition-all rounded-lg active:scale-90 border",
-                              transactionIdToConfirmDelete === t.id 
-                                ? "bg-rose-500 text-white border-rose-600 shadow-lg" 
-                                : "text-rose-500/10 hover:text-rose-600 hover:bg-rose-500/10 border-transparent hover:border-rose-500/10"
-                            )}
-                            title="Purge Entry"
-                          >
-                            {transactionIdToConfirmDelete === t.id ? (
-                              <span className="text-[8px] font-bold uppercase tracking-widest px-1 whitespace-nowrap">Purge</span>
-                            ) : (
-                              <Trash2 className="w-4 h-4 opacity-40 group-hover:opacity-100" />
-                            )}
-                          </button>
+                          <div className="flex gap-2">
+                            <button 
+                              onClick={() => {
+                                setEditingTransaction(t);
+                                setCommandTab('transaction');
+                                setShowCommandCenter(true);
+                              }}
+                              className="p-2.5 bg-brand-primary/5 hover:bg-brand-primary hover:text-brand-surface rounded-lg transition-all border border-brand-border group/edit"
+                            >
+                              <Settings2 className="w-4 h-4 opacity-40 group-hover/edit:opacity-100" />
+                            </button>
+                            <button 
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                handleDeleteTransaction(t);
+                              }}
+                              className={cn(
+                                "p-2.5 transition-all rounded-lg active:scale-90 border",
+                                transactionIdToConfirmDelete === t.id 
+                                  ? "bg-rose-500 text-white border-rose-600 shadow-lg" 
+                                  : "text-rose-500/10 hover:text-rose-600 hover:bg-rose-500/10 border-transparent hover:border-rose-500/10"
+                              )}
+                              title="Purge Entry"
+                            >
+                              {transactionIdToConfirmDelete === t.id ? (
+                                <span className="text-[8px] font-bold uppercase tracking-widest px-1 whitespace-nowrap">Purge</span>
+                              ) : (
+                                <Trash2 className="w-4 h-4 opacity-40 group-hover:opacity-100" />
+                              )}
+                            </button>
+                          </div>
                         </div>
                       </motion.div>
                     ))}
@@ -1244,8 +1271,10 @@ function MainApp() {
                           setIsPurging(true);
                           const tDocs = await getDocs(query(collection(db, 'transactions'), where('userId', '==', user.uid)));
                           const gDocs = await getDocs(query(collection(db, 'goals'), where('userId', '==', user.uid)));
-                          const batch = [...tDocs.docs.map(d => deleteDoc(doc(db, 'transactions', d.id))), ...gDocs.docs.map(d => deleteDoc(doc(db, 'goals', d.id)))];
-                          await Promise.all(batch);
+                          const batch = writeBatch(db);
+                          tDocs.docs.forEach(d => batch.delete(doc(db, 'transactions', d.id)));
+                          gDocs.docs.forEach(d => batch.delete(doc(db, 'goals', d.id)));
+                          await batch.commit();
                           localStorage.clear();
                           window.location.reload();
                         } catch (e) {
@@ -1308,12 +1337,14 @@ function MainApp() {
             onClose={() => {
               setShowCommandCenter(false);
               setEditingGoal(null);
+              setEditingTransaction(null);
             }} 
             userId={user.uid}
             transactions={transactions}
             goals={goals}
             initialTab={commandTab}
             editingGoal={editingGoal}
+            editingTransaction={editingTransaction}
             avgDailySpend={avgDailySpend}
           />
         )}
@@ -1479,6 +1510,7 @@ function CommandCenter({
   goals, 
   initialTab,
   editingGoal,
+  editingTransaction,
   avgDailySpend
 }: { 
   onClose: () => void, 
@@ -1487,9 +1519,10 @@ function CommandCenter({
   goals: Goal[],
   initialTab: 'transaction' | 'goal',
   editingGoal: Goal | null,
+  editingTransaction: Transaction | null,
   avgDailySpend: number
 }) {
-  const [activeTab, setActiveTab] = useState<'transaction' | 'goal'>(editingGoal ? 'goal' : initialTab);
+  const [activeTab, setActiveTab] = useState<'transaction' | 'goal'>(editingGoal ? 'goal' : editingTransaction ? 'transaction' : initialTab);
 
   return (
     <div className="fixed inset-0 z-[100] flex items-end md:items-center justify-center bg-brand-primary/80 backdrop-blur-xl">
@@ -1529,7 +1562,7 @@ function CommandCenter({
             {/* Content Area */}
             <div className="flex-1 overflow-y-auto no-scrollbar">
               {activeTab === 'transaction' && (
-                <TransactionForm onClose={onClose} userId={userId} transactions={transactions} goals={goals} />
+                <TransactionForm onClose={onClose} userId={userId} transactions={transactions} goals={goals} editingTransaction={editingTransaction} />
               )}
               {activeTab === 'goal' && (
                 <GoalModalContent onClose={onClose} userId={userId} goal={editingGoal} />
@@ -1570,14 +1603,16 @@ function CommandCenter({
   );
 }
 
-function TransactionForm({ onClose, userId, transactions, goals }: { onClose: () => void, userId: string, transactions: Transaction[], goals: Goal[] }) {
-  const [amount, setAmount] = useState('');
-  const [category, setCategory] = useState('Dining & Delivery');
-  const [subcategory, setSubcategory] = useState('Swiggy');
-  const [type, setType] = useState<'income' | 'expense'>('expense');
-  const [isMandatory, setIsMandatory] = useState(false);
-  const [isRecurring, setIsRecurring] = useState(false);
-  const [isAvoidable, setIsAvoidable] = useState(false);
+function TransactionForm({ onClose, userId, transactions, goals, editingTransaction }: { onClose: () => void, userId: string, transactions: Transaction[], goals: Goal[], editingTransaction: Transaction | null }) {
+  const [amount, setAmount] = useState(editingTransaction?.amount.toString() || '');
+  const [category, setCategory] = useState(editingTransaction?.category || 'Dining & Delivery');
+  const [subcategory, setSubcategory] = useState(editingTransaction?.subcategory || 'Swiggy');
+  const [description, setDescription] = useState(editingTransaction?.description || '');
+  const [date, setDate] = useState(editingTransaction?.date ? new Date(editingTransaction.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
+  const [type, setType] = useState<'income' | 'expense'>(editingTransaction?.type || 'expense');
+  const [isMandatory, setIsMandatory] = useState(editingTransaction?.isMandatory || false);
+  const [isRecurring, setIsRecurring] = useState(editingTransaction?.isRecurring || false);
+  const [isAvoidable, setIsAvoidable] = useState(editingTransaction?.isAvoidable || false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const currentCategories = type === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
@@ -1624,45 +1659,74 @@ function TransactionForm({ onClose, userId, transactions, goals }: { onClose: ()
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const amountNum = parseFloat(amount);
-    const finalDescription = subcategory.toUpperCase();
+    const finalDescription = description || subcategory.toUpperCase();
     if (isNaN(amountNum) || amountNum <= 0 || isSubmitting) return;
 
     setIsSubmitting(true);
     setErrorMsg(null);
     try {
-      let linkedGoalId = null;
-      if (type === 'expense') {
-        const goalType = goalTypeMap[category];
-        const gQuery = query(collection(db, 'goals'), where('userId', '==', userId));
-        const gSnapshot = await getDocs(gQuery);
-        
-        const goalDoc = gSnapshot.docs.find(d => {
-          const gData = d.data();
-          const nameMatch = finalDescription.toLowerCase().includes(gData.name.toLowerCase()) ||
-                           gData.name.toLowerCase().includes(finalDescription.toLowerCase());
-          const typeMatch = gData.type === goalTypeMap[category];
-          return nameMatch || (goalType && typeMatch);
-        });
+      let linkedGoalId = editingTransaction?.linkedGoalId || null;
+      
+      // Logic for goal allocation
+      const goalTypeMap: Record<string, string> = {
+        'Investments & EMI': 'investment',
+        'Investments': 'investment',
+        'Debt Repayment': 'debt',
+        'Savings': 'savings',
+        'Salary': 'savings', 
+        'Freelance': 'savings' 
+      };
 
-        if (goalDoc) {
-          linkedGoalId = goalDoc.id;
-          await updateDoc(doc(db, 'goals', goalDoc.id), { currentAmount: increment(amountNum) });
+      const resolvedGoalType = goalTypeMap[category];
+      const goalDoc = goals.find(g => {
+        const nameMatch = finalDescription.toLowerCase().includes(g.name.toLowerCase()) ||
+                         g.name.toLowerCase().includes(finalDescription.toLowerCase());
+        const typeMatch = g.type === resolvedGoalType;
+        return nameMatch || (resolvedGoalType && typeMatch);
+      });
+
+      const newGoalId = goalDoc?.id || null;
+
+      // Handle goal balance updates atomically if possible
+      if (editingTransaction?.linkedGoalId === newGoalId && newGoalId) {
+        // Same goal, just update the difference
+        const diff = amountNum - editingTransaction.amount;
+        if (diff !== 0) {
+          await updateDoc(doc(db, 'goals', newGoalId), { currentAmount: increment(diff) });
+        }
+      } else {
+        // Different goals or new transaction
+        if (editingTransaction?.linkedGoalId) {
+          await updateDoc(doc(db, 'goals', editingTransaction.linkedGoalId), { 
+            currentAmount: increment(-editingTransaction.amount) 
+          });
+        }
+        if (newGoalId) {
+          await updateDoc(doc(db, 'goals', newGoalId), { currentAmount: increment(amountNum) });
         }
       }
 
-      await addDoc(collection(db, 'transactions'), {
+      linkedGoalId = newGoalId;
+
+      const transactionData = {
         amount: amountNum,
         category,
         subcategory,
         description: finalDescription,
         type,
-        date: new Date().toISOString(),
+        date: new Date(date).toISOString(),
         userId,
         isMandatory: type === 'expense' ? isMandatory : false,
         isRecurring: type === 'expense' ? isRecurring : false,
         isAvoidable: type === 'expense' ? isAvoidable : false,
         linkedGoalId
-      });
+      };
+
+      if (editingTransaction?.id) {
+        await updateDoc(doc(db, 'transactions', editingTransaction.id), transactionData);
+      } else {
+        await addDoc(collection(db, 'transactions'), transactionData);
+      }
 
       onClose();
     } catch (error: any) {
@@ -1731,20 +1795,43 @@ function TransactionForm({ onClose, userId, transactions, goals }: { onClose: ()
       </div>
 
       <div className="space-y-4">
-        <div className="group/input space-y-2">
-          <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Amount</label>
-          <div className="relative">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 font-mono font-bold text-brand-primary/10 group-focus-within/input:text-brand-accent transition-colors text-base">₹</span>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="group/input space-y-2">
+            <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Amount</label>
+            <div className="relative">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 font-mono font-bold text-brand-primary/10 group-focus-within/input:text-brand-accent transition-colors text-base">₹</span>
+              <input 
+                autoFocus
+                type="number" 
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="0.00"
+                className="w-full bg-brand-surface border border-brand-border rounded-lg py-2.5 pl-8 pr-4 font-mono font-bold text-lg text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none"
+                required
+              />
+            </div>
+          </div>
+          <div className="group/input space-y-2">
+            <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Protocol Date</label>
             <input 
-              autoFocus
-              type="number" 
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="0.00"
-              className="w-full bg-brand-surface border border-brand-border rounded-lg py-2.5 pl-8 pr-4 font-mono font-bold text-lg text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none"
+              type="date" 
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="w-full bg-brand-surface border border-brand-border rounded-lg py-2.5 px-4 font-mono font-bold text-sm text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none"
               required
             />
           </div>
+        </div>
+
+        <div className="group/input space-y-2">
+          <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Ledger Comments</label>
+          <input 
+            type="text" 
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder={subcategory.toUpperCase()}
+            className="w-full bg-brand-surface border border-brand-border rounded-lg py-2.5 px-4 font-sans font-bold text-sm text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none uppercase tracking-tight"
+          />
         </div>
 
         <div className="space-y-2">
@@ -1815,7 +1902,7 @@ function TransactionForm({ onClose, userId, transactions, goals }: { onClose: ()
         disabled={isSubmitting}
         className="w-full py-4 bg-brand-primary text-brand-surface rounded-lg font-bold text-[9px] uppercase tracking-[0.4em] shadow-lg active:scale-[0.98] transition-all border border-white/10 hover:bg-brand-primary/95"
       >
-        {isSubmitting ? 'PROCESSING...' : `AUTHORIZE ${type === 'expense' ? 'OUTFLOW' : 'INFLOW'} PROTOCOL`}
+        {isSubmitting ? 'PROCESSING...' : editingTransaction ? 'AUTHORIZE UPDATE PROTOCOL' : `AUTHORIZE ${type === 'expense' ? 'OUTFLOW' : 'INFLOW'} PROTOCOL`}
       </button>
     </form>
   );

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
-import { Sparkles, TrendingUp, AlertCircle, Loader2, ChevronRight, Plus, ShieldCheck, Compass, AlertTriangle } from 'lucide-react';
+import { Sparkles, TrendingUp, AlertCircle, Loader2, ChevronRight, Plus, ShieldCheck, Compass, AlertTriangle, Landmark, Zap, ArrowUpRight } from 'lucide-react';
 import { Transaction, Goal } from '../types';
 import { generateCFOStrategy } from '../services/aiService';
 import { cn, formatCurrency } from '../lib/utils';

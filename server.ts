@@ -12,17 +12,19 @@ async function startServer() {
   app.use(express.json());
 
   // Secure AI Initialization
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+  const genAI = new GoogleGenAI(process.env.GEMINI_API_KEY || "");
+  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
   // API Proxy for Financial Strategy
   app.post("/api/strategy", async (req, res) => {
     try {
+      if (!process.env.GEMINI_API_KEY) {
+        throw new Error("GEMINI_API_KEY is not configured in the environment.");
+      }
       const { prompt } = req.body;
-      const result = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
-        contents: prompt
-      });
-      res.json({ text: result.text });
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      res.json({ text: response.text() });
     } catch (error: any) {
       console.error("Strategy API Error:", error);
       res.status(500).json({ error: error.message });
@@ -32,12 +34,13 @@ async function startServer() {
   // API Proxy for Quick Insights
   app.post("/api/insights", async (req, res) => {
     try {
+      if (!process.env.GEMINI_API_KEY) {
+        throw new Error("GEMINI_API_KEY is not configured in the environment.");
+      }
       const { prompt } = req.body;
-      const result = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
-        contents: prompt
-      });
-      res.json({ text: result.text });
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      res.json({ text: response.text() });
     } catch (error: any) {
       console.error("Insights API Error:", error);
       res.status(500).json({ error: error.message });

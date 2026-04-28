@@ -51,6 +51,10 @@ export function DebtOptimization({ goals }: DebtOptimizationProps) {
     while (balance > 0 && months < n) {
       const interest = r > 0 ? balance * r : 0;
       const principal = emi + extraPayment - interest;
+      
+      // Safety break for negative amortization
+      if (principal <= 0) break;
+      
       totalInterestWithPrepayment += interest;
       balance -= principal;
       months++;
