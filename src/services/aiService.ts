@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { Transaction, Goal } from "../types";
 import { formatCurrency } from "../lib/utils";
 
@@ -14,7 +14,9 @@ export const generateCFOStrategy = async (
   goals: Goal[],
   mandatoryExpenses: number,
   discretionaryExpenses: number,
-  totalIncome: number
+  totalIncome: number,
+  savingsRate: number,
+  incomeCoverage: number
 ): Promise<string> => {
   // Deep Audit Summarization
   const categorySummary = transactions.reduce((acc: any, t) => {
@@ -34,11 +36,13 @@ export const generateCFOStrategy = async (
 # PERSONAL CFO STRATEGY (MCKINSEY-LEVEL AUDIT)
 You are a world-class financial strategist. Perform a ruthless strategic audit on the provided capital flows.
 
-## FINANCIAL METRICS
-- Total Income: ${formatCurrency(totalIncome)}
+## FINANCIAL METRICS (AUDITED BASELINE)
+- Continuity Baseline (Total Income): ${formatCurrency(totalIncome)}
 - Core Expenditures (Mandatory): ${formatCurrency(mandatoryExpenses)}
 - Discretionary Burn: ${formatCurrency(discretionaryExpenses)}
 - Avoidable Capital Leakage: ${formatCurrency(avoidableLeaks)}
+- Surplus Conversion (Savings Rate): ${savingsRate.toFixed(1)}%
+- Asset Coverage (Income Multiple): ${incomeCoverage.toFixed(2)}x
 - Efficiency Score (Safe Flow Ratio): ${totalIncome > 0 ? (((totalIncome - mandatoryExpenses) / totalIncome) * 100).toFixed(1) : 0}%
 
 ## ALLOCATION DATA
@@ -80,14 +84,21 @@ You are a world-class financial strategist. Perform a ruthless strategic audit o
   }
 };
 
-export const generateQuickInsights = async (transactions: Transaction[], goals: Goal[]): Promise<string[]> => {
+export const generateQuickInsights = async (
+  transactions: Transaction[], 
+  goals: Goal[],
+  savingsRate: number,
+  incomeCoverage: number
+): Promise<string[]> => {
   const prompt = `
 Analyze financial data and provide 3-4 sharp, structured 1-sentence insights.
 DATA:
-Goals: ${goals.map(g => `- ${g.name}: ${g.currentAmount}/${g.targetAmount}`).join('\n')}
-Recent: ${transactions.slice(0, 10).map(t => `- ${t.category}: ${t.amount}`).join('\n')}
+- Savings Rate: ${savingsRate.toFixed(1)}%
+- Income Coverage: ${incomeCoverage.toFixed(2)}x
+- Goals: ${goals.map(g => `- ${g.name}: ${g.currentAmount}/${g.targetAmount}`).join('\n')}
+- Recent: ${transactions.slice(0, 5).map(t => `- ${t.category}: ${t.amount}`).join('\n')}
 
-Return a JSON array of strings ONLY.
+Return a JSON array of strings ONLY. Focus on capital efficiency and cash flow health.
 Example: ["Insight 1", "Insight 2"]
 `;
 
@@ -96,14 +107,36 @@ Example: ["Insight 1", "Insight 2"]
       model: "gemini-3-flash-preview",
       contents: prompt,
       config: {
-        responseMimeType: "application/json"
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.STRING
+          }
+        }
       }
     });
     
-    const text = response.text || "[]";
-    const jsonMatch = text.match(/\[.*\]/s);
-    const cleaned = jsonMatch ? jsonMatch[0] : text;
-    return JSON.parse(cleaned) as string[];
+    let text = response.text || "[]";
+    // Sanitize the response: extract only the JSON array if the model included extra text
+    const bracketIndex = text.indexOf('[');
+    const lastBracketIndex = text.lastIndexOf(']');
+    
+    if (bracketIndex !== -1 && lastBracketIndex !== -1) {
+      text = text.substring(bracketIndex, lastBracketIndex + 1);
+    }
+
+    try {
+      return JSON.parse(text) as string[];
+    } catch (parseError) {
+      console.warn("JSON Parse Error, attempting recovery:", parseError);
+      // Fallback: If it's a list but failed to parse, try to find the match more aggressively
+      const match = text.match(/\[.*\]/s);
+      if (match) {
+        return JSON.parse(match[0]) as string[];
+      }
+      throw parseError;
+    }
   } catch (error) {
     console.error("AI Insights Error:", error);
     return [

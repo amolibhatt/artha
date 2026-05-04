@@ -49,6 +49,19 @@
         "linkedGoalId": { "type": "string" }
       },
       "required": ["name", "amount", "category", "dayOfMonth", "startDate", "status", "userId"]
+    },
+    "IncomeStream": {
+      "title": "IncomeStream",
+      "description": "Recurring income stream (Salary, Rent, Yield)",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "amount": { "type": "number" },
+        "dayOfMonth": { "type": "number" },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "userId": { "type": "string" }
+      },
+      "required": ["name", "amount", "dayOfMonth", "status", "userId"]
     }
   },
   "firestore": {
@@ -63,6 +76,10 @@
     "/sips/{sipId}": {
       "schema": "SIP",
       "description": "Collection of systematic investment plans"
+    },
+    "/incomeStreams/{streamId}": {
+      "schema": "IncomeStream",
+      "description": "Collection of recurring income mandates"
     }
   }
 }

@@ -6,11 +6,11 @@
   --font-display: "Outfit", var(--font-sans);
   --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace !important;
   
-  --color-brand-primary: #111827;
-  --color-brand-accent: #059669;
-  --color-brand-bg: #F9FAFB;
+  --color-brand-primary: #111111;
+  --color-brand-accent: #10B981;
+  --color-brand-bg: #F8F8F6;
   --color-brand-surface: #FFFFFF;
-  --color-brand-border: #E5E7EB;
+  --color-brand-border: #E8E8E2;
 }
 
 @layer base {
@@ -24,6 +24,7 @@
     font-family: var(--font-sans);
     position: relative;
     font-weight: 400;
+    letter-spacing: -0.01em;
   }
 
   body::before {
@@ -35,8 +36,12 @@
     height: 100%;
     pointer-events: none;
     z-index: 9999;
-    opacity: 0.015;
+    opacity: 0.012;
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display tracking-tight text-brand-primary;
   }
 
   em, i, italic {
@@ -45,7 +50,15 @@
 }
 
 @utility premium-card {
-  @apply bg-brand-surface border border-brand-border shadow-sm hover:shadow-md transition-all duration-300;
+  @apply bg-brand-surface border border-brand-border shadow-[0_4px_12px_-2px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_24px_-4px_rgba(0,0,0,0.05)] transition-all duration-500 rounded-[2rem];
+}
+
+@utility strategic-badge {
+  @apply px-2.5 py-0.5 bg-brand-primary/5 text-brand-primary/40 border border-brand-primary/10 rounded-full text-[8px] font-bold uppercase tracking-[0.15em] transition-all;
+}
+
+@utility data-metric {
+  @apply text-2xl font-mono font-bold tracking-tighter text-brand-primary tabular-nums;
 }
 
 @utility premium-shadow {

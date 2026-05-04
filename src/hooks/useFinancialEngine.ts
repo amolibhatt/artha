@@ -1,12 +1,13 @@
 import { useMemo } from 'react';
-import { Transaction, Goal, StressTestState, SIP } from '../types';
+import { Transaction, Goal, StressTestState, SIP, IncomeStream } from '../types';
 
 export function useFinancialEngine(
   transactions: Transaction[], 
   goals: Goal[], 
   monthlyBudget: number,
   stressTest: StressTestState,
-  sips: SIP[] = []
+  sips: SIP[] = [],
+  incomeStreams: IncomeStream[] = []
 ) {
   const today = useMemo(() => {
     const d = new Date();
@@ -159,6 +160,12 @@ export function useFinancialEngine(
 
   // Use the average income of the last 3 months (or max available) as baseline
   const estimatedMonthlyIncome = useMemo(() => {
+    // 1. Proactive Mandates (Fixed Baseline)
+    const activeMandates = incomeStreams
+      .filter(s => s.status === 'active')
+      .reduce((acc, s) => acc + s.amount, 0);
+
+    // 2. Historical Context (Variable/Freelance Baseline)
     const incomeThisMonth = transactions
       .filter(t => {
         const d = new Date(t.date);
@@ -166,8 +173,9 @@ export function useFinancialEngine(
       })
       .reduce((acc, t) => acc + t.amount, 0);
     
-    // If we have income this month, use it. Otherwise look at historical average.
-    if (incomeThisMonth > 0) return incomeThisMonth;
+    // If we have mandates, use them as the floor. 
+    // If history shows more (bonuses, freelance), we blend but mandates are the 'Continuity Baseline'.
+    if (activeMandates > 0) return Math.max(activeMandates, incomeThisMonth);
     
     const incomes = transactions.filter(t => t.type === 'income');
     if (incomes.length === 0 || transactions.length === 0) return 0;
@@ -226,6 +234,8 @@ export function useFinancialEngine(
     dailySpendingPower,
     monthlyGoalCommitments: monthlyGoalCommitments.goalsCommitment,
     sipMandates: monthlyGoalCommitments.sipsCommitment,
-    estimatedMonthlyIncome
+    estimatedMonthlyIncome,
+    savingsRate: estimatedMonthlyIncome > 0 ? ((estimatedMonthlyIncome - monthlyBurn) / estimatedMonthlyIncome) * 100 : 0,
+    incomeCoverage: monthlyBurn > 0 ? estimatedMonthlyIncome / monthlyBurn : 0
   };
 }

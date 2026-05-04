@@ -99,8 +99,27 @@ service cloud.firestore {
                       incoming().userId == existing().userId;
       allow delete: if isOwner(existing().userId);
     }
+
+    // 4. Income Streams - Recurring Income Mandates
+    match /incomeStreams/{streamId} {
+      function isValidIncomeStream(data) {
+        return data.keys().hasAll(['name', 'amount', 'dayOfMonth', 'status', 'userId']) &&
+               data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+               data.amount is number && data.amount > 0 &&
+               data.dayOfMonth is number && data.dayOfMonth >= 1 && data.dayOfMonth <= 31 &&
+               data.status in ['active', 'inactive'] &&
+               isOwner(data.userId);
+      }
+
+      allow read: if isOwner(existing().userId);
+      allow create: if isValidIncomeStream(incoming());
+      allow update: if isOwner(existing().userId) && 
+                      isValidIncomeStream(incoming()) && 
+                      incoming().userId == existing().userId;
+      allow delete: if isOwner(existing().userId);
+    }
     
-    // 4. User Prefs / Metadata
+    // 5. User Prefs / Metadata
     match /users/{userId} {
       allow read, write: if isOwner(userId);
     }

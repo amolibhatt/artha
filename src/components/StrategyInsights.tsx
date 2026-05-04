@@ -17,6 +17,8 @@ interface StrategyInsightsProps {
   strategicSpendingCeiling: number;
   dailySpendingPower: number;
   monthlyGoalCommitments: number;
+  savingsRate: number;
+  incomeCoverage: number;
 }
 
 export function StrategyInsights({ 
@@ -29,7 +31,9 @@ export function StrategyInsights({
   discretionaryExpenses,
   strategicSpendingCeiling,
   dailySpendingPower,
-  monthlyGoalCommitments
+  monthlyGoalCommitments,
+  savingsRate,
+  incomeCoverage
 }: StrategyInsightsProps) {
   const [strategy, setStrategy] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -130,7 +134,9 @@ export function StrategyInsights({
         goals,
         mandatoryExpenses,
         discretionaryExpenses,
-        totalIncome
+        totalIncome,
+        savingsRate,
+        incomeCoverage
       );
       setStrategy(result || "Unable to generate strategy at this time.");
       setLastAuditSnapshot({ balance, count: transactions.length });
@@ -152,25 +158,28 @@ export function StrategyInsights({
   return (
     <div className="space-y-16 pb-24">
       {/* Strategic Vision Header */}
-      <div className="flex flex-col md:flex-row gap-8 items-start justify-between border-b border-brand-border pb-12">
-        <div className="max-w-xl space-y-4">
-           <div className="flex items-center gap-2">
-             <div className="w-1 h-1 rounded-full bg-brand-primary" />
-             <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-[0.3em]">CFO OPERATING MODEL v2.0</p>
+      <div className="flex flex-col md:flex-row gap-12 items-start justify-between border-b border-brand-border pb-16">
+        <div className="max-w-xl space-y-6">
+           <div className="flex items-center gap-3">
+             <div className="w-1.5 h-1.5 rounded-full bg-brand-primary" />
+             <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-[0.4em]">CFO OPERATING MODEL v2.0</p>
            </div>
-           <h2 className="text-3xl font-display font-bold text-brand-primary tracking-tight leading-tight uppercase">Capital Efficiency Framework</h2>
-           <p className="text-xs text-brand-primary/50 leading-relaxed font-medium">
-             This audit categorizes your financial flow into three distinct tiers: Operational Baseline (Must), Capital Growth (Goals), and Tactical Reserve (Discretionary). Our objective is to maximize the velocity of tier 2 while minimizing leakage in tier 3.
+           <h2 className="text-4xl md:text-5xl font-sans font-black text-brand-primary tracking-tighter leading-[0.9] uppercase">Capital Efficiency Framework</h2>
+           <p className="text-xs text-brand-primary/50 leading-relaxed font-medium max-w-sm">
+             Categorizing flows into Operational Baseline, Capital Growth, and Tactical Reserve. Goal: Maximize velocity, minimize leakage.
            </p>
         </div>
-        <div className="grid grid-cols-2 gap-4 w-full md:w-auto">
-           <div className="p-4 bg-brand-bg border border-brand-border rounded-2xl space-y-1">
-              <p className="text-[10px] font-bold text-brand-primary/30 uppercase tracking-widest">Active Leaks</p>
-              <p className="text-lg font-mono font-bold text-rose-500">{leakAudit > 0 ? 'ALERT' : 'NONE'}</p>
+        <div className="grid grid-cols-2 gap-6 w-full md:w-auto">
+           <div className="p-8 bg-brand-surface border border-brand-border rounded-[2rem] space-y-2 min-w-[180px] shadow-sm">
+              <p className="text-[9px] font-bold text-brand-primary/30 uppercase tracking-[0.2em]">Active Leaks</p>
+              <div className="flex items-center gap-2">
+                 <div className={cn("w-1.5 h-1.5 rounded-full", leakAudit > 0 ? "bg-rose-500 animate-pulse" : "bg-emerald-500")} />
+                 <p className="text-2xl font-mono font-bold text-brand-primary">{leakAudit > 0 ? 'ALERT' : 'CLEAN'}</p>
+              </div>
            </div>
-           <div className="p-4 bg-brand-bg border border-brand-border rounded-2xl space-y-1">
-              <p className="text-[10px] font-bold text-brand-primary/30 uppercase tracking-widest">Net Surplus</p>
-              <p className="text-lg font-mono font-bold text-emerald-500">{formatCurrency(strategicSpendingCeiling)}</p>
+           <div className="p-8 bg-brand-primary border border-white/5 rounded-[2rem] space-y-2 min-w-[180px] shadow-xl text-brand-surface">
+              <p className="text-[9px] font-bold text-white/30 uppercase tracking-[0.2em]">Net Surplus</p>
+              <p className="text-2xl font-mono font-bold text-brand-accent">{formatCurrency(strategicSpendingCeiling)}</p>
            </div>
         </div>
       </div>
@@ -260,6 +269,40 @@ export function StrategyInsights({
             )} />
             <p className="text-[7px] font-bold text-brand-primary/20 uppercase tracking-[0.2em]">Non-essential accumulation</p>
           </div>
+        </div>
+
+        {/* Flow Forensics Expansion */}
+        <div className="col-span-full grid grid-cols-1 md:grid-cols-2 gap-8">
+           <div className="bg-brand-surface border border-brand-border rounded-[2.5rem] p-8 flex items-center justify-between group hover:border-brand-primary/20 transition-all">
+             <div className="space-y-1">
+               <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest">Surplus Conversion</p>
+               <h4 className="text-3xl font-mono font-bold text-brand-primary tracking-tighter">{savingsRate.toFixed(1)}%</h4>
+               <p className="text-[9px] font-medium text-brand-primary/20 uppercase tracking-widest">Portfolio retention rate</p>
+             </div>
+             <div className="text-right">
+               <div className={cn(
+                 "px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest inline-block border",
+                 savingsRate > 20 ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : "bg-rose-500/10 text-rose-500 border-rose-500/20"
+               )}>
+                 {savingsRate > 40 ? 'Elite' : savingsRate > 20 ? 'Optimal' : 'Leakage Risk'}
+               </div>
+             </div>
+           </div>
+           <div className="bg-brand-surface border border-brand-border rounded-[2.5rem] p-8 flex items-center justify-between group hover:border-brand-primary/20 transition-all">
+             <div className="space-y-1">
+               <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest">Income Coverage</p>
+               <h4 className="text-3xl font-mono font-bold text-brand-primary tracking-tighter">{incomeCoverage.toFixed(1)}x</h4>
+               <p className="text-[9px] font-medium text-brand-primary/20 uppercase tracking-widest">Multiple of monthly burn</p>
+             </div>
+             <div className="text-right">
+                <div className={cn(
+                 "px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest inline-block border",
+                 incomeCoverage >= 1 ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : "bg-rose-500/10 text-rose-500 border-rose-500/20"
+               )}>
+                 {incomeCoverage > 2 ? 'High Cushion' : incomeCoverage >= 1 ? 'Balanced' : 'Deficit'}
+               </div>
+             </div>
+           </div>
         </div>
 
         {/* Global Strategy Allocation */}

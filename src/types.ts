@@ -46,6 +46,15 @@ export interface SIP {
   linkedGoalId?: string;
 }
 
+export interface IncomeStream {
+  id?: string;
+  name: string;
+  amount: number;
+  dayOfMonth: number;
+  status: 'active' | 'inactive';
+  userId: string;
+}
+
 export interface StressTestState {
   incomeShock: number; // e.g., 0.8 for 20% drop
   expenseShock: number; // e.g., 1.2 for 20% increase

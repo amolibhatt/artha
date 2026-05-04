@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { collection, query, where, onSnapshot, addDoc, orderBy, limit, getDocFromServer, doc, updateDoc, increment, getDocs, deleteDoc, writeBatch } from 'firebase/firestore';
 import { auth, db, signIn, logout, handleFirestoreError, OperationType } from './lib/firebase';
-import { Transaction, Goal, GoalType, StressTestState, SIP } from './types';
+import { Transaction, Goal, GoalType, StressTestState, SIP, IncomeStream } from './types';
 import { formatCurrency, cn } from './lib/utils';
 import { 
   Plus, 
@@ -44,6 +44,8 @@ import {
   Car,
   Film,
   Search,
+  LayoutGrid,
+  Database,
   History as HistoryIcon
 } from 'lucide-react';
 import { 
@@ -54,12 +56,12 @@ import {
   Pie,
   LineChart,
   Line,
+  AreaChart,
+  Area,
   YAxis,
   XAxis,
   BarChart,
   Bar,
-  AreaChart,
-  Area
 } from 'recharts';
 import { motion, AnimatePresence } from 'motion/react';
 import { generateQuickInsights } from './services/aiService';
@@ -149,11 +151,13 @@ function MainApp() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [sips, setSips] = useState<SIP[]>([]);
+  const [incomeStreams, setIncomeStreams] = useState<IncomeStream[]>([]);
   const [showCommandCenter, setShowCommandCenter] = useState(false);
-  const [commandTab, setCommandTab] = useState<'transaction' | 'goal' | 'sip'>('transaction');
+  const [commandTab, setCommandTab] = useState<'transaction' | 'goal' | 'sip' | 'income'>('transaction');
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [editingSip, setEditingSip] = useState<SIP | null>(null);
+  const [editingIncomeStream, setEditingIncomeStream] = useState<IncomeStream | null>(null);
   const [showMobileTip, setShowMobileTip] = useState(false);
   const [filter, setFilter] = useState<'All' | 'Expenses' | 'Income'>('All');
   const [searchQuery, setSearchQuery] = useState('');
@@ -219,6 +223,15 @@ function MainApp() {
       await deleteDoc(doc(db, 'sips', sipId));
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `sips/${sipId}`);
+      throw error;
+    }
+  };
+
+  const handleDeleteIncomeStream = async (streamId: string) => {
+    try {
+      await deleteDoc(doc(db, 'incomeStreams', streamId));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `incomeStreams/${streamId}`);
       throw error;
     }
   };
@@ -324,27 +337,23 @@ function MainApp() {
       setSips(data);
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'sips'));
 
+    const iQuery = query(
+      collection(db, 'incomeStreams'),
+      where('userId', '==', user.uid)
+    );
+
+    const unsubscribeI = onSnapshot(iQuery, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as IncomeStream));
+      setIncomeStreams(data);
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'incomeStreams'));
+
     return () => {
       unsubscribeT();
       unsubscribeG();
       unsubscribeS();
+      unsubscribeI();
     };
   }, [user]);
-
-  const [insights, setInsights] = useState<string[]>([]);
-  useEffect(() => {
-    if (user && transactions.length > 5 && goals.length > 0) {
-      const fetchInsights = async () => {
-        try {
-          const data = await generateQuickInsights(transactions, goals);
-          setInsights(data);
-        } catch (e) {
-          console.error("Context-Aware Insight Failure:", e);
-        }
-      };
-      fetchInsights();
-    }
-  }, [user, transactions.length, goals.length]);
 
   // Strategic Cash Flow Monitoring
   const {
@@ -373,8 +382,25 @@ function MainApp() {
     dailySpendingPower,
     monthlyGoalCommitments,
     sipMandates,
-    estimatedMonthlyIncome
-  } = useFinancialEngine(transactions, goals, 0, stressTest, sips);
+    estimatedMonthlyIncome,
+    savingsRate,
+    incomeCoverage
+  } = useFinancialEngine(transactions, goals, 0, stressTest, sips, incomeStreams);
+
+  const [insights, setInsights] = useState<string[]>([]);
+  useEffect(() => {
+    if (user && transactions.length > 5 && goals.length > 0) {
+      const fetchInsights = async () => {
+        try {
+          const data = await generateQuickInsights(transactions, goals, savingsRate, incomeCoverage);
+          setInsights(data);
+        } catch (e) {
+          console.error("Context-Aware Insight Failure:", e);
+        }
+      };
+      fetchInsights();
+    }
+  }, [user, transactions.length, goals.length, savingsRate, incomeCoverage]);
 
   // QA Logic: McKinsey-level strategic thresholds
   const healthStatus = runwayMonths >= 6 ? 'STABILIZED' : runwayMonths >= 3 ? 'WARNING' : 'CRITICAL';
@@ -477,7 +503,7 @@ function MainApp() {
     if (cat.includes('housing') || cat.includes('rent')) return <Home className="w-5 h-5 text-brand-primary/70" />;
     if (cat.includes('health') || cat.includes('medical') || cat.includes('gym')) return <Activity className="w-5 h-5 text-rose-400/70" />;
     if (cat.includes('travel') || cat.includes('flight') || cat.includes('hotel')) return <Plane className="w-5 h-5 text-indigo-400/70" />;
-    if (cat.includes('entertainment') || cat.includes('netflix') || cat.includes('gaming')) return <Film className="w-5 h-5 text-purple-400/70" />;
+    if (cat.includes('subscriptions') || cat.includes('netflix') || cat.includes('hotstar')) return <Film className="w-5 h-5 text-purple-400/70" />;
     if (cat.includes('invest') || cat.includes('emi') || cat.includes('stock')) return <TrendingUp className="w-5 h-5 text-brand-accent" />;
     return <List className="w-5 h-5 text-brand-primary/40" />;
   };
@@ -496,23 +522,39 @@ function MainApp() {
   const monthlySurplus = Math.max(0, estimatedMonthlyIncome - monthlyFixedExpenses - monthlyGoalCommitments);
   
   const surplusAdvice = (() => {
-    const highInterestDebt = goals.find(g => g.type === 'debt' && (g.interestRate || 0) > 10);
-    if (highInterestDebt && monthlySurplus > 5000) {
+    const highInterestDebt = goals.find(g => g.type === 'debt' && (g.interestRate || 0) > 10.5);
+    const lowInterestLumpSum = goals.find(g => g.type === 'debt' && (g.interestRate || 0) < 9);
+    
+    if (highInterestDebt && (estimatedMonthlyIncome - monthlyBurn) > 10000) {
       return {
         target: highInterestDebt.name,
-        action: `Direct surplus of ${formatCurrency(monthlySurplus)} here`,
-        impact: `Will accelerate payoff by ${Math.floor(monthlySurplus / (highInterestDebt.emi || 1000) * 2)} months`
+        action: `Aggressive deleveraging required. Direct ${formatCurrency(monthlySurplus)} here.`,
+        impact: `Capital efficiency will increase by ${((highInterestDebt.interestRate || 0) - 4).toFixed(1)}% vs market yield.`
       };
     }
-    const lowProgressGoal = goals.find(g => g.type !== 'debt' && (g.currentAmount / (g.targetAmount || 1)) < 0.2);
-    if (lowProgressGoal && monthlySurplus > 2000) {
+    
+    const stagnantWealthGoal = goals.find(g => g.type === 'investment' && (g.currentAmount / (g.targetAmount || 1)) < 0.1);
+    if (stagnantWealthGoal && monthlySurplus > 5000) {
       return {
-        target: lowProgressGoal.name,
-        action: "Inject fresh capital",
-        impact: "Get this goal to 20% mark faster"
+        target: stagnantWealthGoal.name,
+        action: "Capital injection recommended for project acceleration.",
+        impact: `Target completion moves forward by ${Math.floor(stagnantWealthGoal.targetAmount / monthlySurplus / 12)} quarters.`
       };
     }
-    return null;
+
+    if (savingsRate > 40) {
+      return {
+        target: "Venture / High-Yield",
+        action: "Risk threshold exceeded. Consider diversifying into aggressive assets.",
+        impact: "Alpha generation potential identified in surplus reserves."
+      };
+    }
+
+    return {
+      target: "Cash Reserve",
+      action: "Maintain liquidity. Monitor for upcoming acquisition opportunities.",
+      impact: "Current operational runway is stable."
+    };
   })();
 
   const totalGoalTarget = goals.reduce((acc, g) => acc + g.targetAmount, 0);
@@ -537,8 +579,8 @@ function MainApp() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-stone-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-stone-900"></div>
+      <div className="min-h-screen flex items-center justify-center bg-brand-bg">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-brand-primary"></div>
       </div>
     );
   }
@@ -631,11 +673,12 @@ function MainApp() {
   }
 
   return (
-    <div className="min-h-screen bg-brand-bg text-brand-primary font-sans pb-24 md:pb-32">
-      {/* Top Header - Compact Technical Execution */}
-      <header className="sticky top-0 z-40 bg-brand-surface/90 backdrop-blur-2xl border-b border-brand-border px-4 py-4 md:px-8 md:py-6">
-        <div className="max-w-6xl mx-auto flex justify-between items-center">
-          <div className="flex items-center gap-4 group cursor-pointer" onClick={() => setActiveTab('home')}>
+    <div className="min-h-screen bg-brand-bg text-brand-primary font-sans flex flex-col overflow-x-hidden pb-24 md:pb-32">
+      
+      {/* Strategic Command Bar (Top) */}
+      <header className="sticky top-0 z-40 bg-brand-surface/90 backdrop-blur-2xl border-b border-brand-border">
+        <div className="max-w-6xl mx-auto flex justify-between items-center px-4 py-4 md:px-8 md:py-6">
+          <div className="flex items-center gap-5 group cursor-pointer" onClick={() => setActiveTab('home')}>
             <div className="relative">
               <motion.div 
                 className="w-10 h-10 border-[2px] border-brand-primary rounded-sm flex items-center justify-center p-1.5 group-hover:bg-brand-primary transition-all duration-500"
@@ -687,82 +730,90 @@ function MainApp() {
       </header>
 
       {/* Bottom Navigation - Tactical Switcher */}
-      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-brand-surface/95 backdrop-blur-3xl border-t border-brand-border px-6 pb-safe">
-        <div className="max-w-xl mx-auto flex items-center justify-between h-24">
+      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-brand-surface/80 backdrop-blur-3xl border-t border-brand-border px-6 pb-safe">
+        <div className="max-w-xl mx-auto flex items-center justify-between h-20">
           <button 
             onClick={() => setActiveTab('home')}
             className={cn(
-              "flex flex-col items-center justify-center gap-1.5 flex-1 h-full transition-all relative group",
-              activeTab === 'home' ? "text-brand-primary" : "text-brand-primary/25"
+              "flex flex-col items-center justify-center flex-1 h-full transition-all relative group",
+              activeTab === 'home' ? "text-brand-primary" : "text-brand-primary/20"
             )}
+            title="Dashboard"
           >
-            <Home className={cn("w-5 h-5 transition-all duration-300", activeTab === 'home' ? "scale-110" : "group-hover:text-brand-primary/50")} />
-            <span className="text-[10px] font-bold uppercase tracking-wider">Home</span>
+            <Home className={cn("w-6 h-6 transition-all duration-500", activeTab === 'home' ? "scale-110 drop-shadow-[0_0_8px_rgba(0,0,0,0.1)]" : "group-hover:text-brand-primary/40")} />
             {activeTab === 'home' && (
-              <motion.div layoutId="nav-glow" className="absolute -top-px left-1/2 -translate-x-1/2 w-8 h-0.5 bg-brand-accent shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+              <motion.div layoutId="nav-indicator" className="absolute bottom-3 w-1 h-1 bg-brand-primary rounded-full transition-all" />
             )}
           </button>
-          
+
           <button 
             onClick={() => setActiveTab('history')}
             className={cn(
-              "flex flex-col items-center justify-center gap-1.5 flex-1 h-full transition-all relative group",
-              activeTab === 'history' ? "text-brand-primary" : "text-brand-primary/25"
+              "flex flex-col items-center justify-center flex-1 h-full transition-all relative group",
+              activeTab === 'history' ? "text-brand-primary" : "text-brand-primary/20"
             )}
+            title="Cash Flow"
           >
-            <List className={cn("w-5 h-5 transition-all duration-300", activeTab === 'history' ? "scale-110" : "group-hover:text-brand-primary/50")} />
-            <span className="text-[10px] font-bold uppercase tracking-wider">History</span>
+            <List className={cn("w-6 h-6 transition-all duration-500", activeTab === 'history' ? "scale-110 drop-shadow-[0_0_8px_rgba(0,0,0,0.1)]" : "group-hover:text-brand-primary/40")} />
             {activeTab === 'history' && (
-              <motion.div layoutId="nav-glow" className="absolute -top-px left-1/2 -translate-x-1/2 w-8 h-0.5 bg-brand-accent shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+              <motion.div layoutId="nav-indicator" className="absolute bottom-3 w-1 h-1 bg-brand-primary rounded-full transition-all" />
             )}
           </button>
           
           {/* Central Execution Hub */}
-          <div className="flex-1 flex justify-center -mt-10 relative">
+          <div className="flex-1 flex justify-center -mt-8 relative">
             <button 
               onClick={() => {
                 setCommandTab('transaction');
                 setShowCommandCenter(true);
               }}
-              className="w-16 h-16 bg-brand-primary text-brand-accent rounded-2xl flex items-center justify-center shadow-xl border-[6px] border-brand-bg active:scale-95 transition-all relative z-10"
+              className="w-14 h-14 bg-brand-primary text-brand-surface rounded-[1.25rem] flex items-center justify-center shadow-2xl active:scale-95 transition-all relative z-10 border border-white/5 group/hub"
               title="Add Entry"
             >
-              <Plus className="w-8 h-8" />
+              <Plus className="w-8 h-8 text-brand-accent transition-transform duration-500 group-hover/hub:rotate-90" />
             </button>
           </div>
  
           <button 
             onClick={() => setActiveTab('insights')}
             className={cn(
-              "flex flex-col items-center justify-center gap-1.5 flex-1 h-full transition-all relative group",
-              activeTab === 'insights' ? "text-brand-primary" : "text-brand-primary/25"
+              "flex flex-col items-center justify-center flex-1 h-full transition-all relative group",
+              activeTab === 'insights' ? "text-brand-primary" : "text-brand-primary/20"
             )}
+            title="Insights"
           >
-            <Sparkles className={cn("w-5 h-5 transition-all duration-300", activeTab === 'insights' ? "scale-110" : "group-hover:text-brand-primary/50")} />
-            <span className="text-[10px] font-bold uppercase tracking-wider">Tips</span>
+            <Sparkles className={cn("w-6 h-6 transition-all duration-500", activeTab === 'insights' ? "scale-110 drop-shadow-[0_0_8px_rgba(0,0,0,0.1)]" : "group-hover:text-brand-primary/40")} />
             {activeTab === 'insights' && (
-              <motion.div layoutId="nav-glow" className="absolute -top-px left-1/2 -translate-x-1/2 w-8 h-0.5 bg-brand-accent shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+              <motion.div layoutId="nav-indicator" className="absolute bottom-3 w-1 h-1 bg-brand-primary rounded-full transition-all" />
             )}
           </button>
           <button 
             onClick={() => setActiveTab('goals')}
             className={cn(
-              "flex flex-col items-center justify-center gap-1.5 flex-1 h-full transition-all relative group",
-              activeTab === 'goals' ? "text-brand-primary" : "text-brand-primary/25"
+              "flex flex-col items-center justify-center flex-1 h-full transition-all relative group",
+              activeTab === 'goals' ? "text-brand-primary" : "text-brand-primary/20"
             )}
+            title="Strategy"
           >
-            <Target className={cn("w-5 h-5 transition-all duration-300", activeTab === 'goals' ? "scale-110" : "group-hover:text-brand-primary/50")} />
-            <span className="text-[10px] font-bold uppercase tracking-wider">Goals</span>
+            <Target className={cn("w-6 h-6 transition-all duration-500", activeTab === 'goals' ? "scale-110 drop-shadow-[0_0_8px_rgba(0,0,0,0.1)]" : "group-hover:text-brand-primary/40")} />
             {activeTab === 'goals' && (
-              <motion.div layoutId="nav-glow" className="absolute -top-px left-1/2 -translate-x-1/2 w-8 h-0.5 bg-brand-accent shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+              <motion.div layoutId="nav-indicator" className="absolute bottom-3 w-1 h-1 bg-brand-primary rounded-full transition-all" />
             )}
           </button>
         </div>
       </nav>
 
       <main className="max-w-7xl mx-auto px-4 md:px-8 py-6 md:py-12 space-y-8 md:space-y-12">
-         {activeTab === 'home' && (
-          <div className="space-y-8">
+        <AnimatePresence mode="wait">
+          {activeTab === 'home' && (
+            <motion.div 
+              key="home"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+              className="space-y-8"
+            >
             {/* Executive Summary Section */}
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 px-1">
               <div className="space-y-1">
@@ -788,50 +839,81 @@ function MainApp() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-6 lg:gap-8">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10">
               {/* Primary Metric: Strategic Capacity */}
-              <div className="md:col-span-8 space-y-8">
-                <section className="bg-brand-primary text-brand-surface rounded-[3rem] overflow-hidden shadow-2xl relative border border-white/5 group">
+              <div className="lg:col-span-8 space-y-8">
+                <section className="bg-brand-primary text-brand-surface rounded-[2.5rem] overflow-hidden shadow-2xl relative border border-white/5 group">
                   <div className="absolute inset-0 opacity-[0.02] pointer-events-none transition-opacity group-hover:opacity-[0.05]" 
                     style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '60px 60px' }} 
                   />
                   
                   <div className="p-8 md:p-12 space-y-12 relative z-10">
-                    <div className="space-y-4">
-                      <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/5 border border-white/10 rounded-full">
-                        <ShieldCheck className="w-3 h-3 text-emerald-500" />
-                        <span className="text-[9px] font-bold uppercase tracking-widest text-white/40">Safe Expenditure Limit</span>
+                    <div className="flex flex-col md:flex-row md:items-start justify-between gap-10">
+                      <div className="space-y-6">
+                        <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/5 border border-white/10 rounded-full">
+                          <ShieldCheck className="w-3.5 h-3.5 text-brand-accent shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">Tactical Liquidity Floor</span>
+                        </div>
+                        <div className="flex flex-col md:flex-row md:items-baseline gap-3 md:gap-5">
+                          <h2 className="text-6xl md:text-8xl font-sans font-black tracking-tighter leading-[0.9]">
+                            {formatCurrency(Math.max(0, strategicSpendingCeiling - spentThisMonth))}
+                          </h2>
+                          <span className="text-xl font-mono font-bold text-white/20 uppercase tracking-tighter">Remaining</span>
+                        </div>
+                        <p className="text-sm text-white/30 font-medium max-w-sm leading-relaxed">
+                          Your available liquidity for tactical deployment after securing all fixed obligations and goal commitments.
+                        </p>
                       </div>
-                      <div className="flex flex-col md:flex-row md:items-baseline gap-2 md:gap-4">
-                        <h2 className="text-6xl md:text-8xl font-sans font-black tracking-tighter leading-none">
-                          {formatCurrency(Math.max(0, strategicSpendingCeiling - spentThisMonth))}
-                        </h2>
-                        <span className="text-xl font-mono font-bold text-white/20">REMAINING</span>
+
+                      {/* Cash Flow Waterfall Visualization */}
+                      <div className="w-full md:w-64 space-y-6">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-white/20">Allocation Hierarchy</p>
+                        <div className="h-20 flex gap-2 items-end">
+                           {[
+                             { label: 'OPEX', value: (mandatoryExpenses / (estimatedMonthlyIncome || 1)) * 100, color: 'bg-white/10 group-hover/bar:bg-white/20' },
+                             { label: 'GOALS', value: (monthlyGoalCommitments / (estimatedMonthlyIncome || 1)) * 100, color: 'bg-brand-accent/30 group-hover/bar:bg-brand-accent/50' },
+                             { label: 'SAFE', value: (strategicSpendingCeiling / (estimatedMonthlyIncome || 1)) * 100, color: 'bg-brand-accent group-hover/bar:scale-x-105' },
+                           ].map((item, idx) => (
+                             <div key={idx} className="flex-1 space-y-3 group/bar">
+                               <div className="relative h-full flex flex-col justify-end">
+                                 <motion.div 
+                                   initial={{ height: 0 }}
+                                   animate={{ height: `${Math.min(100, item.value)}%` }}
+                                   className={cn("w-full rounded-t-sm transition-all duration-500", item.color)} 
+                                 />
+                               </div>
+                               <p className="text-[8px] font-bold text-white/20 group-hover/bar:text-white/60 uppercase text-center transition-colors tracking-tighter">{item.label}</p>
+                             </div>
+                           ))}
+                        </div>
                       </div>
-                      <p className="text-sm text-white/30 font-medium max-w-sm leading-relaxed">Your tactical liquidity for discretionary spending after ensuring all goals are funded.</p>
                     </div>
 
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-8 pt-10 border-t border-white/10">
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-8 pt-10 border-t border-white/5">
                       <div className="space-y-2">
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-white/20">Monthly Ceiling</p>
-                        <p className="text-2xl font-mono font-bold">{formatCurrency(strategicSpendingCeiling)}</p>
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-white/20">Spending Ceiling</p>
+                        <p className="text-2xl font-mono font-bold tracking-tighter">{formatCurrency(strategicSpendingCeiling)}</p>
                       </div>
                       <div className="space-y-2">
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-white/20">Absorption</p>
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-white/20">Credit Floor</p>
+                        <p className="text-2xl font-mono font-bold tracking-tighter">{formatCurrency(estimatedMonthlyIncome)}</p>
+                      </div>
+                      <div className="space-y-2">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-white/20">Capital Absorption</p>
                         <div className="flex items-center gap-3">
-                          <span className="text-2xl font-mono font-bold">{((spentThisMonth / (strategicSpendingCeiling || 1)) * 100).toFixed(0)}%</span>
-                          <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden hidden sm:block">
+                          <span className="text-2xl font-mono font-bold tracking-tighter">{((spentThisMonth / (strategicSpendingCeiling || 1)) * 100).toFixed(0)}%</span>
+                          <div className="flex-1 h-1 bg-white/5 rounded-full overflow-hidden hidden sm:block">
                             <motion.div 
                               initial={{ width: 0 }}
                               animate={{ width: `${Math.min(100, (spentThisMonth / (strategicSpendingCeiling || 1)) * 100)}%` }}
-                              className="h-full bg-brand-accent shadow-[0_0_10px_rgba(16,185,129,0.5)]" 
+                              className="h-full bg-brand-accent shadow-[0_0_12px_rgba(16,185,129,0.3)]" 
                             />
                           </div>
                         </div>
                       </div>
-                      <div className="space-y-2 col-span-2 md:col-span-1">
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-brand-accent/50">Goal Commitment</p>
-                        <p className="text-2xl font-mono font-bold text-brand-accent">{formatCurrency(monthlyGoalCommitments)}</p>
+                      <div className="space-y-2 lg:pl-10 lg:border-l border-white/5">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-brand-accent/50">Alpha Retention</p>
+                        <p className="text-2xl font-mono font-bold text-brand-accent tracking-tighter">{savingsRate.toFixed(1)}%</p>
                       </div>
                     </div>
                   </div>
@@ -873,41 +955,41 @@ function MainApp() {
               {/* Tactical Sidebar */}
               <div className="md:col-span-4 space-y-6">
                 {/* Daily Pulse Card */}
-                <div className="bg-brand-surface border border-brand-border rounded-[2.5rem] p-6 shadow-sm flex flex-col justify-between relative overflow-hidden group">
+                <div className="bg-brand-surface border border-brand-border rounded-[2.5rem] p-8 shadow-sm flex flex-col justify-between relative overflow-hidden group">
                   <div className="absolute top-0 right-0 w-32 h-32 bg-brand-primary/5 rounded-full blur-[50px] -mr-16 -mt-16" />
                   
-                  <div className="space-y-5 relative z-10">
+                  <div className="space-y-6 relative z-10">
                     <div className="flex items-center justify-between">
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-brand-primary/40">Today's Velocity</p>
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-brand-primary/40">Diurnal Velocity</p>
                       <div className={cn(
-                        "w-8 h-8 rounded-xl flex items-center justify-center border shadow-inner transition-colors",
+                        "w-10 h-10 rounded-[1.25rem] flex items-center justify-center border shadow-inner transition-colors",
                         dailyRemaining > 0 ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : "bg-rose-500/10 text-rose-500 border-rose-500/20"
                       )}>
-                        <Activity className="w-4 h-4" />
+                        <Activity className="w-5 h-5" />
                       </div>
                     </div>
 
-                    <div className="space-y-0.5">
+                    <div className="space-y-1">
                       <h3 className={cn(
-                        "text-3xl font-mono font-bold tracking-tighter tabular-nums",
-                        dailyRemaining > 0 ? "text-brand-primary" : "text-rose-500"
+                         "text-4xl font-mono font-bold tracking-tighter tabular-nums",
+                         dailyRemaining > 0 ? "text-brand-primary" : "text-rose-500"
                       )}>
                         {formatCurrency(dailyRemaining)}
                       </h3>
-                      <p className="text-[8px] font-bold text-brand-primary/30 uppercase tracking-[0.2em] px-1">Daily Buffer</p>
+                      <p className="text-[9px] font-bold text-brand-primary/30 uppercase tracking-[0.2em] px-1">Tactical Buffer</p>
                     </div>
                     
-                    <div className="pt-5 border-t border-brand-border/50">
-                      <div className="flex justify-between items-center text-[9px] font-bold uppercase tracking-widest mb-2">
-                        <span className="text-brand-primary/30">Limit</span>
-                        <span className="text-brand-primary">{formatCurrency(dailySpendingPower)}</span>
+                    <div className="pt-6 border-t border-brand-border/50">
+                      <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest mb-3">
+                        <span className="text-brand-primary/30">Threshold</span>
+                        <span className="text-brand-primary/60">{formatCurrency(dailySpendingPower)}</span>
                       </div>
                       <div className="h-1.5 w-full bg-brand-bg rounded-full overflow-hidden p-[1px] border border-brand-border">
                         <motion.div 
                           initial={{ width: 0 }}
                           animate={{ width: `${Math.min((spentToday / (dailySpendingPower || 1)) * 100, 100)}%` }}
                           className={cn(
-                            "h-full rounded-full transition-all duration-500",
+                            "h-full rounded-full transition-all duration-500 shadow-sm",
                             spentToday > dailySpendingPower ? "bg-rose-500" : "bg-brand-primary"
                           )}
                         />
@@ -916,11 +998,54 @@ function MainApp() {
                   </div>
 
                   <div className={cn(
-                    "mt-6 py-3 px-4 rounded-xl text-[8px] font-bold uppercase tracking-[0.2em] text-center flex items-center justify-center gap-2",
-                    isAheadOfBudget ? "bg-emerald-500/5 text-emerald-500 border border-emerald-500/10" : "bg-rose-500/5 text-rose-500 border border-rose-500/10"
+                    "mt-8 py-3 px-4 rounded-xl text-[9px] font-bold uppercase tracking-[0.2em] text-center flex items-center justify-center gap-2",
+                    isAheadOfBudget ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20" : "bg-rose-500/10 text-rose-500 border border-rose-500/20"
                   )}>
-                    <div className={cn("w-1 h-1 rounded-full", isAheadOfBudget ? "bg-emerald-500" : "bg-rose-500")} />
-                    {isAheadOfBudget ? 'Within Daily Parameters' : 'Target Threshold Exceeded'}
+                    <div className={cn("w-1.5 h-1.5 rounded-full", isAheadOfBudget ? "bg-emerald-500 animate-pulse" : "bg-rose-500")} />
+                    {isAheadOfBudget ? 'Within Parameters' : 'Threshold Breach'}
+                  </div>
+                </div>
+
+                {/* Flow Health Card */}
+                <div className="bg-brand-surface border border-brand-border rounded-[2.5rem] p-8 shadow-sm space-y-6 relative overflow-hidden group hover:border-brand-primary/20 transition-all">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-brand-primary/40">Capital Retention</p>
+                    <div className={cn(
+                      "px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest border",
+                      savingsRate >= 20 ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : "bg-rose-500/10 text-rose-500 border-rose-500/20"
+                    )}>
+                      {savingsRate >= 40 ? 'Elite' : savingsRate >= 20 ? 'Optimal' : 'Sub-Optimal'}
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-end justify-between">
+                    <div className="space-y-1">
+                      <h3 className="text-4xl font-mono font-bold text-brand-primary tracking-tighter tabular-nums">{savingsRate.toFixed(1)}%</h3>
+                      <p className="text-[9px] font-medium text-brand-primary/20 uppercase tracking-[0.2em] px-1">System Yield</p>
+                    </div>
+                    <div className="text-right space-y-1">
+                      <p className="text-[10px] font-bold text-brand-primary/30 uppercase tracking-tighter">Velocity</p>
+                      <p className="text-xl font-mono font-bold tracking-tighter">{incomeCoverage.toFixed(2)}x</p>
+                    </div>
+                  </div>
+
+                  <div className="pt-8 border-t border-brand-border/30">
+                    <div className="flex justify-between items-center mb-3">
+                       <span className="text-[10px] font-bold uppercase tracking-widest text-brand-primary/30">Net Flow Alpha</span>
+                       <span className={cn(
+                         "text-xs font-mono font-bold",
+                         (estimatedMonthlyIncome - monthlyBurn) > 0 ? "text-emerald-500" : "text-rose-500"
+                       )}>
+                         {estimatedMonthlyIncome - monthlyBurn > 0 ? '+' : ''}{formatCurrency(estimatedMonthlyIncome - monthlyBurn)}
+                       </span>
+                    </div>
+                    <div className="h-1 bg-brand-border/20 rounded-full overflow-hidden">
+                      <motion.div 
+                        initial={{ width: 0 }}
+                        animate={{ width: `${Math.min(100, savingsRate)}%` }}
+                        className="h-full bg-brand-primary shadow-[0_0_8px_rgba(0,0,0,0.1)]" 
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -1085,11 +1210,18 @@ function MainApp() {
                 </div>
               </div>
             </div>
-          </div>
-        )}
+            </motion.div>
+          )}
 
-        {activeTab === 'history' && (
-          <div className="space-y-6 md:space-y-10">
+          {activeTab === 'history' && (
+            <motion.div 
+              key="history"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              className="space-y-10 md:space-y-16"
+            >
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
               <div className="space-y-1">
                 <h2 className="section-header">Ledger</h2>
@@ -1247,7 +1379,7 @@ function MainApp() {
                     {['All', 'Expenses', 'Income'].map(f => (
                       <button 
                         key={f} 
-                        onClick={() => setFilter(f as any)}
+                        onClick={() => setFilter(f as any)} 
                         className={cn(
                           "px-6 py-2 rounded-full text-[10px] font-bold uppercase tracking-[0.2em] transition-all",
                           filter === f ? "bg-brand-primary text-brand-surface shadow-lg" : "text-brand-primary/30 hover:text-brand-primary/60"
@@ -1392,11 +1524,18 @@ function MainApp() {
                 </motion.div>
               ))}
             </div>
-          </div>
-        )}
+        </motion.div>
+      )}
 
-        {activeTab === 'goals' && (
-          <div className="space-y-12">
+          {activeTab === 'goals' && (
+            <motion.div 
+              key="goals"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              className="space-y-12 md:space-y-16"
+            >
             <div className="flex gap-2 p-1 bg-brand-bg/50 border border-brand-border rounded-xl w-fit mb-8">
               <button 
                 onClick={() => setGoalsSubTab('strategy')}
@@ -1505,15 +1644,59 @@ function MainApp() {
                 )}
               </div>
             ) : (
-              <div className="space-y-12 animate-in fade-in slide-in-from-right-4 duration-500">
-                <div className="flex flex-col md:flex-row md:items-end justify-between px-1 gap-4">
+              <div className="space-y-16 animate-in fade-in slide-in-from-right-4 duration-500">
+                {/* Income Streams Section */}
+                <div className="space-y-8">
+                  <div className="flex flex-col md:flex-row md:items-end justify-between px-1 gap-4">
                     <div className="space-y-1">
-                      <h2 className="text-3xl font-sans font-bold uppercase tracking-tight text-brand-primary leading-tight py-1">SIP Portfolio</h2>
+                      <h2 className="text-3xl font-sans font-bold uppercase tracking-tight text-brand-primary leading-tight py-1">Income Streams</h2>
+                      <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-wider py-0.5">Recurring Baseline Inflow Mandates</p>
+                    </div>
+                    <button 
+                      onClick={() => {
+                        setCommandTab('income');
+                        setEditingIncomeStream(null);
+                        setShowCommandCenter(true);
+                      }}
+                      className="flex items-center gap-2 px-6 py-3 bg-brand-primary text-brand-surface rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-brand-primary/90 transition-all shadow-lg group shadow-emerald-500/10"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Add Income Stream
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
+                    {incomeStreams.map(stream => (
+                      <IncomeStreamItem 
+                        key={stream.id} 
+                        stream={stream} 
+                        onEdit={() => { 
+                          setEditingIncomeStream(stream); 
+                          setCommandTab('income');
+                          setShowCommandCenter(true); 
+                        }} 
+                        onDelete={() => handleDeleteIncomeStream(stream.id!)}
+                      />
+                    ))}
+                    {incomeStreams.length === 0 && (
+                      <div className="col-span-full py-16 text-center border-2 border-dashed border-brand-border rounded-[2.5rem] bg-brand-surface/30">
+                        <p className="data-label text-brand-primary/20">No recurring income streams defined</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* SIP Portfolio Section */}
+                <div className="space-y-8 pt-8 border-t border-brand-border/30">
+                  <div className="flex flex-col md:flex-row md:items-end justify-between px-1 gap-4">
+                    <div className="space-y-1">
+                      <h2 className="text-3xl font-sans font-bold uppercase tracking-tight text-brand-primary leading-tight py-1 text-emerald-500">SIP Portfolio</h2>
                       <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-wider py-0.5">Automated Investment Protocols</p>
                     </div>
                     <button 
                       onClick={() => {
                         setCommandTab('sip');
+                        setEditingSip(null);
                         setShowCommandCenter(true);
                       }}
                       className="flex items-center gap-2 px-6 py-3 bg-brand-primary text-brand-surface rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-brand-primary/90 transition-all shadow-lg group shadow-emerald-500/10"
@@ -1544,26 +1727,31 @@ function MainApp() {
                       />
                     ))}
                     {sips.length === 0 && (
-                      <div className="col-span-full py-20 text-center border-2 border-dashed border-brand-border rounded-[2.5rem] bg-brand-surface/30">
-                        <div className="w-16 h-16 bg-brand-primary/5 rounded-full flex items-center justify-center mx-auto mb-4 border border-brand-border">
-                          <Calendar className="w-8 h-8 text-brand-primary/20" />
-                        </div>
-                        <p className="data-label">No automated investment plans configured</p>
-                        <p className="text-[8px] font-mono text-brand-primary/20 uppercase tracking-widest mt-2">Proper SIP management requires active mandates</p>
+                      <div className="col-span-full py-16 text-center border-2 border-dashed border-brand-border rounded-[2.5rem] bg-brand-surface/30">
+                        <p className="data-label text-brand-primary/20">No automated investment plans configured</p>
                       </div>
                     )}
                   </div>
+                </div>
               </div>
             )}
-          </div>
+          </motion.div>
         )}
 
         {activeTab === 'insights' && (
-          <React.Suspense fallback={
-            <div className="flex items-center justify-center py-20">
-              <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-brand-primary"></div>
-            </div>
-          }>
+          <motion.div 
+            key="insights"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            className="space-y-6"
+          >
+            <React.Suspense fallback={
+              <div className="flex items-center justify-center py-20">
+                <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-brand-primary"></div>
+              </div>
+            }>
             <div className="space-y-16">
               <div className="flex flex-col md:flex-row md:items-end justify-between px-1 gap-4">
                 <div className="space-y-1">
@@ -1597,6 +1785,8 @@ function MainApp() {
                     strategicSpendingCeiling={strategicSpendingCeiling}
                     dailySpendingPower={dailySpendingPower}
                     monthlyGoalCommitments={monthlyGoalCommitments}
+                    savingsRate={savingsRate}
+                    incomeCoverage={incomeCoverage}
                   />
                 </div>
                 
@@ -1683,8 +1873,10 @@ function MainApp() {
               </div>
             </div>
           </React.Suspense>
+          </motion.div>
         )}
-      </main>
+      </AnimatePresence>
+    </main>
 
       {/* Strategic Command Center */}
       <AnimatePresence>
@@ -1694,6 +1886,8 @@ function MainApp() {
               setShowCommandCenter(false);
               setEditingGoal(null);
               setEditingTransaction(null);
+              setEditingSip(null);
+              setEditingIncomeStream(null);
             }} 
             userId={user.uid}
             transactions={transactions}
@@ -1706,6 +1900,7 @@ function MainApp() {
             sips={sips}
             onDeleteSIP={handleDeleteSIP}
             editingSip={editingSip}
+            editingIncomeStream={editingIncomeStream}
           />
         )}
       </AnimatePresence>
@@ -1738,6 +1933,59 @@ function MainApp() {
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+function IncomeStreamItem({ stream, onEdit, onDelete }: { stream: IncomeStream, onEdit?: () => void, onDelete?: () => void }) {
+  const statusColor = {
+    active: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20',
+    inactive: 'text-brand-primary/40 bg-brand-primary/5 border-brand-primary/10',
+  };
+
+  return (
+    <motion.div 
+      whileHover={{ y: -2 }}
+      className="bg-brand-surface border border-brand-border rounded-[2.5rem] p-8 space-y-6 flex flex-col justify-between group hover:border-brand-primary/20 transition-all shadow-sm"
+    >
+      <div className="space-y-4">
+        <div className="flex justify-between items-start">
+          <div className="space-y-1">
+            <div className="flex items-center gap-3">
+              <h3 className="text-xl font-sans font-bold text-brand-primary uppercase tracking-tight">{stream.name}</h3>
+              <div className={cn(
+                "px-2 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-widest border",
+                statusColor[stream.status as keyof typeof statusColor]
+              )}>
+                {stream.status}
+              </div>
+            </div>
+            <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-wider">Baseline Income Mandate</p>
+          </div>
+          <p className="text-2xl font-mono font-bold text-brand-primary">{formatCurrency(stream.amount)}</p>
+        </div>
+      </div>
+
+      <div className="pt-4 border-t border-brand-border/30 flex justify-between items-center">
+        <div className="flex items-center gap-2">
+           <Calendar className="w-3 h-3 text-brand-primary/20" />
+           <span className="text-[8px] font-bold text-brand-primary/40 uppercase tracking-widest">Expected Credit: {stream.dayOfMonth}th of month</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={(e) => { e.stopPropagation(); onDelete?.(); }}
+            className="p-2 text-brand-primary/20 hover:text-rose-500 transition-colors"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+          <button 
+            onClick={(e) => { e.stopPropagation(); onEdit?.(); }}
+            className="p-2 text-brand-primary/20 hover:text-brand-primary transition-colors"
+          >
+             <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    </motion.div>
   );
 }
 
@@ -1990,16 +2238,138 @@ function GoalItem({ goal, onEdit, onDelete }: { goal: Goal, onEdit?: () => void,
   );
 }
 
+function IncomeStreamForm({ onClose, userId, editingIncomeStream }: { onClose: () => void, userId: string, editingIncomeStream: IncomeStream | null }) {
+  const [name, setName] = useState(editingIncomeStream?.name || '');
+  const [amount, setAmount] = useState(editingIncomeStream?.amount.toString() || '');
+  const [dayOfMonth, setDayOfMonth] = useState(editingIncomeStream?.dayOfMonth.toString() || '1');
+  const [status, setStatus] = useState<'active' | 'inactive'>(editingIncomeStream?.status || 'active');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name || !amount || isSubmitting) return;
+
+    setIsSubmitting(true);
+    setErrorMsg(null);
+    try {
+      const streamData = {
+        name,
+        amount: parseFloat(amount),
+        dayOfMonth: parseInt(dayOfMonth),
+        status,
+        userId
+      };
+
+      if (editingIncomeStream?.id) {
+        await updateDoc(doc(db, 'incomeStreams', editingIncomeStream.id), streamData);
+      } else {
+        await addDoc(collection(db, 'incomeStreams'), streamData);
+      }
+      onClose();
+    } catch (error: any) {
+      console.error('Save failed:', error);
+      setErrorMsg(`Persistence Failure: ${error.message || 'Check database access rules.'}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-6 pb-8 px-1">
+      {errorMsg && (
+        <div className="bg-rose-500/10 border-l-2 border-rose-500 p-3 rounded-r-lg">
+          <p className="text-[8px] font-mono font-bold uppercase tracking-widest text-rose-500">Error</p>
+          <p className="text-[10px] font-bold text-rose-600 mt-1">{errorMsg}</p>
+        </div>
+      )}
+
+      <div className="space-y-4">
+        <div className="group/input space-y-2">
+          <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Stream Identity</label>
+          <input 
+            autoFocus
+            type="text" 
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g., PRIMARY SALARY"
+            className="w-full bg-brand-surface border border-brand-border rounded-lg py-2.5 px-4 font-sans font-bold text-sm text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none uppercase tracking-tight"
+            required
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="group/input space-y-2">
+            <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Monthly Amount</label>
+            <div className="relative">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 font-mono font-bold text-brand-primary/10 group-focus-within/input:text-brand-accent transition-colors text-base">₹</span>
+              <input 
+                type="number" 
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="0.00"
+                className="w-full bg-brand-surface border border-brand-border rounded-lg py-2.5 pl-8 pr-4 font-mono font-bold text-lg text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none"
+                required
+              />
+            </div>
+          </div>
+          <div className="group/input space-y-2">
+            <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Credit Day</label>
+            <input 
+              type="number" 
+              min="1"
+              max="31"
+              value={dayOfMonth}
+              onChange={(e) => setDayOfMonth(e.target.value)}
+              className="w-full bg-brand-surface border border-brand-border rounded-lg py-2.5 px-4 font-mono font-bold text-lg text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none"
+              required
+            />
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Status</label>
+          <div className="flex gap-2">
+            {['active', 'inactive'].map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setStatus(s as any)}
+                className={cn(
+                  "flex-1 py-3 rounded-lg text-[9px] font-bold uppercase tracking-[0.2em] transition-all relative z-10 border",
+                  status === s 
+                    ? "bg-brand-primary text-brand-surface border-brand-primary shadow-md" 
+                    : "bg-brand-surface text-brand-primary/30 border-brand-border hover:text-brand-primary/60"
+                )}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <button 
+        type="submit" 
+        disabled={isSubmitting}
+        className="w-full py-4 bg-brand-primary text-brand-surface rounded-lg font-bold text-[9px] uppercase tracking-[0.4em] shadow-lg active:scale-[0.98] transition-all border border-white/10 hover:bg-brand-primary/95"
+      >
+        {isSubmitting ? 'PROCESSING...' : (editingIncomeStream ? 'UPDATE MANDATE' : 'ESTABLISH MANDATE')}
+      </button>
+    </form>
+  );
+}
+
 const EXPENSE_CATEGORIES = {
   'Dining & Delivery': ['Swiggy', 'Zomato', 'Restaurants', 'Cafes', 'Fine Dining', 'Other'],
   'Groceries & Q-Commerce': ['Blinkit', 'Instamart', 'Zepto', 'BigBasket', 'Local Grocery', 'Other'],
-  'Shopping & Lifestyle': ['Myntra', 'Ajio', 'Nykaa', 'Tira', 'Zara', 'H&M', 'Amazon', 'Flipkart', 'Lifestyle', 'Other'],
+  'Shopping & Lifestyle': ['Myntra', 'Ajio', 'Nykaa', 'Tira', 'Zara', 'H&M', 'Amazon', 'Flipkart', 'Salon', 'Lifestyle', 'Other'],
   'Transport & Commute': ['Uber', 'Ola', 'Rapido', 'Fuel', 'Public Transport', 'Vehicle Service', 'Other'],
   'Bills & Utilities': ['Electricity', 'Gas', 'Water', 'Internet', 'Mobile Recharge', 'DTH', 'Other'],
   'Housing': ['Rent', 'Maintenance', 'Home Decor', 'Domestic Help', 'Property Tax', 'Other'],
   'Health & Wellness': ['Medical/Doctors', 'Pharmacy', 'Gym/Fitness', 'Insurance', 'Other'],
   'Travel & Stays': ['Flights', 'Trains', 'Hotels/Airbnb', 'Vacation', 'Other'],
-  'Entertainment': ['Netflix/Hotstar', 'Movies', 'Gaming', 'Events', 'Other'],
+  'Subscriptions': ['Netflix', 'Hotstar', 'Prime Video', 'Apple TV/Music', 'Spotify', 'YouTube Premium'],
   'Investments & EMI': ['SIP/Mutual Funds', 'Stocks', 'Gold', 'EMI/Loan', 'Other'],
   'Strategic Savings': ['Emergency Fund', 'Long-term Savings', 'Other'],
   'Other': ['Gifts', 'Donations', 'Misc', 'Other']
@@ -2024,23 +2394,25 @@ function CommandCenter({
   onDeleteGoal,
   sips,
   onDeleteSIP,
-  editingSip
+  editingSip,
+  editingIncomeStream
 }: { 
   onClose: () => void, 
   userId: string, 
   transactions: Transaction[], 
   goals: Goal[],
-  initialTab: 'transaction' | 'goal' | 'sip',
+  initialTab: 'transaction' | 'goal' | 'sip' | 'income',
   editingGoal: Goal | null,
   editingTransaction: Transaction | null,
   avgDailySpend: number,
   onDeleteGoal: (id: string) => Promise<void>,
   sips: SIP[],
   onDeleteSIP: (id: string) => Promise<void>,
-  editingSip: SIP | null
+  editingSip: SIP | null,
+  editingIncomeStream: IncomeStream | null
 }) {
-  const [activeTab, setActiveTab] = useState<'transaction' | 'goal' | 'sip'>(
-    editingGoal ? 'goal' : editingTransaction ? 'transaction' : editingSip ? 'sip' : initialTab
+  const [activeTab, setActiveTab] = useState<'transaction' | 'goal' | 'sip' | 'income'>(
+    editingGoal ? 'goal' : editingTransaction ? 'transaction' : editingSip ? 'sip' : editingIncomeStream ? 'income' : initialTab
   );
 
   return (
@@ -2063,7 +2435,7 @@ function CommandCenter({
                 </div>
                 <div className="space-y-0.5">
                   <h3 className="text-[11px] font-bold text-brand-primary uppercase tracking-widest leading-none">
-                    {activeTab === 'transaction' ? 'Quick Add' : activeTab === 'goal' ? 'Savings Goals' : 'SIP Manager'}
+                    {activeTab === 'transaction' ? 'Quick Add' : activeTab === 'goal' ? 'Savings Goals' : activeTab === 'income' ? 'Income Mandate' : 'SIP Manager'}
                   </h3>
                   <p className="text-[8px] font-mono font-bold text-brand-primary/30 uppercase tracking-[0.25em] leading-none">
                     {activeTab === 'sip' ? 'SYSTEMATIC INVESTMENTS' : 'Update your history'}
@@ -2091,6 +2463,13 @@ function CommandCenter({
                   editingSip={editingSip}
                 />
               )}
+              {activeTab === 'income' && (
+                <IncomeStreamForm 
+                  onClose={onClose} 
+                  userId={userId} 
+                  editingIncomeStream={editingIncomeStream} 
+                />
+              )}
               {activeTab === 'goal' && (
               <GoalModalContent 
                 onClose={onClose} 
@@ -2115,6 +2494,7 @@ function CommandCenter({
               <div className="flex gap-1.5 pb-1">
                 {[
                   { id: 'transaction', label: 'ADD', icon: Plus },
+                  { id: 'income', label: 'INFLOW', icon: ArrowUpRight },
                   { id: 'sip', label: 'SIP', icon: Calendar },
                   { id: 'goal', label: 'GOALS', icon: Target },
                 ].map((t) => (
