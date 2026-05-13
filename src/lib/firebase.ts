@@ -9,6 +9,10 @@ export const auth = getAuth(app);
 // Use the database ID from the config, fallback to default if not provided
 const dbId = firebaseConfig.firestoreDatabaseId || '(default)';
 export const db = getFirestore(app, dbId);
+
+// Optional: Enable long-polling if necessary for proxy compatibility
+// import { initializeFirestore } from 'firebase/firestore';
+// export const db = initializeFirestore(app, { experimentalForceLongPolling: true }, dbId);
 export const googleProvider = new GoogleAuthProvider();
 
 export enum OperationType {

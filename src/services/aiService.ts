@@ -1,13 +1,10 @@
-import { GoogleGenAI, Type } from "@google/genai";
 import { Transaction, Goal } from "../types";
 import { formatCurrency } from "../lib/utils";
 
 /**
  * Unified Financial Intelligence Service
- * Powered by Google Gemini
+ * Calls server-side proxy to protect API keys and avoid RPC/XHR errors in browser
  */
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
 export const generateCFOStrategy = async (
   transactions: Transaction[], 
@@ -73,11 +70,18 @@ You are a world-class financial strategist. Perform a ruthless strategic audit o
 `;
 
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: prompt,
+    const response = await fetch("/api/ai/strategy", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt }),
     });
-    return response.text || "Strategic generation failed. Please review your manual entries.";
+
+    if (!response.ok) {
+      throw new Error(`AI Request failed: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.text || "Strategic generation failed. Please review your manual entries.";
   } catch (error) {
     console.error("AI Strategy Error:", error);
     throw error;
@@ -103,21 +107,26 @@ Example: ["Insight 1", "Insight 2"]
 `;
 
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: prompt,
-      config: {
+    const response = await fetch("/api/ai/insights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ 
+        prompt,
         responseMimeType: "application/json",
         responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.STRING
-          }
+          type: "ARRAY",
+          items: { type: "STRING" }
         }
-      }
+      }),
     });
+
+    if (!response.ok) {
+      throw new Error(`AI Insights Request failed: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    let text = data.text || "[]";
     
-    let text = response.text || "[]";
     // Sanitize the response: extract only the JSON array if the model included extra text
     const bracketIndex = text.indexOf('[');
     const lastBracketIndex = text.lastIndexOf(']');
@@ -130,7 +139,6 @@ Example: ["Insight 1", "Insight 2"]
       return JSON.parse(text) as string[];
     } catch (parseError) {
       console.warn("JSON Parse Error, attempting recovery:", parseError);
-      // Fallback: If it's a list but failed to parse, try to find the match more aggressively
       const match = text.match(/\[.*\]/s);
       if (match) {
         return JSON.parse(match[0]) as string[];

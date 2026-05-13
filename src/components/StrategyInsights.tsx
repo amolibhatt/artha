@@ -19,6 +19,8 @@ interface StrategyInsightsProps {
   monthlyGoalCommitments: number;
   savingsRate: number;
   incomeCoverage: number;
+  estimatedMonthlyIncome: number;
+  estimatedFixedCosts: number;
 }
 
 export function StrategyInsights({ 
@@ -33,7 +35,9 @@ export function StrategyInsights({
   dailySpendingPower,
   monthlyGoalCommitments,
   savingsRate,
-  incomeCoverage
+  incomeCoverage,
+  estimatedMonthlyIncome,
+  estimatedFixedCosts
 }: StrategyInsightsProps) {
   const [strategy, setStrategy] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -55,11 +59,15 @@ export function StrategyInsights({
   const totalIncomeCalc = totalIncome; 
 
   // Capital Efficiency Score: (Income - Mandatory) / Income
-  const efficiencyScore = totalIncome > 0 ? ((totalIncome - mandatoryExpenses) / totalIncome) * 100 : 0;
+  const efficiencyScore = estimatedMonthlyIncome > 0 ? ((estimatedMonthlyIncome - estimatedFixedCosts) / estimatedMonthlyIncome) * 100 : 0;
 
   // Identify "Structural Waste" - Discretionary categories that are high
   const wasteAnalysis = transactions
-    .filter(t => t.type === 'expense' && !t.isMandatory)
+    .filter(t => {
+      const d = new Date(t.date);
+      const isThisMonth = d.getMonth() === new Date().getMonth() && d.getFullYear() === new Date().getFullYear();
+      return isThisMonth && t.type === 'expense' && !t.isMandatory;
+    })
     .reduce((acc: Record<string, number>, t) => {
       acc[t.category] = (acc[t.category] || 0) + t.amount;
       return acc;
@@ -314,19 +322,19 @@ export function StrategyInsights({
                 <Compass className="w-6 h-6 text-brand-accent/60" />
               </div>
               <div className="space-y-0.5">
-                <h3 className="text-2xl font-sans font-bold uppercase tracking-tight leading-none">Capital Deployment Map</h3>
+                <h3 className="text-2xl font-sans font-bold uppercase tracking-tight leading-none text-brand-surface">Capital Deployment Map</h3>
                 <p className="text-[10px] text-white/30 font-bold uppercase tracking-[0.3em]">Current Interval Allocation</p>
               </div>
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-4 gap-12">
               <div className="space-y-2">
-                <p className="text-[10px] font-bold text-white/20 uppercase tracking-widest">Total Liquidity In</p>
-                <p className="text-3xl font-mono font-bold tracking-tighter tabular-nums">{formatCurrency(totalIncome)}</p>
+                <p className="text-[10px] font-bold text-white/20 uppercase tracking-widest">Baseline Income</p>
+                <p className="text-3xl font-mono font-bold tracking-tighter tabular-nums">{formatCurrency(estimatedMonthlyIncome)}</p>
               </div>
               <div className="space-y-2">
                 <p className="text-[10px] font-bold text-white/20 uppercase tracking-widest">Fixed Asset Absorption</p>
-                <p className="text-3xl font-mono font-bold text-rose-400 tracking-tighter tabular-nums">-{formatCurrency(mandatoryExpenses)}</p>
+                <p className="text-3xl font-mono font-bold text-rose-400 tracking-tighter tabular-nums">-{formatCurrency(estimatedFixedCosts)}</p>
               </div>
               <div className="space-y-2">
                 <p className="text-[10px] font-bold text-white/20 uppercase tracking-widest">Growth Commitment</p>
@@ -339,14 +347,32 @@ export function StrategyInsights({
             </div>
             
             <div className="h-3 w-full bg-white/5 rounded-full overflow-hidden flex p-0.5 border border-white/10 mt-10 shadow-inner">
-              <div className="h-full bg-rose-500/80 rounded-l-full" style={{ width: `${(mandatoryExpenses/(totalIncome || 1))*100}%` }} />
-              <div className="h-full bg-brand-accent" style={{ width: `${(monthlyGoalCommitments/(totalIncome || 1))*100}%` }} />
-              <div className="h-full bg-white/40 rounded-r-full" style={{ width: `${(strategicSpendingCeiling/(totalIncome || 1))*100}%` }} />
+              <div className="h-full bg-rose-500/80 rounded-l-full" style={{ width: `${(estimatedFixedCosts/(estimatedMonthlyIncome || 1))*100}%` }} />
+              <div className="h-full bg-brand-accent" style={{ width: `${(monthlyGoalCommitments/(estimatedMonthlyIncome || 1))*100}%` }} />
+              <div className="h-full bg-white/40 rounded-r-full" style={{ width: `${(strategicSpendingCeiling/(estimatedMonthlyIncome || 1))*100}%` }} />
             </div>
-            <div className="flex justify-between items-center text-[9px] font-bold uppercase tracking-[0.3em] opacity-40">
-              <span className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 bg-rose-500 rounded-full" /> Operational Base</span>
-              <span className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 bg-brand-accent rounded-full" /> Capital Growth</span>
-              <span className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 bg-white/40 rounded-full" /> Tactical Reserve</span>
+            <div className="flex flex-wrap md:flex-nowrap justify-between items-start gap-8 text-[9px] font-bold uppercase tracking-[0.2em]">
+              <div className="flex items-start gap-3 flex-1 min-w-[200px]">
+                <div className="w-2 h-2 bg-rose-500 rounded-full mt-1 shrink-0" />
+                <div className="space-y-1">
+                  <p className="text-white/90">01_STABILIZE</p>
+                  <p className="text-white/30 lowercase font-normal leading-relaxed">Survival baseline: Mortgage, insurance, and mandatory nodes.</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3 flex-1 min-w-[200px]">
+                <div className="w-2 h-2 bg-brand-accent rounded-full mt-1 shrink-0" />
+                <div className="space-y-1">
+                  <p className="text-white/90">02_ACCEL</p>
+                  <p className="text-white/30 lowercase font-normal leading-relaxed">Growth propulsion: Wealth targets, retirement, and long-range goals.</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3 flex-1 min-w-[200px]">
+                <div className="w-2 h-2 bg-white/40 rounded-full mt-1 shrink-0" />
+                <div className="space-y-1">
+                  <p className="text-white/90">03_OPTIMIZE</p>
+                  <p className="text-white/30 lowercase font-normal leading-relaxed">Strategic freedom: Discretionary liquidity and alpha acquisitions.</p>
+                </div>
+              </div>
             </div>
           </div>
         </div>

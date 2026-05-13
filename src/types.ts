@@ -1,4 +1,4 @@
-export type TransactionType = 'income' | 'expense';
+export type TransactionType = 'income' | 'expense' | 'refund';
 export type GoalType = 'savings' | 'debt' | 'investment' | 'lifestyle';
 
 export interface Transaction {
@@ -27,6 +27,8 @@ export interface Goal {
   priority?: 'high' | 'medium' | 'low';
   userId: string;
   deadline?: string;
+  maturityValue?: number;
+  isScheme?: boolean;
   // Loan specific fields
   interestRate?: number;
   tenureMonths?: number;
@@ -44,6 +46,9 @@ export interface SIP {
   status: 'active' | 'paused' | 'stopped';
   userId: string;
   linkedGoalId?: string;
+  totalInstallments?: number;
+  firstInstallmentAmount?: number;
+  schemeType?: 'standard' | 'gold_scheme';
 }
 
 export interface IncomeStream {

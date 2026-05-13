@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { collection, query, where, onSnapshot, addDoc, orderBy, limit, getDocFromServer, doc, updateDoc, increment, getDocs, deleteDoc, writeBatch } from 'firebase/firestore';
 import { auth, db, signIn, logout, handleFirestoreError, OperationType } from './lib/firebase';
-import { Transaction, Goal, GoalType, StressTestState, SIP, IncomeStream } from './types';
+import { Transaction, Goal, GoalType, StressTestState, SIP, IncomeStream, TransactionType } from './types';
 import { formatCurrency, cn } from './lib/utils';
 import { 
   Plus, 
@@ -25,6 +25,7 @@ import {
   Calendar,
   Info,
   Trash2,
+  RefreshCcw,
   CheckCircle2,
   List,
   Zap,
@@ -72,7 +73,7 @@ const StrategyInsights = React.lazy(() => import('./components/StrategyInsights'
 const DebtOptimization = React.lazy(() => import('./components/DebtOptimization').then(m => ({ default: m.DebtOptimization })));
 const StressTestConsole = React.lazy(() => import('./components/StressTestConsole').then(m => ({ default: m.StressTestConsole })));
 
-const getContributionDelta = (amount: number, type: 'income' | 'expense', category: string, isForcedLink: boolean = false) => {
+const getContributionDelta = (amount: number, type: TransactionType, category: string, isForcedLink: boolean = false) => {
   if (isForcedLink) return amount;
   if (type === 'income') return amount;
   if (type === 'expense') {
@@ -81,6 +82,7 @@ const getContributionDelta = (amount: number, type: 'income' | 'expense', catego
       return amount;
     }
   }
+  if (type === 'refund') return -amount;
   return 0;
 };
 
@@ -292,10 +294,16 @@ function MainApp() {
   useEffect(() => {
     async function testConnection() {
       try {
-        await getDocFromServer(doc(db, 'test', 'connection'));
-      } catch (error) {
-        if(error instanceof Error && error.message.includes('the client is offline')) {
-          console.error("Please check your Firebase configuration.");
+        // Attempt to connect to a collection that exists in the rules
+        await getDocFromServer(doc(db, 'users', 'ping'));
+      } catch (error: any) {
+        // We expect PERMISSION_DENIED if we are not signed in, which is fine
+        // We only care if it's a connectivity error
+        if (error.code === 'unavailable' || error.message?.includes('offline')) {
+          console.warn("Firestore connectivity warning: Client appears to be offline or blocked.");
+        } else {
+          // Connection is alive if we get a permission error or similar
+          console.log("Firestore connection verified.");
         }
       }
     }
@@ -378,6 +386,7 @@ function MainApp() {
     last7Days,
     avgDailySpend,
     remainingDays,
+    estimatedFixedCosts,
     strategicSpendingCeiling,
     dailySpendingPower,
     monthlyGoalCommitments,
@@ -386,6 +395,15 @@ function MainApp() {
     savingsRate,
     incomeCoverage
   } = useFinancialEngine(transactions, goals, 0, stressTest, sips, incomeStreams);
+
+  // Allocation Hierarchy - Phase-wise sequence (Stabilization -> Acceleration -> Optimization)
+  const stabilizationAllocValue = estimatedFixedCosts + goals.filter(g => g.type === 'debt' || g.name.toLowerCase().includes('emergency')).reduce((acc, g) => {
+    if (g.currentAmount >= g.targetAmount) return acc;
+    return acc + (g.emi || g.monthlyContribution || (g.targetAmount * 0.05));
+  }, 0);
+
+  const accelerationAllocValue = Math.max(0, (monthlyGoalCommitments + sipMandates) - (stabilizationAllocValue - estimatedFixedCosts));
+  const optimizationAllocValue = strategicSpendingCeiling;
 
   const [insights, setInsights] = useState<string[]>([]);
   useEffect(() => {
@@ -438,43 +456,48 @@ function MainApp() {
 
   const historySummary = transactions.reduce((acc, t) => {
     if (t.type === 'income') acc.earned += t.amount;
-    else acc.spent += t.amount;
+    else if (t.type === 'expense') acc.spent += t.amount;
+    else if (t.type === 'refund') acc.spent -= t.amount;
     acc.net = acc.earned - acc.spent;
     return acc;
   }, { spent: 0, earned: 0, net: 0 });
 
   const historyCategoryData = transactions
-    .filter(t => t.type === 'expense')
+    .filter(t => t.type === 'expense' || t.type === 'refund')
     .reduce((acc: any[], t) => {
       const existing = acc.find(i => i.name === t.category);
+      const val = t.type === 'expense' ? t.amount : -t.amount;
       if (existing) {
-        existing.value += t.amount;
+        existing.value += val;
       } else {
-        acc.push({ name: t.category, value: t.amount });
+        acc.push({ name: t.category, value: val });
       }
       return acc;
     }, [])
+    .map(i => ({ ...i, value: Math.max(0, i.value) })) // Don't show negative categories
+    .filter(i => i.value > 0)
     .sort((a, b) => b.value - a.value);
 
   const totalExpense = historyCategoryData.reduce((acc, i) => acc + i.value, 0);
 
   const historyTrendData = [...transactions]
-    .filter(t => t.type === 'expense')
+    .filter(t => t.type === 'expense' || t.type === 'refund')
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
     .reduce((acc: any[], t) => {
       const date = new Date(t.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
       const existing = acc.find(i => i.date === date);
+      const val = t.type === 'expense' ? t.amount : -t.amount;
       if (existing) {
-        existing.amount += t.amount;
+        existing.amount += val;
       } else {
-        acc.push({ date, dateValue: t.date, amount: t.amount });
+        acc.push({ date, dateValue: t.date, amount: val });
       }
       return acc;
     }, [])
     .slice(-10); // Show last 10 days of activity
 
   const filteredTransactions = transactions.filter(t => {
-    if (filter === 'Expenses' && t.type !== 'expense') return false;
+    if (filter === 'Expenses' && t.type === 'income') return false;
     if (filter === 'Income' && t.type !== 'income') return false;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -515,9 +538,9 @@ function MainApp() {
     .filter(g => g.type === 'debt')
     .reduce((acc, g) => acc + g.currentAmount, 0);
   
-  const monthlyFixedExpenses = transactions
-    .filter(t => t.type === 'expense' && t.isMandatory)
-    .reduce((acc, t) => acc + t.amount, 0); // This should ideally be a recurring baseline, but using filtered for now
+  const monthlyFixedExpenses = Math.max(0, transactions
+    .filter(t => (t.type === 'expense' || t.type === 'refund') && t.isMandatory)
+    .reduce((acc, t) => acc + (t.type === 'expense' ? t.amount : -t.amount), 0));
   
   const monthlySurplus = Math.max(0, estimatedMonthlyIncome - monthlyFixedExpenses - monthlyGoalCommitments);
   
@@ -676,54 +699,49 @@ function MainApp() {
     <div className="min-h-screen bg-brand-bg text-brand-primary font-sans flex flex-col overflow-x-hidden pb-24 md:pb-32">
       
       {/* Strategic Command Bar (Top) */}
-      <header className="sticky top-0 z-40 bg-brand-surface/90 backdrop-blur-2xl border-b border-brand-border">
-        <div className="max-w-6xl mx-auto flex justify-between items-center px-4 py-4 md:px-8 md:py-6">
-          <div className="flex items-center gap-5 group cursor-pointer" onClick={() => setActiveTab('home')}>
+      <header className="sticky top-0 z-40 bg-brand-bg/80 backdrop-blur-3xl border-b border-brand-border/50 transition-all duration-500">
+        <div className="max-w-7xl mx-auto flex justify-between items-center px-4 py-4 md:px-10">
+          <div className="flex items-center gap-4 group cursor-pointer" onClick={() => setActiveTab('home')}>
             <div className="relative">
-              <motion.div 
-                className="w-10 h-10 border-[2px] border-brand-primary rounded-sm flex items-center justify-center p-1.5 group-hover:bg-brand-primary transition-all duration-500"
-              >
-                <motion.div 
-                  className="w-full h-full border-t-[2px] border-r-[2px] border-brand-primary/20 group-hover:border-brand-surface/40 flex items-center justify-center"
-                >
-                  <div className="w-1 h-1 bg-brand-accent rounded-full group-hover:bg-brand-surface" />
-                </motion.div>
-              </motion.div>
-              <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-brand-accent rounded-full border-2 border-brand-surface group-hover:scale-110 transition-transform" />
-            </div>
-            <div className="flex flex-col -space-y-1">
-              <span className="text-xl font-sans font-black uppercase tracking-[-0.05em] text-brand-primary">ARTHA</span>
-              <div className="flex items-center gap-1.5 pl-0.5">
-                <span className="text-[7px] font-bold text-brand-accent uppercase tracking-[0.3em]">Capital</span>
-                <div className="h-[1px] w-4 bg-brand-accent/30" />
-                <span className="text-[7px] font-bold text-brand-primary/30 uppercase tracking-[0.3em]">AI</span>
+              <div className="w-8 h-8 bg-brand-primary rounded-lg flex items-center justify-center p-1.5 transition-all duration-500 group-hover:scale-105 group-hover:shadow-[0_0_20px_rgba(0,0,0,0.1)]">
+                <Terminal className="w-full h-full text-brand-accent transition-transform group-hover:rotate-6" />
               </div>
+              <div className="absolute -top-1 -right-1 w-2 h-2 bg-brand-accent rounded-full border-2 border-brand-bg animate-pulse" />
+            </div>
+            <div className="flex flex-col">
+              <span className="text-lg font-display font-black uppercase tracking-tight text-brand-primary leading-none">ARTHA</span>
+              <span className="terminal-text !text-[7px]">SYSTEM_V3.0_LIVE</span>
             </div>
           </div>
           
-          <div className="hidden lg:flex items-center gap-8">
+          <div className="hidden lg:flex items-center gap-10">
             <div className="flex flex-col items-end">
-              <p className="data-label !text-brand-primary/40">Spending Speed</p>
-              <div className="flex items-center gap-1 text-emerald-500 font-mono font-bold text-[10px]">
-                <TrendingUp className="w-3 h-3" />
-                <span>On Track</span>
+              <p className="terminal-text !text-brand-primary/20">Operational Pulse</p>
+              <div className="flex items-center gap-2 text-brand-accent font-mono font-bold text-[10px]">
+                <Activity className="w-3 h-3 animate-pulse" />
+                <span className="uppercase tracking-widest">Normal Velocity</span>
               </div>
             </div>
-            <div className="h-8 w-[1px] bg-brand-border" />
+            <div className="h-6 w-[1px] bg-brand-border" />
             <div className="flex flex-col items-end">
-              <p className="data-label !text-brand-primary/40">Current Plan</p>
-              <div className={cn(
-                "px-2 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-widest border mt-1",
-                currentPhase === 'OPTIMIZATION' ? "bg-brand-accent/5 text-brand-accent border-brand-accent/20" : "bg-brand-primary/5 text-brand-primary/40 border-brand-primary/10"
-              )}>
-                {currentPhase === 'STABILIZATION' ? 'Saving' : currentPhase === 'ACCELERATION' ? 'Growing' : 'Investing'}
+              <p className="terminal-text !text-brand-primary/20">Capital Phase</p>
+              <div className="px-3 py-0.5 bg-brand-primary/5 rounded-full text-[9px] font-bold uppercase tracking-widest border border-brand-primary/10 mt-0.5">
+                {currentPhase}
               </div>
             </div>
+            <button 
+              onClick={() => logout()}
+              className="p-2 text-brand-primary/20 hover:text-rose-500 transition-colors"
+              title="Terminate Session"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
           </div>
 
-          <div className="lg:hidden flex flex-col items-end gap-1">
-             <div className="w-10 h-10 rounded-xl bg-brand-bg border border-brand-border flex items-center justify-center">
-                <div className="w-1 h-1 rounded-full bg-brand-accent animate-ping" />
+          <div className="lg:hidden flex items-center gap-4">
+             <div className="flex flex-col items-end">
+                <p className="terminal-text !text-[7px]">Pulse</p>
+                <div className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-pulse" />
              </div>
           </div>
         </div>
@@ -811,405 +829,317 @@ function MainApp() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
-              className="space-y-8"
+              transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
+              className="space-y-12"
             >
-            {/* Executive Summary Section */}
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 px-1">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-                  <span className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-[0.3em]">Live Portfolio Feed</span>
+              {/* Contextual Executive Greeting */}
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 px-4">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3">
+                    <div className="px-2 py-0.5 rounded-md bg-brand-primary text-brand-accent text-[8px] font-mono font-bold">MODE: COMMAND</div>
+                    <div className="h-px w-8 bg-brand-border" />
+                    <span className="terminal-text">PORTFOLIO_SYNC_COMPLETED</span>
+                  </div>
+                  <h1 className="text-4xl md:text-5xl font-display font-black text-brand-primary tracking-tight leading-none">
+                    EXECUTIVE SUMMARY
+                  </h1>
                 </div>
-                <h1 className="text-4xl font-sans font-bold text-brand-primary tracking-tight uppercase leading-none">Command Center</h1>
-                <p className="data-label">Real-time Financial Velocity</p>
-              </div>
-              
-              <div className="flex gap-3">
-                <div className="bg-brand-surface border border-brand-border px-4 py-3 rounded-2xl flex flex-col items-end shadow-sm">
-                  <span className="text-[8px] font-bold text-brand-primary/30 uppercase tracking-widest mb-1">System Health</span>
-                  <div className="flex items-center gap-2">
-                    <div className={cn(
-                      "w-1.5 h-1.5 rounded-full",
-                      healthStatus === 'STABILIZED' ? 'bg-emerald-500' : 'bg-brand-accent'
-                    )} />
-                    <span className="text-[11px] font-mono font-bold text-brand-primary">{healthStatus}</span>
+                
+                <div className="flex flex-wrap items-center gap-4 md:gap-10 pb-1">
+                  <div className="flex flex-col items-start md:items-end group cursor-help">
+                    <p className="terminal-text !text-brand-primary/20 group-hover:text-brand-primary/40 transition-colors">Operational Runway</p>
+                    <div className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-pulse" />
+                      <p className="text-2xl font-mono font-bold text-brand-primary tracking-tighter">
+                        {runwayMonths.toFixed(1)}<span className="text-[10px] font-medium text-brand-primary/40 ml-1 uppercase">Months</span>
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="hidden md:block h-8 w-px bg-brand-border/60" />
+                  
+                  <div className="flex flex-col items-start md:items-end group cursor-help">
+                    <p className="terminal-text !text-brand-primary/20 group-hover:text-brand-primary/40 transition-colors">Net Reserve Surplus</p>
+                    <p className="text-2xl font-mono font-bold text-brand-accent tracking-tighter">
+                      {formatCurrency(monthlySurplus)}
+                    </p>
                   </div>
                 </div>
               </div>
-            </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10">
-              {/* Primary Metric: Strategic Capacity */}
-              <div className="lg:col-span-8 space-y-8">
-                <section className="bg-brand-primary text-brand-surface rounded-[2.5rem] overflow-hidden shadow-2xl relative border border-white/5 group">
-                  <div className="absolute inset-0 opacity-[0.02] pointer-events-none transition-opacity group-hover:opacity-[0.05]" 
-                    style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '60px 60px' }} 
-                  />
+              {/* Central Intelligence Layer (Hero) */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 px-4">
+                <section className="lg:col-span-8 bg-brand-primary text-brand-surface rounded-[3rem] p-8 md:p-14 relative overflow-hidden shadow-2xl border border-white/5 group">
+                  <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-brand-accent/5 rounded-full blur-[120px] -translate-y-1/2 translate-x-1/2 pointer-events-none group-hover:bg-brand-accent/10 transition-all duration-1000" />
+                  <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#fff 0.5px, transparent 0.5px)', backgroundSize: '12px 12px' }} />
                   
-                  <div className="p-8 md:p-12 space-y-12 relative z-10">
-                    <div className="flex flex-col md:flex-row md:items-start justify-between gap-10">
-                      <div className="space-y-6">
-                        <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/5 border border-white/10 rounded-full">
-                          <ShieldCheck className="w-3.5 h-3.5 text-brand-accent shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-                          <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">Tactical Liquidity Floor</span>
+                  <div className="relative z-10 space-y-12">
+                    <div className="flex flex-col xl:flex-row justify-between items-start gap-12">
+                      <div className="space-y-8 flex-1 w-full overflow-hidden">
+                        <div className="inline-flex items-center gap-2.5 px-4 py-1.5 bg-white/5 border border-white/10 rounded-full shadow-inner">
+                          <ShieldCheck className="w-3.5 h-3.5 text-brand-accent animate-pulse" />
+                          <span className="text-[10px] font-bold text-white/90 uppercase tracking-widest">Capital Protection Active</span>
                         </div>
-                        <div className="flex flex-col md:flex-row md:items-baseline gap-3 md:gap-5">
-                          <h2 className="text-6xl md:text-8xl font-sans font-black tracking-tighter leading-[0.9]">
-                            {formatCurrency(Math.max(0, strategicSpendingCeiling - spentThisMonth))}
-                          </h2>
-                          <span className="text-xl font-mono font-bold text-white/20 uppercase tracking-tighter">Remaining</span>
+                        
+                        <div className="space-y-2">
+                          <p className="terminal-text !text-white/30 !text-[11px] px-1">Freedom Deployment Limit</p>
+                          <div className="flex flex-wrap items-baseline gap-x-4 gap-y-2">
+                            <h2 className="text-5xl md:text-7xl xl:text-8xl font-display font-black tracking-tighter text-white leading-none break-all">
+                              {formatCurrency(Math.max(0, strategicSpendingCeiling - spentThisMonth))}
+                            </h2>
+                            <span className="text-brand-accent font-mono font-black text-xl md:text-2xl uppercase italic animate-pulse">Alpha</span>
+                          </div>
+                          <p className="text-base md:text-lg text-white/60 font-medium max-w-md leading-relaxed pt-2">
+                            Validated <span className="text-white font-bold">Tactical Liquidity</span> available for growth deployment and high-signal acquisitions.
+                          </p>
                         </div>
-                        <p className="text-sm text-white/30 font-medium max-w-sm leading-relaxed">
-                          Your available liquidity for tactical deployment after securing all fixed obligations and goal commitments.
-                        </p>
                       </div>
 
-                      {/* Cash Flow Waterfall Visualization */}
-                      <div className="w-full md:w-64 space-y-6">
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-white/20">Allocation Hierarchy</p>
-                        <div className="h-20 flex gap-2 items-end">
-                           {[
-                             { label: 'OPEX', value: (mandatoryExpenses / (estimatedMonthlyIncome || 1)) * 100, color: 'bg-white/10 group-hover/bar:bg-white/20' },
-                             { label: 'GOALS', value: (monthlyGoalCommitments / (estimatedMonthlyIncome || 1)) * 100, color: 'bg-brand-accent/30 group-hover/bar:bg-brand-accent/50' },
-                             { label: 'SAFE', value: (strategicSpendingCeiling / (estimatedMonthlyIncome || 1)) * 100, color: 'bg-brand-accent group-hover/bar:scale-x-105' },
-                           ].map((item, idx) => (
-                             <div key={idx} className="flex-1 space-y-3 group/bar">
-                               <div className="relative h-full flex flex-col justify-end">
-                                 <motion.div 
-                                   initial={{ height: 0 }}
-                                   animate={{ height: `${Math.min(100, item.value)}%` }}
-                                   className={cn("w-full rounded-t-sm transition-all duration-500", item.color)} 
-                                 />
-                               </div>
-                               <p className="text-[8px] font-bold text-white/20 group-hover/bar:text-white/60 uppercase text-center transition-colors tracking-tighter">{item.label}</p>
-                             </div>
-                           ))}
+                      {/* Strategic Waterfall Map */}
+                      <div className="w-full xl:w-80 space-y-8 bg-white/5 p-6 md:p-8 rounded-[2.5rem] border border-white/10 backdrop-blur-md shrink-0">
+                        <div className="space-y-1">
+                          <p className="terminal-text !text-white/40">Capital Stack</p>
+                          <p className="text-[9px] text-white/20 italic">Forced Priority Sequence</p>
+                        </div>
+                        
+                        <div className="space-y-4">
+                          {[
+                            { label: 'Stabilize', amount: stabilizationAllocValue, color: 'bg-rose-500/30' },
+                            { label: 'Accelerate', amount: accelerationAllocValue, color: 'bg-brand-accent/40' },
+                            { label: 'Optimize', amount: optimizationAllocValue, color: 'bg-brand-accent' },
+                          ].map((item, idx) => (
+                            <div key={idx} className="space-y-2">
+                              <div className="flex justify-between items-center text-[10px] font-bold text-white/50 uppercase tracking-tighter">
+                                <span>0{idx+1}__{item.label}</span>
+                                <span className="font-mono text-white/90">{formatCurrency(item.amount)}</span>
+                              </div>
+                              <div className="h-1 text-xs flex rounded-full bg-white/5 overflow-hidden">
+                                <motion.div 
+                                  initial={{ width: 0 }}
+                                  animate={{ width: `${Math.min(100, (item.amount / (estimatedMonthlyIncome || 1)) * 100)}%` }}
+                                  className={cn("h-full transition-all duration-700", item.color)} 
+                                />
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-8 pt-10 border-t border-white/5">
-                      <div className="space-y-2">
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-white/20">Spending Ceiling</p>
-                        <p className="text-2xl font-mono font-bold tracking-tighter">{formatCurrency(strategicSpendingCeiling)}</p>
-                      </div>
-                      <div className="space-y-2">
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-white/20">Credit Floor</p>
-                        <p className="text-2xl font-mono font-bold tracking-tighter">{formatCurrency(estimatedMonthlyIncome)}</p>
-                      </div>
-                      <div className="space-y-2">
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-white/20">Capital Absorption</p>
-                        <div className="flex items-center gap-3">
-                          <span className="text-2xl font-mono font-bold tracking-tighter">{((spentThisMonth / (strategicSpendingCeiling || 1)) * 100).toFixed(0)}%</span>
-                          <div className="flex-1 h-1 bg-white/5 rounded-full overflow-hidden hidden sm:block">
-                            <motion.div 
-                              initial={{ width: 0 }}
-                              animate={{ width: `${Math.min(100, (spentThisMonth / (strategicSpendingCeiling || 1)) * 100)}%` }}
-                              className="h-full bg-brand-accent shadow-[0_0_12px_rgba(16,185,129,0.3)]" 
-                            />
-                          </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-8 md:gap-12 pt-10 border-t border-white/10">
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-1 h-1 rounded-full bg-rose-500" />
+                          <p className="terminal-text !text-white/40 !text-[8px]">Operational_Burn</p>
                         </div>
+                        <p className="text-2xl font-mono font-bold text-white tracking-tighter tabular-nums">
+                          {formatCurrency(monthlyBurn)}<span className="text-[10px] font-normal text-white/20 ml-1">/mo</span>
+                        </p>
                       </div>
-                      <div className="space-y-2 lg:pl-10 lg:border-l border-white/5">
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-brand-accent/50">Alpha Retention</p>
-                        <p className="text-2xl font-mono font-bold text-brand-accent tracking-tighter">{savingsRate.toFixed(1)}%</p>
+                      
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-1 h-1 rounded-full bg-brand-accent/50" />
+                          <p className="terminal-text !text-white/40 !text-[8px]">Income_Yield</p>
+                        </div>
+                        <p className="text-2xl font-mono font-bold text-white tracking-tighter tabular-nums">
+                          {formatCurrency(estimatedMonthlyIncome)}
+                        </p>
+                      </div>
+                      
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-1 h-1 rounded-full bg-blue-500/50" />
+                          <p className="terminal-text !text-white/40 !text-[8px]">Safety_Margin</p>
+                        </div>
+                        <p className="text-2xl font-mono font-bold text-white tracking-tighter tabular-nums">
+                          {(incomeCoverage * 10).toFixed(0)}% <span className="text-[10px] font-normal text-white/20 ml-1">VLT</span>
+                        </p>
+                      </div>
+                      
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-1 h-1 rounded-full bg-brand-accent" />
+                          <p className="terminal-text !text-brand-accent !text-[8px]">Retention_Rate</p>
+                        </div>
+                        <div className="flex items-baseline gap-1">
+                          <p className="text-2xl font-mono font-bold text-brand-accent tracking-tighter tabular-nums">
+                            {savingsRate.toFixed(1)}%
+                          </p>
+                          <TrendingUp className="w-3 h-3 text-brand-accent/40" />
+                        </div>
                       </div>
                     </div>
                   </div>
                 </section>
 
-                {/* Strategic Surplus Card (CFO Intelligence) */}
-                {monthlySurplus > 0 && (
-                  <div className="bg-brand-surface border border-brand-border rounded-[2.5rem] p-8 md:p-10 shadow-sm relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 w-64 h-64 bg-brand-accent/5 rounded-full blur-[80px] -mr-32 -mt-32 transition-all duration-700 group-hover:scale-110" />
-                    
-                    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-8 relative z-10">
-                      <div className="space-y-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-brand-accent rounded-2xl flex items-center justify-center shadow-lg shadow-brand-accent/20">
-                            <Target className="w-5 h-5 text-brand-surface" />
-                          </div>
-                          <div className="space-y-0.5">
-                            <p className="text-[10px] font-bold text-brand-accent uppercase tracking-widest">Surplus Architect</p>
-                            <h3 className="text-xl font-display font-bold text-brand-primary tracking-tight">Deployment Strategy</h3>
-                          </div>
+                <aside className="lg:col-span-4 space-y-8">
+                  {/* Tactical Pulse - Real-time Velocity */}
+                  <div className="bento-card relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-brand-accent/5 rounded-full blur-[40px] -mr-16 -mt-16" />
+                    <div className="space-y-8 relative z-10">
+                      <div className="flex items-center justify-between">
+                        <p className="terminal-text">Tactical Pulse</p>
+                        <div className={cn(
+                          "w-10 h-10 rounded-2xl flex items-center justify-center transition-all duration-500",
+                          dailyRemaining > 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-rose-500/10 text-rose-500"
+                        )}>
+                          <Zap className="w-5 h-5" />
                         </div>
-                        <p className="text-sm text-brand-primary/50 font-medium max-w-md leading-relaxed">
-                          You have <span className="text-brand-primary font-bold">{formatCurrency(monthlySurplus)}</span> in unallocated surplus this month. 
-                          {surplusAdvice ? ` Strategically: ${surplusAdvice.action} towards '${surplusAdvice.target}'. ${surplusAdvice.impact}.` : " We recommend using this to build an additional 1-month emergency buffer."}
-                        </p>
                       </div>
                       
-                      <button 
-                        onClick={() => setActiveTab('goals')}
-                        className="w-full md:w-auto px-8 py-4 bg-brand-accent text-brand-surface rounded-xl text-[10px] font-bold uppercase tracking-widest shadow-xl hover:translate-y-[-2px] transition-all active:translate-y-0"
-                      >
-                        Optimize Surplus
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Tactical Sidebar */}
-              <div className="md:col-span-4 space-y-6">
-                {/* Daily Pulse Card */}
-                <div className="bg-brand-surface border border-brand-border rounded-[2.5rem] p-8 shadow-sm flex flex-col justify-between relative overflow-hidden group">
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-brand-primary/5 rounded-full blur-[50px] -mr-16 -mt-16" />
-                  
-                  <div className="space-y-6 relative z-10">
-                    <div className="flex items-center justify-between">
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-brand-primary/40">Diurnal Velocity</p>
-                      <div className={cn(
-                        "w-10 h-10 rounded-[1.25rem] flex items-center justify-center border shadow-inner transition-colors",
-                        dailyRemaining > 0 ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : "bg-rose-500/10 text-rose-500 border-rose-500/20"
-                      )}>
-                        <Activity className="w-5 h-5" />
-                      </div>
-                    </div>
-
-                    <div className="space-y-1">
-                      <h3 className={cn(
-                         "text-4xl font-mono font-bold tracking-tighter tabular-nums",
-                         dailyRemaining > 0 ? "text-brand-primary" : "text-rose-500"
-                      )}>
-                        {formatCurrency(dailyRemaining)}
-                      </h3>
-                      <p className="text-[9px] font-bold text-brand-primary/30 uppercase tracking-[0.2em] px-1">Tactical Buffer</p>
-                    </div>
-                    
-                    <div className="pt-6 border-t border-brand-border/50">
-                      <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest mb-3">
-                        <span className="text-brand-primary/30">Threshold</span>
-                        <span className="text-brand-primary/60">{formatCurrency(dailySpendingPower)}</span>
-                      </div>
-                      <div className="h-1.5 w-full bg-brand-bg rounded-full overflow-hidden p-[1px] border border-brand-border">
-                        <motion.div 
-                          initial={{ width: 0 }}
-                          animate={{ width: `${Math.min((spentToday / (dailySpendingPower || 1)) * 100, 100)}%` }}
-                          className={cn(
-                            "h-full rounded-full transition-all duration-500 shadow-sm",
-                            spentToday > dailySpendingPower ? "bg-rose-500" : "bg-brand-primary"
-                          )}
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className={cn(
-                    "mt-8 py-3 px-4 rounded-xl text-[9px] font-bold uppercase tracking-[0.2em] text-center flex items-center justify-center gap-2",
-                    isAheadOfBudget ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20" : "bg-rose-500/10 text-rose-500 border border-rose-500/20"
-                  )}>
-                    <div className={cn("w-1.5 h-1.5 rounded-full", isAheadOfBudget ? "bg-emerald-500 animate-pulse" : "bg-rose-500")} />
-                    {isAheadOfBudget ? 'Within Parameters' : 'Threshold Breach'}
-                  </div>
-                </div>
-
-                {/* Flow Health Card */}
-                <div className="bg-brand-surface border border-brand-border rounded-[2.5rem] p-8 shadow-sm space-y-6 relative overflow-hidden group hover:border-brand-primary/20 transition-all">
-                  <div className="flex items-center justify-between">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-brand-primary/40">Capital Retention</p>
-                    <div className={cn(
-                      "px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest border",
-                      savingsRate >= 20 ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : "bg-rose-500/10 text-rose-500 border-rose-500/20"
-                    )}>
-                      {savingsRate >= 40 ? 'Elite' : savingsRate >= 20 ? 'Optimal' : 'Sub-Optimal'}
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-end justify-between">
-                    <div className="space-y-1">
-                      <h3 className="text-4xl font-mono font-bold text-brand-primary tracking-tighter tabular-nums">{savingsRate.toFixed(1)}%</h3>
-                      <p className="text-[9px] font-medium text-brand-primary/20 uppercase tracking-[0.2em] px-1">System Yield</p>
-                    </div>
-                    <div className="text-right space-y-1">
-                      <p className="text-[10px] font-bold text-brand-primary/30 uppercase tracking-tighter">Velocity</p>
-                      <p className="text-xl font-mono font-bold tracking-tighter">{incomeCoverage.toFixed(2)}x</p>
-                    </div>
-                  </div>
-
-                  <div className="pt-8 border-t border-brand-border/30">
-                    <div className="flex justify-between items-center mb-3">
-                       <span className="text-[10px] font-bold uppercase tracking-widest text-brand-primary/30">Net Flow Alpha</span>
-                       <span className={cn(
-                         "text-xs font-mono font-bold",
-                         (estimatedMonthlyIncome - monthlyBurn) > 0 ? "text-emerald-500" : "text-rose-500"
-                       )}>
-                         {estimatedMonthlyIncome - monthlyBurn > 0 ? '+' : ''}{formatCurrency(estimatedMonthlyIncome - monthlyBurn)}
-                       </span>
-                    </div>
-                    <div className="h-1 bg-brand-border/20 rounded-full overflow-hidden">
-                      <motion.div 
-                        initial={{ width: 0 }}
-                        animate={{ width: `${Math.min(100, savingsRate)}%` }}
-                        className="h-full bg-brand-primary shadow-[0_0_8px_rgba(0,0,0,0.1)]" 
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Smart Insight Briefing */}
-                <div className="bg-brand-accent/5 border border-brand-accent/10 rounded-[2.5rem] p-8 space-y-6 relative overflow-hidden min-h-[220px] flex flex-col justify-center translate-z-0 group">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-brand-accent rounded-xl flex items-center justify-center text-brand-surface shadow-lg shadow-brand-accent/10">
-                      <Zap className="w-4 h-4" />
-                    </div>
-                    <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-accent">Strategic Pulse</p>
-                  </div>
-                  <blockquote className="text-base text-brand-primary font-sans font-bold leading-tight tracking-tight">
-                    { (spentThisMonth / (strategicSpendingCeiling || 1)) < 0.5 
-                      ? "Capital accumulation is currently high. This is the optimal window to execute a loan pre-payment."
-                      : (spentThisMonth / (strategicSpendingCeiling || 1)) > 0.9 
-                      ? "Discretionary spending is approaching the ceiling. Recommend temporary operational freeze."
-                      : "Portfolio maintenance is stable. Fixed commitments are safely covered for the current interval."
-                    }
-                  </blockquote>
-                </div>
-              </div>
-
-              {/* Lower Dashboard Grid - Portfolio Snapshot */}
-              <div className="md:col-span-12 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8 items-start">
-                {/* Debt Intelligence Quickview */}
-                {goals.some(g => g.type === 'debt') && (
-                  <motion.div 
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="bg-brand-primary p-8 md:p-10 rounded-[2.5rem] space-y-8 shadow-2xl relative overflow-hidden group"
-                  >
-                    <div className="absolute top-0 right-0 w-48 h-48 bg-brand-accent/30 rounded-full blur-[80px] -mr-24 -mt-24 group-hover:scale-125 transition-all duration-1000 opacity-40" />
-                    <div className="flex items-center justify-between relative z-10">
                       <div className="space-y-1">
-                        <p className="text-[10px] font-bold text-white/30 uppercase tracking-[0.3em]">Liability Snapshot</p>
-                        <h3 className="text-2xl font-sans font-bold text-brand-surface tracking-tight uppercase leading-none">Debt Node</h3>
+                        <h3 className={cn(
+                          "text-5xl font-mono font-bold tracking-tighter leading-none tabular-nums",
+                          dailyRemaining > 0 ? "text-brand-primary" : "text-rose-500"
+                        )}>
+                          {formatCurrency(dailyRemaining)}
+                        </h3>
+                        <p className="text-[9px] font-bold text-brand-primary/30 uppercase tracking-[0.25em] px-1">Deployment Capacity (Today)</p>
                       </div>
-                      <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center text-brand-accent border border-white/10 group-hover:rotate-12 transition-transform duration-500">
-                        <Landmark className="w-6 h-6" />
+
+                      <div className="pt-8 border-t border-brand-border">
+                        <div className="flex justify-between items-center text-[10px] font-bold text-brand-primary/40 uppercase mb-4 px-1">
+                          <span>Threshold Alpha</span>
+                          <span>{formatCurrency(dailySpendingPower)}</span>
+                        </div>
+                        <div className="h-1 w-full bg-brand-bg rounded-full overflow-hidden">
+                          <motion.div 
+                            initial={{ width: 0 }}
+                            animate={{ width: `${Math.min(100, (spentToday / (dailySpendingPower || 1)) * 100)}%` }}
+                            className={cn(
+                              "h-full transition-all duration-700",
+                              spentToday > dailySpendingPower ? "bg-rose-500" : "bg-brand-primary"
+                            )} 
+                          />
+                        </div>
                       </div>
                     </div>
-                    
+                  </div>
+
+                  {/* Strategic Briefing (AI Insights) */}
+                  <div className="bg-brand-primary text-brand-surface rounded-[2.5rem] p-10 space-y-8 relative overflow-hidden shadow-xl min-h-[300px] flex flex-col justify-center">
+                    <div className="absolute top-0 right-0 w-full h-full opacity-10 pointer-events-none" style={{ backgroundImage: 'radial-gradient(#fff 0.4px, transparent 0.4px)', backgroundSize: '8px 8px' }} />
                     <div className="space-y-6 relative z-10">
-                      <div className="space-y-2">
-                        <p className="text-[10px] font-bold text-white/20 uppercase tracking-widest">Total Outstanding</p>
-                        <p className="text-4xl font-mono font-bold text-brand-surface leading-none tracking-tighter tabular-nums">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-xl bg-brand-accent flex items-center justify-center text-brand-primary shadow-lg shadow-brand-accent/20">
+                          <Sparkles className="w-4 h-4" />
+                        </div>
+                        <p className="terminal-text !text-brand-accent">CFO_ANALYSIS_V1.1</p>
+                      </div>
+                      
+                      <div className="space-y-4">
+                        <p className="text-xl font-display font-black leading-tight tracking-tight uppercase">
+                          {insights[0] || "Strategic assessment completed. Optimal deployment windows identified."}
+                        </p>
+                        <div className="space-y-2">
+                           <div className="h-px w-12 bg-brand-accent" />
+                           <p className="text-sm text-white/50 leading-relaxed max-w-[280px]">
+                             System has analyzed {transactions.length} records to identify alpha retention channels.
+                           </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </aside>
+              </div>
+
+              {/* Lower Intelligence Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 px-4">
+                {/* Wealth Target Node */}
+                <div className="bento-card col-span-1 md:col-span-2 group">
+                   <div className="flex items-center justify-between mb-8 md:mb-12">
+                      <div className="space-y-1">
+                        <p className="terminal-text">Wealth Trajectory</p>
+                        <h3 className="text-xl md:text-2xl font-display font-black text-brand-primary uppercase tracking-tight">Active Nodes</h3>
+                      </div>
+                      <Target className="w-6 h-6 text-brand-primary/20 group-hover:text-brand-accent transition-colors duration-500" />
+                   </div>
+                   
+                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 items-end">
+                      <div className="space-y-6 md:space-y-8">
+                        {goals.slice(0, 2).map((goal) => {
+                          const progress = (goal.currentAmount / (goal.targetAmount || 1)) * 100;
+                          return (
+                            <div key={goal.id} className="space-y-2.5">
+                              <div className="flex justify-between items-center text-[9px] font-bold text-brand-primary/40 uppercase tracking-widest px-1">
+                                <span className="truncate max-w-[120px]">{goal.name}</span>
+                                <span>{progress.toFixed(0)}%</span>
+                              </div>
+                              <div className="h-1.5 w-full bg-brand-bg rounded-full overflow-hidden p-[1px] border border-brand-border">
+                                <motion.div 
+                                  initial={{ width: 0 }}
+                                  animate={{ width: `${progress}%` }}
+                                  className="h-full bg-brand-primary rounded-full transition-all duration-700" 
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="p-5 md:p-6 bg-brand-bg rounded-[2rem] border border-brand-border space-y-4">
+                         <p className="terminal-text !text-[8px]">Collective Progress</p>
+                         <h4 className="text-xl md:text-2xl font-mono font-bold tracking-tighter text-brand-primary">{totalGoalProgress.toFixed(1)}%</h4>
+                         <div className="flex items-center gap-2 pt-2 border-t border-brand-border/50">
+                            <TrendingUp className="w-3 h-3 text-brand-accent" />
+                            <p className="text-[9px] font-bold text-brand-primary/40 uppercase tracking-widest leading-none">Net Goal Velocity +{streakCount}D</p>
+                         </div>
+                      </div>
+                   </div>
+                </div>
+
+                {/* Liability Reduction Engine */}
+                <div className="bento-card group relative overflow-hidden flex flex-col justify-between">
+                   <div className="absolute inset-0 bg-brand-primary opacity-0 group-hover:opacity-[0.02] transition-opacity duration-700 pointer-events-none" />
+                   <div className="space-y-6 md:space-y-8 w-full overflow-hidden">
+                      <div className="flex items-center justify-between">
+                        <p className="terminal-text">Liability Matrix</p>
+                        <Landmark className="w-5 h-5 text-brand-primary/20" />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-3xl md:text-4xl font-mono font-bold tracking-tighter text-brand-primary tabular-nums break-all">
                           {formatCurrency(goals.filter(g => g.type === 'debt').reduce((acc, curr) => acc + (curr.targetAmount - curr.currentAmount), 0))}
                         </p>
+                        <p className="text-[9px] font-bold text-brand-primary/30 uppercase tracking-[0.25em] px-1">Outstanding Exposure</p>
                       </div>
-                      
-                      <div className="pt-6 border-t border-white/10 flex items-center justify-between gap-4">
-                         <div className="space-y-1">
-                           <p className="text-[9px] font-bold text-brand-accent uppercase tracking-widest">Efficiency Potential</p>
-                           <p className="text-xs font-mono font-bold text-white/60">STRATEGIC_PREPAY_AVAIL</p>
-                         </div>
-                         <button 
-                          onClick={() => {
-                            setActiveTab('insights');
-                            setTimeout(() => {
-                               document.getElementById('debt-optimization-engine')?.scrollIntoView({ behavior: 'smooth' });
-                            }, 300);
-                          }}
-                          className="flex items-center gap-2 px-5 py-2.5 bg-brand-surface/10 hover:bg-brand-surface text-brand-surface hover:text-brand-primary rounded-xl transition-all duration-300 shadow-xl border border-white/5"
-                         >
-                            <span className="text-[9px] font-bold uppercase tracking-widest">Optimize</span>
-                            <ArrowUpRight className="w-3.5 h-3.5" />
-                         </button>
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-
-                {/* Goals Velocity Pulse */}
-                <div className={cn(
-                  "bg-brand-surface border border-brand-border rounded-[2.5rem] p-8 md:p-10 space-y-8 shadow-sm transition-all hover:shadow-xl",
-                  goals.some(g => g.type === 'debt') ? "lg:col-span-1" : "md:col-span-1 lg:col-span-1"
-                )}>
-                  <div className="flex items-center justify-between border-b border-brand-border pb-8">
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-bold text-brand-primary/20 uppercase tracking-[0.3em]">Capital Direction</p>
-                      <h3 className="text-2xl font-sans font-bold text-brand-primary tracking-tight uppercase leading-none">Active Targets</h3>
-                    </div>
-                    <div className="w-12 h-12 rounded-2xl bg-brand-primary/5 flex items-center justify-center text-brand-primary border border-brand-border shadow-inner">
-                      <Target className="w-6 h-6" />
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-4">
-                    {goals.length > 0 ? goals.filter(g => g.type !== 'debt').slice(0, 3).map((goal) => {
-                      const progress = Math.min((goal.currentAmount / (goal.targetAmount || 1)) * 100, 100);
-                      return (
-                        <div key={goal.id} className="bg-brand-bg/30 p-4 rounded-2xl border border-brand-border/50 space-y-3 group/goal">
-                          <div className="flex justify-between items-center">
-                            <span className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest truncate max-w-[120px]">{goal.name}</span>
-                            <span className="text-[10px] font-mono font-bold text-brand-primary">{progress.toFixed(0)}%</span>
-                          </div>
-                          <div className="h-1.5 w-full bg-brand-primary/5 rounded-full overflow-hidden p-[1px] border border-brand-border">
-                            <motion.div 
-                              initial={{ width: 0 }}
-                              animate={{ width: `${progress}%` }}
-                              className="h-full bg-brand-primary rounded-full" 
-                            />
-                          </div>
-                        </div>
-                      );
-                    }) : (
-                      <div className="py-8 text-center bg-brand-bg/20 rounded-2xl border border-dashed border-brand-border">
-                        <p className="text-[10px] font-bold text-brand-primary/20 uppercase tracking-[0.2em]">Zero Active Deployments</p>
-                      </div>
-                    )}
-                  </div>
-                  
-                  <button 
-                    onClick={() => setActiveTab('goals')}
-                    className="w-full py-4 border border-brand-border rounded-xl text-[9px] font-bold text-brand-primary/40 uppercase tracking-[0.3em] hover:bg-brand-primary hover:text-brand-surface hover:border-brand-primary transition-all duration-300"
-                  >
-                    Manage Portfolio
-                  </button>
+                   </div>
+                   <button 
+                    onClick={() => setActiveTab('insights')}
+                    className="w-full py-4 bg-brand-bg border border-brand-border rounded-xl text-[9px] font-bold text-brand-primary uppercase tracking-[0.3em] hover:bg-brand-primary hover:text-brand-surface hover:border-brand-primary transition-all duration-500 mt-8 md:mt-12"
+                   >
+                     Optimization Matrix
+                   </button>
                 </div>
 
-                {/* Operations Ledger Snippet */}
-                <div className="bg-brand-surface border border-brand-border rounded-[2.5rem] p-8 md:p-10 space-y-8 shadow-sm">
-                  <div className="flex items-center justify-between border-b border-brand-border pb-8">
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-bold text-brand-primary/20 uppercase tracking-[0.3em]">Latest Signal</p>
-                      <h3 className="text-2xl font-sans font-bold text-brand-primary tracking-tight uppercase leading-none">Flow Audit</h3>
-                    </div>
-                    <button 
-                      onClick={() => setActiveTab('history')}
-                      className="w-12 h-12 rounded-2xl bg-brand-primary/5 flex items-center justify-center text-brand-primary border border-brand-border hover:bg-brand-primary hover:text-brand-surface transition-all duration-300 group"
-                    >
-                      <ArrowUpRight className="w-5 h-5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-                    </button>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    {transactions.slice(0, 4).map(t => (
-                      <div key={t.id} className="flex items-center justify-between p-3 hover:bg-brand-bg/50 rounded-2xl transition-all duration-300 group border border-transparent hover:border-brand-border/30">
-                        <div className="flex items-center gap-4">
-                           <div className="w-10 h-10 bg-brand-bg rounded-xl flex items-center justify-center text-brand-primary/30 text-xs border border-brand-border group-hover:bg-brand-primary group-hover:text-brand-surface transition-all">
-                              {getCategoryIcon(t.category)}
-                           </div>
-                           <div>
-                              <p className="text-[11px] font-bold text-brand-primary uppercase tracking-tight truncate max-w-[100px]">{t.description}</p>
-                              <p className="text-[8px] text-brand-primary/20 font-bold uppercase tracking-widest">{t.category}</p>
-                           </div>
-                        </div>
-                        <p className={cn(
-                          "text-sm font-mono font-bold tabular-nums",
-                          t.type === 'income' ? "text-emerald-500" : "text-brand-primary"
-                        )}>
-                          {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
-                        </p>
+                {/* Audit Signal Node */}
+                <div className="bento-card group flex flex-col justify-between">
+                   <div className="space-y-6 md:space-y-8 w-full overflow-hidden">
+                      <div className="flex items-center justify-between">
+                        <p className="terminal-text">Flow Snapshot</p>
+                        <HistoryIcon className="w-5 h-5 text-brand-primary/20" />
                       </div>
-                    ))}
-                    {transactions.length === 0 && (
-                      <div className="py-8 text-center bg-brand-bg/20 rounded-2xl border border-dashed border-brand-border">
-                        <p className="text-[10px] font-bold text-brand-primary/20 uppercase tracking-[0.2em]">Ledger Synchronized</p>
+                      <div className="space-y-4">
+                        {transactions.slice(0, 3).map(t => (
+                          <div key={t.id} className="flex justify-between items-center gap-4">
+                            <span className="text-[10px] font-bold text-brand-primary/60 uppercase truncate max-w-[100px]">{t.description}</span>
+                            <span className={cn(
+                              "text-xs font-mono font-bold shrink-0",
+                              (t.type === 'income' || t.type === 'refund') ? "text-brand-accent" : "text-brand-primary"
+                            )}>
+                              {formatCurrency(t.amount)}
+                            </span>
+                          </div>
+                        ))}
                       </div>
-                    )}
-                  </div>
+                   </div>
+                   <button 
+                    onClick={() => setActiveTab('history')}
+                    className="w-full py-4 bg-brand-bg border border-brand-border rounded-xl text-[9px] font-bold text-brand-primary uppercase tracking-[0.3em] hover:bg-brand-primary hover:text-brand-surface hover:border-brand-primary transition-all duration-500 mt-8 md:mt-12"
+                   >
+                     Inspect Ledger
+                   </button>
                 </div>
               </div>
-            </div>
             </motion.div>
           )}
 
@@ -1366,13 +1296,13 @@ function MainApp() {
                 </div>
                 <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
                    <div className="relative group/search">
-                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-brand-primary/20 group-focus-within/search:text-brand-accent transition-colors" />
+                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-brand-primary/40 group-focus-within/search:text-brand-accent transition-colors" />
                       <input 
                         type="text"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         placeholder="SEARCH_LEDGER..."
-                        className="w-full md:w-64 bg-brand-surface border border-brand-border rounded-full py-2 pl-10 pr-4 text-[9px] font-mono font-bold text-brand-primary outline-none focus:border-brand-accent/30 transition-all placeholder:text-brand-primary/5"
+                        className="w-full md:w-64 bg-brand-surface border border-brand-border rounded-full py-2 pl-10 pr-4 text-[9px] font-mono font-bold text-brand-primary outline-none focus:border-brand-accent/30 transition-all placeholder:text-brand-primary/30"
                       />
                    </div>
                    <div className="flex bg-brand-bg p-1.5 rounded-full border border-brand-border shadow-inner">
@@ -1424,7 +1354,7 @@ function MainApp() {
                 >
                   <motion.div variants={listItem} className="flex items-center gap-4">
                     <div className="h-px flex-1 bg-brand-border/60" />
-                    <h4 className="data-label !text-brand-primary/20">{date}</h4>
+                    <h4 className="data-label !text-brand-primary/60">{date}</h4>
                     <div className="h-px flex-1 bg-brand-border/60" />
                   </motion.div>
                   <div className="space-y-3">
@@ -1438,22 +1368,25 @@ function MainApp() {
                           style={{ backgroundColor: t.type === 'income' ? 'var(--color-brand-accent)' : 'transparent' }}
                         />
                         <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 bg-brand-bg rounded-xl flex items-center justify-center text-brand-primary/30 group-hover:bg-brand-primary group-hover:text-brand-surface transition-all border border-brand-border/50">
+                          <div className="w-10 h-10 bg-brand-bg rounded-xl flex items-center justify-center text-brand-primary/60 group-hover:bg-brand-primary group-hover:text-brand-surface transition-all border border-brand-border/50">
                             {getCategoryIcon(t.category)}
                           </div>
                           <div className="space-y-0.5">
                             <p className="text-sm font-bold text-brand-primary uppercase tracking-tight leading-none">{t.description}</p>
                             <div className="flex flex-wrap items-center gap-2">
-                              <span className="data-label !text-[8.5px] !text-brand-primary/40">{t.category}</span>
+                              <span className="data-label !text-[8.5px] !text-brand-primary/60">{t.category}</span>
                               {t.subcategory && (
                                 <>
                                   <span className="w-1 h-1 rounded-full bg-brand-primary/10" />
-                                  <span className="data-label !text-[8.5px] !text-brand-primary/20">{t.subcategory}</span>
+                                  <span className="data-label !text-[8.5px] !text-brand-primary/50">{t.subcategory}</span>
                                 </>
                               )}
                               <div className="flex items-center gap-1.5 ml-1">
                                 {t.isMandatory && (
                                   <span className="px-1.5 py-0.5 bg-brand-primary/5 text-brand-primary/60 text-[8px] font-bold uppercase tracking-wider rounded border border-brand-primary/5 font-mono">FIXED</span>
+                                )}
+                                {t.type === 'refund' && (
+                                  <span className="px-1.5 py-0.5 bg-brand-accent/10 text-brand-accent text-[8px] font-bold uppercase tracking-wider rounded border border-brand-accent/20 font-mono">REFUND</span>
                                 )}
                                 {t.isRecurring && (
                                   <span className="px-1.5 py-0.5 bg-brand-accent/5 text-brand-accent/60 text-[8px] font-bold uppercase tracking-wider rounded border border-brand-accent/5 font-mono">REC</span>
@@ -1469,9 +1402,9 @@ function MainApp() {
                           <div className="text-right flex flex-col items-end gap-1">
                             <p className={cn(
                               "text-lg md:text-xl font-mono font-bold tabular-nums leading-none",
-                              t.type === 'income' ? "text-brand-accent" : "text-brand-primary"
+                              (t.type === 'income' || t.type === 'refund') ? "text-brand-accent" : "text-brand-primary"
                             )}>
-                              {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
+                              {(t.type === 'income' || t.type === 'refund') ? '+' : '-'}{formatCurrency(t.amount)}
                             </p>
                             <div className="flex flex-col items-end gap-0.5">
                               {t.description && t.description !== t.subcategory.toUpperCase() && (
@@ -1764,7 +1697,7 @@ function MainApp() {
                 {/* Scenario Planning Hub */}
                 <StressTestConsole 
                   monthlyIncome={estimatedMonthlyIncome}
-                  monthlyFixedExpenses={mandatoryExpenses}
+                  monthlyFixedExpenses={estimatedFixedCosts}
                   monthlyGoalCommitments={monthlyGoalCommitments}
                   sipMandates={sipMandates}
                   liquidAssets={liquidAssets}
@@ -1778,15 +1711,17 @@ function MainApp() {
                     transactions={transactions} 
                     goals={goals} 
                     balance={balance}
-                    totalIncome={estimatedMonthlyIncome}
+                    totalIncome={totalIncome}
                     totalSavings={liquidAssets}
-                    mandatoryExpenses={mandatoryExpenses}
-                    discretionaryExpenses={discretionaryExpenses}
+                    mandatoryExpenses={estimatedFixedCosts}
+                    discretionaryExpenses={Math.max(0, monthlyBurn - estimatedFixedCosts)}
                     strategicSpendingCeiling={strategicSpendingCeiling}
                     dailySpendingPower={dailySpendingPower}
                     monthlyGoalCommitments={monthlyGoalCommitments}
                     savingsRate={savingsRate}
                     incomeCoverage={incomeCoverage}
+                    estimatedMonthlyIncome={estimatedMonthlyIncome}
+                    estimatedFixedCosts={estimatedFixedCosts}
                   />
                 </div>
                 
@@ -2531,19 +2466,16 @@ function TransactionForm({ onClose, userId, transactions, goals, editingTransact
   const [subcategory, setSubcategory] = useState(editingTransaction?.subcategory || (editingSip ? `SIP:${editingSip.name}:${editingSip.id}:${editingSip.amount}:${editingSip.linkedGoalId || ''}` : 'Swiggy'));
   const [description, setDescription] = useState(editingTransaction?.description || editingSip?.name || '');
   const [date, setDate] = useState(editingTransaction?.date ? new Date(editingTransaction.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
-  const [type, setType] = useState<'income' | 'expense'>(editingTransaction?.type || 'expense');
-  const [isMandatory, setIsMandatory] = useState(editingTransaction?.isMandatory || (!!editingSip) || false);
-  const [isRecurring, setIsRecurring] = useState(editingTransaction?.isRecurring || (!!editingSip) || false);
-  const [isAvoidable, setIsAvoidable] = useState(editingTransaction?.isAvoidable || false);
+  const [type, setType] = useState<TransactionType>(editingTransaction?.type || 'expense');
   const [manualGoalId, setManualGoalId] = useState<string | null>(editingTransaction?.linkedGoalId || editingSip?.linkedGoalId || null);
   const [sipId, setSipId] = useState<string | null>(editingTransaction?.sipId || editingSip?.id || null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const currentCategories = type === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
+  const currentCategories = type === 'expense' || type === 'refund' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
 
   // Sync subcategory when category changes
   useEffect(() => {
-    const currentCats = type === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
+    const currentCats = type === 'expense' || type === 'refund' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
     const subs = [...(currentCats as any)[category] || []];
     
     // Inject goals into subcategories for relevant categories
@@ -2573,11 +2505,26 @@ function TransactionForm({ onClose, userId, transactions, goals, editingTransact
       setSipId(null);
     } else if (subcategory.startsWith('SIP:')) {
       const parts = subcategory.split(':');
-      setSipId(parts[2]);
-      setAmount(parts[3]);
+      const sId = parts[2];
+      setSipId(sId);
+      
+      // Intelligent amount prediction for schemes
+      const sip = sips.find(s => s.id === sId);
+      if (sip && sip.schemeType === 'gold_scheme') {
+        const sipTransactions = transactions.filter(t => t.sipId === sId);
+        const installmentIndex = sipTransactions.length;
+        
+        if (installmentIndex === 0 && sip.firstInstallmentAmount) {
+          setAmount(sip.firstInstallmentAmount.toString());
+        } else if (installmentIndex >= (sip.totalInstallments || 12) - 1) {
+          setAmount('0'); // Last month free
+        } else {
+          setAmount(sip.amount.toString());
+        }
+      } else {
+        setAmount(parts[3]);
+      }
       setManualGoalId(parts[4] || null);
-      setIsMandatory(true);
-      setIsRecurring(true);
     } else if (!editingTransaction) {
       setManualGoalId(null);
       setSipId(null);
@@ -2595,7 +2542,7 @@ function TransactionForm({ onClose, userId, transactions, goals, editingTransact
   const matchingGoal = goals.find(g => g.type === goalTypeMap[category]);
 
   const smartTemplates = React.useMemo(() => {
-    const counts: Record<string, { count: number, category: string, lastAmount: number, type: 'income' | 'expense' }> = {};
+    const counts: Record<string, { count: number, category: string, lastAmount: number, type: TransactionType }> = {};
     transactions.forEach(t => {
       const key = `${t.description}-${t.type}`;
       if (!counts[key]) {
@@ -2610,7 +2557,7 @@ function TransactionForm({ onClose, userId, transactions, goals, editingTransact
       .map(([key, data]) => ({ name: key.split('-')[0], ...data }));
   }, [transactions]);
 
-  const applyTemplate = (template: { name: string, category: string, lastAmount: number, type: 'income' | 'expense' }) => {
+  const applyTemplate = (template: { name: string, category: string, lastAmount: number, type: TransactionType }) => {
     setType(template.type);
     setCategory(template.category);
     setAmount(template.lastAmount.toString());
@@ -2666,6 +2613,9 @@ function TransactionForm({ onClose, userId, transactions, goals, editingTransact
       const newGoalId = manualGoalId || smartGoal?.id || null;
       const newDelta = getContributionDelta(amountNum, type, category, !!newGoalId);
 
+      // Auto-classify based on pattern
+      const classification = type === 'expense' || type === 'refund' ? autoClassifyExpense(category, finalSubcategory) : { isMandatory: false, isRecurring: false, isAvoidable: false };
+
       // Handle goal balance updates atomically if possible
       if (editingTransaction?.linkedGoalId === newGoalId && newGoalId) {
         // Same goal
@@ -2695,9 +2645,9 @@ function TransactionForm({ onClose, userId, transactions, goals, editingTransact
         type,
         date: new Date(date).toISOString(),
         userId,
-        isMandatory: type === 'expense' ? isMandatory : false,
-        isRecurring: type === 'expense' ? isRecurring : false,
-        isAvoidable: type === 'expense' ? isAvoidable : false,
+        isMandatory: classification.isMandatory,
+        isRecurring: classification.isRecurring,
+        isAvoidable: classification.isAvoidable,
         linkedGoalId: newGoalId,
         sipId
       };
@@ -2749,13 +2699,13 @@ function TransactionForm({ onClose, userId, transactions, goals, editingTransact
       )}
 
       <div className="bg-brand-bg/80 p-1.5 rounded-xl border border-brand-border shadow-inner flex relative">
-        {(['expense', 'income'] as const).map((t) => (
+        {(['expense', 'income', 'refund'] as const).map((t) => (
           <button
             key={t}
             type="button"
             onClick={() => {
               setType(t);
-              const currentCats = t === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
+              const currentCats = (t === 'expense' || t === 'refund') ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
               const firstCat = Object.keys(currentCats)[0];
               const firstSub = (currentCats as any)[firstCat][0];
               setCategory(firstCat);
@@ -2768,7 +2718,9 @@ function TransactionForm({ onClose, userId, transactions, goals, editingTransact
                 : "text-brand-primary/30 hover:text-brand-primary/60 hover:bg-brand-primary/5"
             )}
           >
-            {t === 'income' ? <TrendingUp className="w-3 h-3 text-brand-accent" /> : <TrendingDown className="w-3 h-3 text-rose-400" />}
+            {t === 'income' && <TrendingUp className="w-3 h-3 text-brand-accent" />}
+            {t === 'expense' && <TrendingDown className="w-3 h-3 text-rose-400" />}
+            {t === 'refund' && <RefreshCcw className="w-3 h-3 text-sky-400" />}
             {t}
           </button>
         ))}
@@ -2873,32 +2825,6 @@ function TransactionForm({ onClose, userId, transactions, goals, editingTransact
           </div>
         )}
 
-
-        <div className="space-y-2">
-          <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Details</label>
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              { id: 'mandatory', label: 'NEED', state: isMandatory, set: setIsMandatory, icon: ShieldCheck, color: 'text-brand-accent' },
-              { id: 'recurring', label: 'MONTHLY', state: isRecurring, set: setIsRecurring, icon: Activity, color: 'text-brand-accent' },
-              { id: 'avoidable', label: 'EXTRA', state: isAvoidable, set: setIsAvoidable, icon: AlertCircle, color: 'text-rose-400' },
-            ].map((attr) => (
-              <button
-                key={attr.id}
-                type="button"
-                onClick={() => attr.set(!attr.state)}
-                className={cn(
-                  "flex flex-col items-center justify-center gap-1 py-4 px-2 rounded-lg border transition-all active:scale-95 group/scalar",
-                  attr.state 
-                    ? "bg-brand-primary text-brand-surface border-brand-primary shadow-md" 
-                    : "bg-brand-surface border-brand-border text-brand-primary/30"
-                )}
-              >
-                <attr.icon className={cn("w-3 h-3 transition-colors", attr.state ? attr.color : "text-brand-primary/10")} />
-                <span className="text-[7px] font-bold uppercase tracking-widest">{attr.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
 
       <button
@@ -2912,6 +2838,45 @@ function TransactionForm({ onClose, userId, transactions, goals, editingTransact
   );
 }
 
+const autoClassifyExpense = (category: string, subcategory: string) => {
+  const needs = ['Housing', 'Bills & Utilities', 'Groceries & Q-Commerce', 'Health & Wellness', 'Investments & EMI', 'Strategic Savings', 'Transport & Commute'];
+  const recurring = ['Housing', 'Bills & Utilities', 'Subscriptions', 'Investments & EMI'];
+  const extra = ['Dining & Delivery', 'Travel & Stays', 'Shopping & Lifestyle'];
+
+  let isMandatory = needs.includes(category);
+  let isRecurring = recurring.includes(category);
+  let isAvoidable = extra.includes(category);
+
+  // Specific overrides based on Indian patterns
+  if (category === 'Groceries & Q-Commerce' && ['Blinkit', 'Instamart', 'Zepto'].includes(subcategory)) {
+    isMandatory = false; // Premium convenience
+    isAvoidable = true;
+  }
+  
+  if (category === 'Transport & Commute' && ['Uber', 'Ola', 'Rapido'].includes(subcategory)) {
+    isMandatory = false; // Optional convenience (compared to public/own)
+    isAvoidable = true;
+  }
+
+  if (category === 'Health & Wellness' && subcategory === 'Gym/Fitness') {
+    isMandatory = false;
+    isAvoidable = true; // Lifestyle choice
+  }
+
+  if (category === 'Shopping & Lifestyle' && subcategory === 'Salon') {
+    isMandatory = true; // Hygiene maintenance
+    isAvoidable = false;
+  }
+
+  if (category === 'Investments & EMI') {
+    isMandatory = true;
+    isRecurring = true;
+    isAvoidable = false;
+  }
+
+  return { isMandatory, isRecurring, isAvoidable };
+};
+
 function GoalModalContent({ onClose, userId, goal, onDeleteGoal }: { onClose: () => void, userId: string, goal: Goal | null, onDeleteGoal: (id: string) => Promise<void> }) {
   const [name, setName] = useState(goal?.name || '');
   const [targetAmount, setTargetAmount] = useState(goal?.targetAmount.toString() || '');
@@ -2924,6 +2889,8 @@ function GoalModalContent({ onClose, userId, goal, onDeleteGoal }: { onClose: ()
   const [startDate, setStartDate] = useState(goal?.startDate || '');
   const [emi, setEmi] = useState(goal?.emi?.toString() || '');
   const [priority, setPriority] = useState<'high' | 'medium' | 'low'>(goal?.priority || 'medium');
+  const [maturityValue, setMaturityValue] = useState(goal?.maturityValue?.toString() || '');
+  const [isScheme, setIsScheme] = useState(goal?.isScheme || false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -2956,6 +2923,8 @@ function GoalModalContent({ onClose, userId, goal, onDeleteGoal }: { onClose: ()
         emi: emi ? parseFloat(emi) : (type === 'debt' ? 0 : null),
         startDate: startDate || null,
         priority,
+        maturityValue: maturityValue ? parseFloat(maturityValue) : null,
+        isScheme,
       };
 
       if (goal?.id) {
@@ -3150,6 +3119,57 @@ function GoalModalContent({ onClose, userId, goal, onDeleteGoal }: { onClose: ()
             </div>
           </div>
         </div>
+
+        <div className="pt-2">
+          <div className="flex items-center justify-between p-4 bg-brand-bg/30 border border-brand-border rounded-2xl group transition-all">
+            <div className="flex items-center gap-3">
+              <div className={cn(
+                "p-2 rounded-lg transition-colors",
+                isScheme ? "bg-brand-accent/10 text-brand-accent" : "bg-brand-primary/5 text-brand-primary/40"
+              )}>
+                <RefreshCcw className="w-4 h-4" />
+              </div>
+              <div className="space-y-0.5">
+                <p className="text-[10px] font-bold text-brand-primary uppercase tracking-tight">Scheme Mode</p>
+                <p className="text-[8px] text-brand-primary/40 font-mono uppercase tracking-widest leading-none">Handle maturity bonus</p>
+              </div>
+            </div>
+            <button 
+              type="button"
+              onClick={() => setIsScheme(!isScheme)}
+              className={cn(
+                "w-10 h-5 rounded-full relative transition-all duration-300 border",
+                isScheme ? "bg-brand-accent border-brand-accent" : "bg-brand-bg border-brand-border"
+              )}
+            >
+              <div className={cn(
+                "absolute top-1 w-2.5 h-2.5 bg-white rounded-full transition-all duration-300",
+                isScheme ? "left-6" : "left-1"
+              )} />
+            </button>
+          </div>
+        </div>
+
+        {isScheme && (
+          <div className="space-y-4 pt-1 animate-in fade-in slide-in-from-top-2">
+            <div className="space-y-2">
+              <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Estimated Maturity Value</label>
+              <div className="relative group">
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 font-mono font-bold text-brand-primary/10 group-focus-within/input:text-brand-accent transition-colors text-xs">₹</span>
+                <input 
+                  type="number"
+                  value={maturityValue}
+                  onChange={(e) => setMaturityValue(e.target.value)}
+                  className="w-full bg-brand-surface border border-brand-border rounded-lg py-2.5 pl-8 pr-4 font-mono font-bold text-lg text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none"
+                  placeholder="e.g. 120000"
+                />
+              </div>
+              <p className="px-1 text-[8px] font-medium text-brand-primary/40 leading-relaxed italic">
+                Difference between Target and Maturity will be logged as system alpha.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex flex-col gap-3">
@@ -3189,6 +3209,9 @@ function SIPModalContent({ onClose, userId, sip, onDeleteSIP, goals }: { onClose
   const [startDate, setStartDate] = useState(sip?.startDate || new Date().toISOString().split('T')[0]);
   const [status, setStatus] = useState<'active' | 'paused' | 'stopped'>(sip?.status || 'active');
   const [linkedGoalId, setLinkedGoalId] = useState(sip?.linkedGoalId || '');
+  const [totalInstallments, setTotalInstallments] = useState(sip?.totalInstallments?.toString() || '12');
+  const [schemeType, setSchemeType] = useState<'standard' | 'gold_scheme'>(sip?.schemeType || 'standard');
+  const [firstInstallmentAmount, setFirstInstallmentAmount] = useState(sip?.firstInstallmentAmount?.toString() || '');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -3204,7 +3227,10 @@ function SIPModalContent({ onClose, userId, sip, onDeleteSIP, goals }: { onClose
         startDate,
         status,
         userId,
-        linkedGoalId: linkedGoalId || null
+        linkedGoalId: linkedGoalId || null,
+        totalInstallments: parseInt(totalInstallments),
+        firstInstallmentAmount: firstInstallmentAmount ? parseFloat(firstInstallmentAmount) : null,
+        schemeType
       };
 
       if (sip?.id) {
@@ -3277,21 +3303,58 @@ function SIPModalContent({ onClose, userId, sip, onDeleteSIP, goals }: { onClose
               <option value="Stocks">STOCKS / ETF</option>
               <option value="Gold">DIGITAL GOLD</option>
               <option value="PPF/EPF">PPF / EPF</option>
-              <option value="Other">OTHER INVESTMENT</option>
+              <option value="Jewellery Scheme">JEWELLERY SCHEME</option>
             </select>
           </div>
           <div className="group/input space-y-2">
-            <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Status</label>
+            <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Scheme Type</label>
             <select 
-              value={status}
-              onChange={(e) => setStatus(e.target.value as any)}
+              value={schemeType}
+              onChange={(e) => setSchemeType(e.target.value as any)}
               className="w-full h-10 bg-brand-bg/30 border border-brand-border rounded-lg px-4 text-[9px] font-mono font-bold text-brand-primary outline-none appearance-none cursor-pointer focus:bg-brand-surface transition-all uppercase"
             >
-              <option value="active">ACTIVE</option>
-              <option value="paused">PAUSED</option>
-              <option value="stopped">STOPPED</option>
+              <option value="standard">STANDARD SIP</option>
+              <option value="gold_scheme">GOLD SCHEME (V2)</option>
             </select>
           </div>
+        </div>
+
+        {schemeType === 'gold_scheme' && (
+          <div className="grid grid-cols-2 gap-3 animate-in fade-in slide-in-from-top-1">
+            <div className="group/input space-y-2">
+              <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Tenure (Months)</label>
+              <input 
+                type="number" 
+                value={totalInstallments}
+                onChange={(e) => setTotalInstallments(e.target.value)}
+                className="w-full bg-brand-surface border border-brand-border rounded-lg py-2.5 px-4 font-mono font-bold text-sm text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none"
+                required
+              />
+            </div>
+            <div className="group/input space-y-2">
+              <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Initial Pay (Discounted)</label>
+              <input 
+                type="number" 
+                value={firstInstallmentAmount}
+                onChange={(e) => setFirstInstallmentAmount(e.target.value)}
+                className="w-full bg-brand-surface border border-brand-border rounded-lg py-2.5 px-4 font-mono font-bold text-sm text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none"
+                placeholder="7500"
+              />
+            </div>
+          </div>
+        )}
+
+        <div className="group/input space-y-2">
+          <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Status</label>
+          <select 
+            value={status}
+            onChange={(e) => setStatus(e.target.value as any)}
+            className="w-full h-10 bg-brand-bg/30 border border-brand-border rounded-lg px-4 text-[9px] font-mono font-bold text-brand-primary outline-none appearance-none cursor-pointer focus:bg-brand-surface transition-all uppercase"
+          >
+            <option value="active">ACTIVE</option>
+            <option value="paused">PAUSED</option>
+            <option value="stopped">STOPPED</option>
+          </select>
         </div>
 
         <div className="group/input space-y-2">

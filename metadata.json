@@ -1,5 +1,6 @@
 {
   "name": "Artha AI",
   "description": "Premium AI-powered financial companion for the modern Indian lifestyle.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
