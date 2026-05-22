@@ -47,7 +47,11 @@ import {
   Search,
   LayoutGrid,
   Database,
-  History as HistoryIcon
+  History as HistoryIcon,
+  Download,
+  ArrowUpDown,
+  SlidersHorizontal,
+  Tag
 } from 'lucide-react';
 import { 
   Tooltip, 
@@ -67,6 +71,9 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { generateQuickInsights } from './services/aiService';
 import { useFinancialEngine } from './hooks/useFinancialEngine';
+import { IncomeStreamItem } from './components/IncomeStreamItem';
+import { SIPItem } from './components/SIPItem';
+import { GoalItem } from './components/GoalItem';
 
 // Lazy load heavy analytical components
 const StrategyInsights = React.lazy(() => import('./components/StrategyInsights').then(m => ({ default: m.StrategyInsights })));
@@ -134,6 +141,48 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
   }
 }
 
+// Spending Ring Component for Hero
+function SpendingRing({ percentage, size = 160, strokeWidth = 14 }: { percentage: number, size?: number, strokeWidth?: number }) {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = radius * 2 * Math.PI;
+  const offset = circumference - (percentage / 100) * circumference;
+  
+  const color = percentage > 85 ? '#f43f5e' : percentage > 60 ? '#f59e0b' : '#10b981';
+  
+  return (
+    <div className="relative flex items-center justify-center shrink-0" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="transform -rotate-90 drop-shadow-[0_0_15px_rgba(255,255,255,0.03)]">
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke="rgba(255,255,255,0.05)"
+          strokeWidth={strokeWidth}
+          fill="none"
+        />
+        <motion.circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke={color}
+          strokeWidth={strokeWidth}
+          fill="none"
+          strokeLinecap="round"
+          initial={{ strokeDashoffset: circumference }}
+          animate={{ strokeDashoffset: offset }}
+          transition={{ duration: 1.5, ease: [0.23, 1, 0.32, 1] }}
+          style={{ strokeDasharray: circumference }}
+        />
+      </svg>
+      {/* Dynamic Glow */}
+      <div 
+        className="absolute inset-0 rounded-full blur-2xl opacity-10 pointer-events-none transition-colors duration-1000"
+        style={{ backgroundColor: color }}
+      />
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <ErrorBoundary>
@@ -163,6 +212,10 @@ function MainApp() {
   const [showMobileTip, setShowMobileTip] = useState(false);
   const [filter, setFilter] = useState<'All' | 'Expenses' | 'Income'>('All');
   const [searchQuery, setSearchQuery] = useState('');
+  const [historySortBy, setHistorySortBy] = useState<'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc'>('date-desc');
+  const [historyTimeframe, setHistoryTimeframe] = useState<'all' | '7days' | '30days' | 'this-month' | 'last-month'>('all');
+  const [historySelectedCategory, setHistorySelectedCategory] = useState<string>('All');
+  const [historySelectedTag, setHistorySelectedTag] = useState<'all' | 'fixed' | 'avoidable' | 'recurring'>('all');
   const [stressTest, setStressTest] = useState<StressTestState>(() => {
     const saved = localStorage.getItem('stressTest');
     return saved ? JSON.parse(saved) : { incomeShock: 1, expenseShock: 1 };
@@ -437,7 +490,7 @@ function MainApp() {
   const budgetDailyLimit = dailySpendingPower;
   const isAheadOfBudget = activeDailyPace < dailySpendingPower;
   const budgetVariance = (dailySpendingPower * today.getDate()) - spentThisMonth;
-  const dailyRemaining = Math.max(0, dailySpendingPower - spentToday);
+  const dailyRemaining = dailySpendingPower - spentToday;
 
   const listContainer = {
     hidden: { opacity: 0 },
@@ -497,24 +550,166 @@ function MainApp() {
     .slice(-10); // Show last 10 days of activity
 
   const filteredTransactions = transactions.filter(t => {
+    // 1. Type filter
     if (filter === 'Expenses' && t.type === 'income') return false;
     if (filter === 'Income' && t.type !== 'income') return false;
+
+    // 2. Search query filter
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
-      return t.description.toLowerCase().includes(q) || 
-             t.category.toLowerCase().includes(q) || 
-             (t.subcategory || '').toLowerCase().includes(q);
+      const match = (t.description || '').toLowerCase().includes(q) || 
+                    (t.category || '').toLowerCase().includes(q) || 
+                    (t.subcategory || '').toLowerCase().includes(q);
+      if (!match) return false;
     }
+
+    // 3. Timeframe filter
+    if (historyTimeframe !== 'all') {
+      const tDate = new Date(t.date);
+      const now = new Date();
+      const daysDiff = Math.floor((now.getTime() - tDate.getTime()) / (1000 * 60 * 60 * 24));
+      
+      if (historyTimeframe === '7days' && daysDiff > 7) return false;
+      if (historyTimeframe === '30days' && daysDiff > 30) return false;
+
+      const tMonth = tDate.getMonth();
+      const tYear = tDate.getFullYear();
+      const nowMonth = now.getMonth();
+      const nowYear = now.getFullYear();
+
+      if (historyTimeframe === 'this-month') {
+        if (tMonth !== nowMonth || tYear !== nowYear) return false;
+      }
+      
+      if (historyTimeframe === 'last-month') {
+        const targetMonth = nowMonth === 0 ? 11 : nowMonth - 1;
+        const targetYear = nowMonth === 0 ? nowYear - 1 : nowYear;
+        if (tMonth !== targetMonth || tYear !== targetYear) return false;
+      }
+    }
+
+    // 4. Category filter
+    if (historySelectedCategory !== 'All' && t.category !== historySelectedCategory) return false;
+
+    // 5. Strategic Tag filter
+    if (historySelectedTag === 'fixed' && !t.isMandatory) return false;
+    if (historySelectedTag === 'avoidable' && !t.isAvoidable) return false;
+    if (historySelectedTag === 'recurring' && !t.isRecurring) return false;
+
     return true;
   });
 
-  const groupedTransactions = filteredTransactions
+  // Calculate filtered stats dynamically for the CFO dashboard
+  const filteredHistorySummary = filteredTransactions.reduce((acc, t) => {
+    if (t.type === 'income') acc.earned += t.amount;
+    else if (t.type === 'expense') acc.spent += t.amount;
+    else if (t.type === 'refund') acc.spent -= t.amount;
+    acc.net = acc.earned - acc.spent;
+    return acc;
+  }, { spent: 0, earned: 0, net: 0 });
+
+  const filteredAvoidableLoss = filteredTransactions
+    .filter(t => (t.type === 'expense' || t.type === 'refund') && t.isAvoidable)
+    .reduce((acc, t) => acc + (t.type === 'expense' ? t.amount : -t.amount), 0);
+
+  const filteredFixedCommitment = filteredTransactions
+    .filter(t => (t.type === 'expense' || t.type === 'refund') && t.isMandatory)
+    .reduce((acc, t) => acc + (t.type === 'expense' ? t.amount : -t.amount), 0);
+
+  const filteredExpenseCount = filteredTransactions.filter(t => t.type === 'expense' || t.type === 'refund').length;
+  const filteredAverageExpense = filteredExpenseCount > 0 
+    ? (filteredTransactions.filter(t => t.type === 'expense' || t.type === 'refund').reduce((acc, t) => acc + (t.type === 'expense' ? t.amount : -t.amount), 0) / filteredExpenseCount)
+    : 0;
+
+  // Sort the filtered transactions
+  const sortedTransactions = [...filteredTransactions].sort((a, b) => {
+    if (historySortBy === 'date-desc') {
+      return new Date(b.date).getTime() - new Date(a.date).getTime();
+    }
+    if (historySortBy === 'date-asc') {
+      return new Date(a.date).getTime() - new Date(b.date).getTime();
+    }
+    if (historySortBy === 'amount-desc') {
+      return b.amount - a.amount;
+    }
+    if (historySortBy === 'amount-asc') {
+      return a.amount - b.amount;
+    }
+    return 0;
+  });
+
+  const groupedTransactions = sortedTransactions
     .reduce((acc: Record<string, Transaction[]>, t) => {
       const date = new Date(t.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
       if (!acc[date]) acc[date] = [];
       acc[date].push(t);
       return acc;
     }, {});
+
+  const filteredCategoryData = filteredTransactions
+    .filter(t => t.type === 'expense' || t.type === 'refund')
+    .reduce((acc: any[], t) => {
+      const name = t.category || 'Uncategorized';
+      const existing = acc.find(i => i.name === name);
+      const val = t.type === 'expense' ? t.amount : -t.amount;
+      if (existing) {
+        existing.value += val;
+      } else {
+        acc.push({ name, value: val });
+      }
+      return acc;
+    }, [])
+    .map(i => ({ ...i, value: Math.max(0, i.value) }))
+    .filter(i => i.value > 0)
+    .sort((a, b) => b.value - a.value);
+
+  const filteredTotalExpense = filteredCategoryData.reduce((acc, i) => acc + i.value, 0);
+
+  const filteredTrendData = [...filteredTransactions]
+    .filter(t => t.type === 'expense' || t.type === 'refund')
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    .reduce((acc: any[], t) => {
+      const date = new Date(t.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+      const existing = acc.find(i => i.date === date);
+      const val = t.type === 'expense' ? t.amount : -t.amount;
+      if (existing) {
+        existing.amount += val;
+      } else {
+        acc.push({ date, dateValue: t.date, amount: val });
+      }
+      return acc;
+    }, []);
+
+  const uniqueHistoryCategories = ['All', ...Array.from(new Set(transactions.map(t => t.category)))].filter(Boolean);
+
+  const handleExportCSV = () => {
+    if (filteredTransactions.length === 0) return;
+    const headers = ['Date', 'Type', 'Category', 'Subcategory', 'Description', 'Amount', 'Committed/Fixed', 'Avoidable', 'Recurring'];
+    const csvContent = [
+      headers.join(','),
+      ...filteredTransactions.map(t => [
+        t.date ? new Date(t.date).toISOString().split('T')[0] : '',
+        t.type,
+        `"${(t.category || '').replace(/"/g, '""')}"`,
+        `"${(t.subcategory || '').replace(/"/g, '""')}"`,
+        `"${(t.description || '').replace(/"/g, '""')}"`,
+        t.amount,
+        t.isMandatory ? 'Yes' : 'No',
+        t.isAvoidable ? 'Yes' : 'No',
+        t.isRecurring ? 'Yes' : 'No'
+      ].join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `artha_portfolio_ledger_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const getCategoryIcon = (category: string) => {
     const cat = category.toLowerCase();
@@ -780,16 +975,19 @@ function MainApp() {
           
           {/* Central Execution Hub */}
           <div className="flex-1 flex justify-center -mt-8 relative">
-            <button 
+            <motion.button 
+              whileHover={{ scale: 1.1, rotate: 5 }}
+              whileTap={{ scale: 0.9, rotate: -5 }}
               onClick={() => {
                 setCommandTab('transaction');
                 setShowCommandCenter(true);
               }}
-              className="w-14 h-14 bg-brand-primary text-brand-surface rounded-[1.25rem] flex items-center justify-center shadow-2xl active:scale-95 transition-all relative z-10 border border-white/5 group/hub"
+              className="w-16 h-16 bg-brand-primary text-brand-surface rounded-[1.5rem] flex items-center justify-center shadow-[0_20px_40px_-10px_rgba(16,185,129,0.3)] border border-white/10 group/hub relative overflow-hidden"
               title="Add Entry"
             >
-              <Plus className="w-8 h-8 text-brand-accent transition-transform duration-500 group-hover/hub:rotate-90" />
-            </button>
+              <div className="absolute inset-0 bg-brand-accent/20 opacity-0 group-hover/hub:opacity-100 transition-opacity" />
+              <Plus className="w-9 h-9 text-brand-accent transition-transform duration-500 group-hover/hub:rotate-90 relative z-10" />
+            </motion.button>
           </div>
  
           <button 
@@ -830,314 +1028,255 @@ function MainApp() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
-              className="space-y-12"
+              className="space-y-4 md:space-y-6 px-1"
             >
-              {/* Contextual Executive Greeting */}
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 px-4">
-                <div className="space-y-2">
-                  <div className="flex items-center gap-3">
-                    <div className="px-2 py-0.5 rounded-md bg-brand-primary text-brand-accent text-[8px] font-mono font-bold">MODE: COMMAND</div>
-                    <div className="h-px w-8 bg-brand-border" />
-                    <span className="terminal-text">PORTFOLIO_SYNC_COMPLETED</span>
-                  </div>
-                  <h1 className="text-4xl md:text-5xl font-display font-black text-brand-primary tracking-tight leading-none">
-                    EXECUTIVE SUMMARY
-                  </h1>
-                </div>
-                
-                <div className="flex flex-wrap items-center gap-4 md:gap-10 pb-1">
-                  <div className="flex flex-col items-start md:items-end group cursor-help">
-                    <p className="terminal-text !text-brand-primary/20 group-hover:text-brand-primary/40 transition-colors">Operational Runway</p>
-                    <div className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-pulse" />
-                      <p className="text-2xl font-mono font-bold text-brand-primary tracking-tighter">
-                        {runwayMonths.toFixed(1)}<span className="text-[10px] font-medium text-brand-primary/40 ml-1 uppercase">Months</span>
-                      </p>
+              {/* Core Financial KPI View */}
+              <div className="w-full">
+                {/* 1. Amount Remaining (Net Surplus) */}
+                <div className="bg-brand-surface border border-brand-border rounded-xl p-5 flex flex-col justify-between shadow-[0_2px_8px_rgba(0,0,0,0.02)] hover:border-brand-primary/20 transition-all duration-300">
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-1.5 text-[9px] font-mono font-bold text-brand-primary/40 uppercase tracking-widest">
+                        {balance >= 0 ? (
+                          <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
+                        ) : (
+                          <TrendingDown className="w-3.5 h-3.5 text-rose-500" />
+                        )}
+                        <span>Amount Remaining</span>
+                      </div>
+                      
+                      {/* Strategic Badges for CFO Mode */}
+                      <div className="flex items-center gap-1.5">
+                        <span className={cn(
+                          "text-[8px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border",
+                          balance >= 0 
+                            ? "bg-emerald-500/5 text-emerald-500 border-emerald-500/10" 
+                            : "bg-rose-500/5 text-rose-500 border-rose-500/10"
+                        )}>
+                          {savingsEfficiency.toFixed(0)}% Savings Rate
+                        </span>
+                        {runwayMonths > 0 && (
+                          <span className="text-[8px] font-bold text-brand-accent uppercase tracking-wider bg-brand-accent/5 px-2 py-0.5 rounded border border-brand-accent/10 flex items-center gap-1">
+                            <ShieldCheck className="w-2.5 h-2.5" />
+                            {runwayMonths.toFixed(1)}m Runway
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <h3 className={cn(
+                        "text-3xl font-mono font-bold tracking-tight leading-none",
+                        balance >= 0 ? "text-brand-primary" : "text-rose-600"
+                      )}>
+                        {formatCurrency(balance)}
+                      </h3>
+                      <p className="text-[9px] font-mono text-brand-primary/30 uppercase tracking-widest font-bold">Unallocated Net War Chest</p>
+                    </div>
+
+                    {/* Miniature Cash Flow Gauge */}
+                    <div className="space-y-1.5 pt-1">
+                      <div className="h-1 w-full bg-brand-bg rounded-full overflow-hidden border border-brand-border/40 p-[1px]">
+                        <motion.div 
+                          initial={{ width: 0 }}
+                          animate={{ width: `${Math.min(100, totalIncome > 0 ? (totalExpenses / totalIncome) * 100 : 0)}%` }}
+                          className={cn(
+                            "h-full rounded-full",
+                            (totalExpenses / (totalIncome || 1)) > 0.8 ? "bg-rose-500" : "bg-brand-primary"
+                          )}
+                        />
+                      </div>
+                      <div className="flex justify-between items-center text-[8.5px] font-mono text-brand-primary/40">
+                        <span>Spent: {formatCurrency(totalExpenses)}</span>
+                        <span>Earned: {formatCurrency(totalIncome)}</span>
+                      </div>
                     </div>
                   </div>
-                  
-                  <div className="hidden md:block h-8 w-px bg-brand-border/60" />
-                  
-                  <div className="flex flex-col items-start md:items-end group cursor-help">
-                    <p className="terminal-text !text-brand-primary/20 group-hover:text-brand-primary/40 transition-colors">Net Reserve Surplus</p>
-                    <p className="text-2xl font-mono font-bold text-brand-accent tracking-tighter">
-                      {formatCurrency(monthlySurplus)}
-                    </p>
+
+                  <div className="pt-3 mt-4 border-t border-brand-border/40 flex items-center justify-between text-[9.5px]">
+                    <span className="text-brand-primary/40 font-medium">Net position surplus cushion</span>
+                    <span className="font-mono text-brand-primary/35">Total Income - All Expenses</span>
                   </div>
                 </div>
               </div>
 
-              {/* Central Intelligence Layer (Hero) */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 px-4">
-                <section className="lg:col-span-8 bg-brand-primary text-brand-surface rounded-[3rem] p-8 md:p-14 relative overflow-hidden shadow-2xl border border-white/5 group">
-                  <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-brand-accent/5 rounded-full blur-[120px] -translate-y-1/2 translate-x-1/2 pointer-events-none group-hover:bg-brand-accent/10 transition-all duration-1000" />
-                  <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#fff 0.5px, transparent 0.5px)', backgroundSize: '12px 12px' }} />
-                  
-                  <div className="relative z-10 space-y-12">
-                    <div className="flex flex-col xl:flex-row justify-between items-start gap-12">
-                      <div className="space-y-8 flex-1 w-full overflow-hidden">
-                        <div className="inline-flex items-center gap-2.5 px-4 py-1.5 bg-white/5 border border-white/10 rounded-full shadow-inner">
-                          <ShieldCheck className="w-3.5 h-3.5 text-brand-accent animate-pulse" />
-                          <span className="text-[10px] font-bold text-white/90 uppercase tracking-widest">Capital Protection Active</span>
-                        </div>
-                        
-                        <div className="space-y-2">
-                          <p className="terminal-text !text-white/30 !text-[11px] px-1">Freedom Deployment Limit</p>
-                          <div className="flex flex-wrap items-baseline gap-x-4 gap-y-2">
-                            <h2 className="text-5xl md:text-7xl xl:text-8xl font-display font-black tracking-tighter text-white leading-none break-all">
-                              {formatCurrency(Math.max(0, strategicSpendingCeiling - spentThisMonth))}
-                            </h2>
-                            <span className="text-brand-accent font-mono font-black text-xl md:text-2xl uppercase italic animate-pulse">Alpha</span>
+              {/* Savings Milestones / Goals Progress Summary */}
+              <div className="bg-brand-surface border border-brand-border p-5 rounded-2xl space-y-4 shadow-[0_1px_3px_rgba(0,0,0,0.01)] relative overflow-hidden">
+                <div className="flex justify-between items-center border-b border-brand-border/40 pb-2">
+                  <div className="space-y-0.5">
+                    <p className="text-[9px] font-mono font-bold text-brand-primary/30 uppercase tracking-widest">Savings Milestones</p>
+                    <h3 className="text-xs font-black uppercase tracking-wider text-brand-primary">Goals Progress</h3>
+                  </div>
+                  <span className="text-[10px] font-mono font-bold text-brand-primary/40 bg-brand-bg px-2 py-0.5 rounded border border-brand-border/30">
+                    Overall Progress: {totalGoalProgress.toFixed(0)}%
+                  </span>
+                </div>
+
+                {goals.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {goals.map((goal) => {
+                      const pct = goal.targetAmount > 0 ? (goal.currentAmount / goal.targetAmount) * 100 : 0;
+                      const isCompleted = pct >= 100;
+                      const icon = goal.type === 'debt' 
+                        ? <Landmark className="w-3.5 h-3.5 text-brand-accent/70" /> 
+                        : goal.name.toLowerCase().includes('emergency') || goal.name.toLowerCase().includes('vault')
+                          ? <ShieldCheck className="w-3.5 h-3.5 text-emerald-500/70" />
+                          : <PiggyBank className="w-3.5 h-3.5 text-brand-primary/70" />;
+                      
+                      const remaining = Math.max(0, goal.targetAmount - goal.currentAmount);
+
+                      return (
+                        <div key={goal.id} className="space-y-1.5 p-3 rounded-2xl bg-brand-bg/30 border border-brand-border/20 flex flex-col justify-between">
+                          <div className="flex justify-between items-start text-xs">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className="w-8 h-8 rounded-xl bg-brand-primary/5 border border-brand-border/40 flex items-center justify-center shrink-0">
+                                {icon}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-bold text-brand-primary truncate max-w-[150px]">{goal.name}</p>
+                                <p className="text-[8px] font-bold text-brand-primary/40 uppercase tracking-wider mt-0.5">
+                                  {goal.type === 'debt' ? 'Debt Payoff' : 'Savings Goal'}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="text-right flex flex-col items-end leading-none">
+                              <span className={cn(
+                                "font-mono font-bold text-xs",
+                                isCompleted ? "text-emerald-500" : "text-brand-primary"
+                              )}>
+                                {pct.toFixed(0)}% Done
+                              </span>
+                              {isCompleted ? (
+                                <span className="text-[8px] font-bold text-emerald-500 uppercase tracking-wider mt-1 flex items-center gap-0.5">
+                                  <CheckCircle2 className="w-2.5 h-2.5" /> Fully Saved!
+                                </span>
+                              ) : (
+                                <span className="text-[8.5px] font-medium text-brand-primary/50 mt-1">
+                                  {formatCurrency(remaining)} left
+                                </span>
+                              )}
+                            </div>
                           </div>
-                          <p className="text-base md:text-lg text-white/60 font-medium max-w-md leading-relaxed pt-2">
-                            Validated <span className="text-white font-bold">Tactical Liquidity</span> available for growth deployment and high-signal acquisitions.
-                          </p>
-                        </div>
-                      </div>
 
-                      {/* Strategic Waterfall Map */}
-                      <div className="w-full xl:w-80 space-y-8 bg-white/5 p-6 md:p-8 rounded-[2.5rem] border border-white/10 backdrop-blur-md shrink-0">
-                        <div className="space-y-1">
-                          <p className="terminal-text !text-white/40">Capital Stack</p>
-                          <p className="text-[9px] text-white/20 italic">Forced Priority Sequence</p>
-                        </div>
-                        
-                        <div className="space-y-4">
-                          {[
-                            { label: 'Stabilize', amount: stabilizationAllocValue, color: 'bg-rose-500/30' },
-                            { label: 'Accelerate', amount: accelerationAllocValue, color: 'bg-brand-accent/40' },
-                            { label: 'Optimize', amount: optimizationAllocValue, color: 'bg-brand-accent' },
-                          ].map((item, idx) => (
-                            <div key={idx} className="space-y-2">
-                              <div className="flex justify-between items-center text-[10px] font-bold text-white/50 uppercase tracking-tighter">
-                                <span>0{idx+1}__{item.label}</span>
-                                <span className="font-mono text-white/90">{formatCurrency(item.amount)}</span>
-                              </div>
-                              <div className="h-1 text-xs flex rounded-full bg-white/5 overflow-hidden">
-                                <motion.div 
-                                  initial={{ width: 0 }}
-                                  animate={{ width: `${Math.min(100, (item.amount / (estimatedMonthlyIncome || 1)) * 100)}%` }}
-                                  className={cn("h-full transition-all duration-700", item.color)} 
-                                />
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
+                          {/* Progress bar */}
+                          <div className="h-2 w-full bg-brand-bg rounded-lg overflow-hidden p-[1px] border border-brand-border/30 mt-2">
+                            <motion.div 
+                              initial={{ width: 0 }}
+                              animate={{ width: `${Math.min(100, pct)}%` }}
+                              className={cn(
+                                "h-full rounded-full transition-all duration-500",
+                                isCompleted 
+                                  ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.2)]" 
+                                  : goal.type === 'debt' 
+                                    ? "bg-brand-accent animate-pulse" 
+                                    : "bg-brand-primary"
+                              )}
+                            />
+                          </div>
 
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-8 md:gap-12 pt-10 border-t border-white/10">
-                      <div className="space-y-3">
-                        <div className="flex items-center gap-2">
-                          <div className="w-1 h-1 rounded-full bg-rose-500" />
-                          <p className="terminal-text !text-white/40 !text-[8px]">Operational_Burn</p>
+                          {/* Friendly detail text */}
+                          <div className="flex justify-between text-[9px] text-brand-primary/40 font-medium mt-1">
+                            <span>Saved {formatCurrency(goal.currentAmount)}</span>
+                            <span>Target of {formatCurrency(goal.targetAmount)}</span>
+                          </div>
                         </div>
-                        <p className="text-2xl font-mono font-bold text-white tracking-tighter tabular-nums">
-                          {formatCurrency(monthlyBurn)}<span className="text-[10px] font-normal text-white/20 ml-1">/mo</span>
-                        </p>
-                      </div>
-                      
-                      <div className="space-y-3">
-                        <div className="flex items-center gap-2">
-                          <div className="w-1 h-1 rounded-full bg-brand-accent/50" />
-                          <p className="terminal-text !text-white/40 !text-[8px]">Income_Yield</p>
-                        </div>
-                        <p className="text-2xl font-mono font-bold text-white tracking-tighter tabular-nums">
-                          {formatCurrency(estimatedMonthlyIncome)}
-                        </p>
-                      </div>
-                      
-                      <div className="space-y-3">
-                        <div className="flex items-center gap-2">
-                          <div className="w-1 h-1 rounded-full bg-blue-500/50" />
-                          <p className="terminal-text !text-white/40 !text-[8px]">Safety_Margin</p>
-                        </div>
-                        <p className="text-2xl font-mono font-bold text-white tracking-tighter tabular-nums">
-                          {(incomeCoverage * 10).toFixed(0)}% <span className="text-[10px] font-normal text-white/20 ml-1">VLT</span>
-                        </p>
-                      </div>
-                      
-                      <div className="space-y-3">
-                        <div className="flex items-center gap-2">
-                          <div className="w-1 h-1 rounded-full bg-brand-accent" />
-                          <p className="terminal-text !text-brand-accent !text-[8px]">Retention_Rate</p>
-                        </div>
-                        <div className="flex items-baseline gap-1">
-                          <p className="text-2xl font-mono font-bold text-brand-accent tracking-tighter tabular-nums">
-                            {savingsRate.toFixed(1)}%
-                          </p>
-                          <TrendingUp className="w-3 h-3 text-brand-accent/40" />
-                        </div>
-                      </div>
-                    </div>
+                      );
+                    })}
                   </div>
-                </section>
-
-                <aside className="lg:col-span-4 space-y-8">
-                  {/* Tactical Pulse - Real-time Velocity */}
-                  <div className="bento-card relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-brand-accent/5 rounded-full blur-[40px] -mr-16 -mt-16" />
-                    <div className="space-y-8 relative z-10">
-                      <div className="flex items-center justify-between">
-                        <p className="terminal-text">Tactical Pulse</p>
-                        <div className={cn(
-                          "w-10 h-10 rounded-2xl flex items-center justify-center transition-all duration-500",
-                          dailyRemaining > 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-rose-500/10 text-rose-500"
-                        )}>
-                          <Zap className="w-5 h-5" />
-                        </div>
-                      </div>
-                      
-                      <div className="space-y-1">
-                        <h3 className={cn(
-                          "text-5xl font-mono font-bold tracking-tighter leading-none tabular-nums",
-                          dailyRemaining > 0 ? "text-brand-primary" : "text-rose-500"
-                        )}>
-                          {formatCurrency(dailyRemaining)}
-                        </h3>
-                        <p className="text-[9px] font-bold text-brand-primary/30 uppercase tracking-[0.25em] px-1">Deployment Capacity (Today)</p>
-                      </div>
-
-                      <div className="pt-8 border-t border-brand-border">
-                        <div className="flex justify-between items-center text-[10px] font-bold text-brand-primary/40 uppercase mb-4 px-1">
-                          <span>Threshold Alpha</span>
-                          <span>{formatCurrency(dailySpendingPower)}</span>
-                        </div>
-                        <div className="h-1 w-full bg-brand-bg rounded-full overflow-hidden">
-                          <motion.div 
-                            initial={{ width: 0 }}
-                            animate={{ width: `${Math.min(100, (spentToday / (dailySpendingPower || 1)) * 100)}%` }}
-                            className={cn(
-                              "h-full transition-all duration-700",
-                              spentToday > dailySpendingPower ? "bg-rose-500" : "bg-brand-primary"
-                            )} 
-                          />
-                        </div>
-                      </div>
-                    </div>
+                ) : (
+                  <div className="text-center py-12 text-brand-primary/30 space-y-2">
+                    <p className="text-xs font-mono">No financial goals defined.</p>
+                    <button
+                      onClick={() => { setCommandTab('goal'); setShowCommandCenter(true); }}
+                      className="px-3 py-1 bg-brand-primary text-brand-surface rounded text-[8px] font-bold uppercase tracking-wider"
+                    >
+                      Create Goal
+                    </button>
                   </div>
+                )}
 
-                  {/* Strategic Briefing (AI Insights) */}
-                  <div className="bg-brand-primary text-brand-surface rounded-[2.5rem] p-10 space-y-8 relative overflow-hidden shadow-xl min-h-[300px] flex flex-col justify-center">
-                    <div className="absolute top-0 right-0 w-full h-full opacity-10 pointer-events-none" style={{ backgroundImage: 'radial-gradient(#fff 0.4px, transparent 0.4px)', backgroundSize: '8px 8px' }} />
-                    <div className="space-y-6 relative z-10">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-xl bg-brand-accent flex items-center justify-center text-brand-primary shadow-lg shadow-brand-accent/20">
-                          <Sparkles className="w-4 h-4" />
-                        </div>
-                        <p className="terminal-text !text-brand-accent">CFO_ANALYSIS_V1.1</p>
-                      </div>
-                      
-                      <div className="space-y-4">
-                        <p className="text-xl font-display font-black leading-tight tracking-tight uppercase">
-                          {insights[0] || "Strategic assessment completed. Optimal deployment windows identified."}
-                        </p>
-                        <div className="space-y-2">
-                           <div className="h-px w-12 bg-brand-accent" />
-                           <p className="text-sm text-white/50 leading-relaxed max-w-[280px]">
-                             System has analyzed {transactions.length} records to identify alpha retention channels.
-                           </p>
-                        </div>
-                      </div>
-                    </div>
+                {goals.length > 0 && (
+                  <div className="pt-2">
+                    <button 
+                      onClick={() => setActiveTab('goals')}
+                      className="w-full py-2 bg-brand-bg hover:bg-brand-primary/5 text-brand-primary border border-brand-border rounded-xl text-[9.5px] font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1"
+                    >
+                      <span>View & Manage All {goals.length} Goals</span>
+                      <ArrowRight className="w-3 h-3 text-brand-accent" />
+                    </button>
                   </div>
-                </aside>
+                )}
               </div>
 
-              {/* Lower Intelligence Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 px-4">
-                {/* Wealth Target Node */}
-                <div className="bento-card col-span-1 md:col-span-2 group">
-                   <div className="flex items-center justify-between mb-8 md:mb-12">
-                      <div className="space-y-1">
-                        <p className="terminal-text">Wealth Trajectory</p>
-                        <h3 className="text-xl md:text-2xl font-display font-black text-brand-primary uppercase tracking-tight">Active Nodes</h3>
-                      </div>
-                      <Target className="w-6 h-6 text-brand-primary/20 group-hover:text-brand-accent transition-colors duration-500" />
-                   </div>
-                   
-                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 items-end">
-                      <div className="space-y-6 md:space-y-8">
-                        {goals.slice(0, 2).map((goal) => {
-                          const progress = (goal.currentAmount / (goal.targetAmount || 1)) * 100;
-                          return (
-                            <div key={goal.id} className="space-y-2.5">
-                              <div className="flex justify-between items-center text-[9px] font-bold text-brand-primary/40 uppercase tracking-widest px-1">
-                                <span className="truncate max-w-[120px]">{goal.name}</span>
-                                <span>{progress.toFixed(0)}%</span>
-                              </div>
-                              <div className="h-1.5 w-full bg-brand-bg rounded-full overflow-hidden p-[1px] border border-brand-border">
-                                <motion.div 
-                                  initial={{ width: 0 }}
-                                  animate={{ width: `${progress}%` }}
-                                  className="h-full bg-brand-primary rounded-full transition-all duration-700" 
-                                />
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <div className="p-5 md:p-6 bg-brand-bg rounded-[2rem] border border-brand-border space-y-4">
-                         <p className="terminal-text !text-[8px]">Collective Progress</p>
-                         <h4 className="text-xl md:text-2xl font-mono font-bold tracking-tighter text-brand-primary">{totalGoalProgress.toFixed(1)}%</h4>
-                         <div className="flex items-center gap-2 pt-2 border-t border-brand-border/50">
-                            <TrendingUp className="w-3 h-3 text-brand-accent" />
-                            <p className="text-[9px] font-bold text-brand-primary/40 uppercase tracking-widest leading-none">Net Goal Velocity +{streakCount}D</p>
-                         </div>
-                      </div>
-                   </div>
+              {/* Cost Center Category Outlays */}
+              <div className="bg-brand-surface border border-brand-border p-5 rounded-xl space-y-4 shadow-[0_1px_3px_rgba(0,0,0,0.01)]">
+                <div className="flex justify-between items-center border-b border-brand-border/40 pb-2">
+                  <div className="space-y-0.5">
+                    <p className="text-[9px] font-mono font-bold text-brand-primary/30 uppercase tracking-widest">Sectors & Outlays</p>
+                    <h3 className="text-xs font-black uppercase tracking-wider text-brand-primary">Category-wise Spending</h3>
+                  </div>
+                  <span className="text-[10px] font-mono font-bold text-brand-primary/40 bg-brand-bg px-2 py-0.5 rounded border border-brand-border/30">
+                    Total: {formatCurrency(categoryData.reduce((acc, c) => acc + c.value, 0))}
+                  </span>
                 </div>
 
-                {/* Liability Reduction Engine */}
-                <div className="bento-card group relative overflow-hidden flex flex-col justify-between">
-                   <div className="absolute inset-0 bg-brand-primary opacity-0 group-hover:opacity-[0.02] transition-opacity duration-700 pointer-events-none" />
-                   <div className="space-y-6 md:space-y-8 w-full overflow-hidden">
-                      <div className="flex items-center justify-between">
-                        <p className="terminal-text">Liability Matrix</p>
-                        <Landmark className="w-5 h-5 text-brand-primary/20" />
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-3xl md:text-4xl font-mono font-bold tracking-tighter text-brand-primary tabular-nums break-all">
-                          {formatCurrency(goals.filter(g => g.type === 'debt').reduce((acc, curr) => acc + (curr.targetAmount - curr.currentAmount), 0))}
-                        </p>
-                        <p className="text-[9px] font-bold text-brand-primary/30 uppercase tracking-[0.25em] px-1">Outstanding Exposure</p>
-                      </div>
-                   </div>
-                   <button 
+                {categoryData.length > 0 ? (
+                  <div className="space-y-3 max-h-[280px] overflow-y-auto no-scrollbar pr-1">
+                    {categoryData.map((cat, idx) => {
+                      const totalSpent = categoryData.reduce((acc, c) => acc + c.value, 0) || 1;
+                      const pct = (cat.value / totalSpent) * 100;
+                      return (
+                        <div key={cat.name} className="space-y-1">
+                          <div className="flex justify-between items-center text-xs">
+                            <div className="flex items-center gap-2">
+                              <div className="w-6 h-6 rounded-md bg-brand-primary/5 border border-brand-border/60 flex items-center justify-center scale-90 shrink-0">
+                                {getCategoryIcon(cat.name)}
+                              </div>
+                              <span className="font-bold text-brand-primary truncate max-w-[120px] uppercase tracking-tight">{cat.name}</span>
+                            </div>
+                            <div className="flex items-baseline gap-1.5 font-mono">
+                              <span className="font-bold text-brand-primary">{formatCurrency(cat.value)}</span>
+                              <span className="text-[8.5px] text-brand-primary/45">({pct.toFixed(0)}%)</span>
+                            </div>
+                          </div>
+                          <div className="h-1.5 w-full bg-brand-bg rounded-lg overflow-hidden p-[1px] border border-brand-border/40">
+                            <motion.div 
+                              initial={{ width: 0 }}
+                              animate={{ width: `${pct}%` }}
+                              className="h-full bg-brand-accent rounded-full"
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-center py-12 text-brand-primary/30 space-y-1">
+                    <p className="text-xs font-mono">No category-wise outlays registered yet.</p>
+                    <p className="text-[8px] font-bold uppercase tracking-wider">Log an expense to populate data metrics</p>
+                  </div>
+                )}
+              </div>
+
+              {/* AI CFO Strategic Pulse Briefing Only */}
+              <div className="bg-brand-surface border border-brand-border p-5 rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.01)] flex flex-col justify-between space-y-4">
+                <div className="space-y-3">
+                  <div className="flex items-center gap-1.5 text-[9px] font-mono font-bold text-brand-primary/40 uppercase tracking-widest">
+                    <Sparkles className="w-3.5 h-3.5 text-brand-accent" />
+                    <span>AI CFO Strategic Pulse Briefing</span>
+                  </div>
+                  <p className="text-sm font-sans font-medium text-brand-primary/80 leading-relaxed">
+                    {insights[0] || "Your active strategist is compiling raw cash flows. Your McKinsey-style roadmap will auto-synthesize here as transactions are fed."}
+                  </p>
+                </div>
+                <div className="pt-2">
+                  <button 
                     onClick={() => setActiveTab('insights')}
-                    className="w-full py-4 bg-brand-bg border border-brand-border rounded-xl text-[9px] font-bold text-brand-primary uppercase tracking-[0.3em] hover:bg-brand-primary hover:text-brand-surface hover:border-brand-primary transition-all duration-500 mt-8 md:mt-12"
-                   >
-                     Optimization Matrix
-                   </button>
-                </div>
-
-                {/* Audit Signal Node */}
-                <div className="bento-card group flex flex-col justify-between">
-                   <div className="space-y-6 md:space-y-8 w-full overflow-hidden">
-                      <div className="flex items-center justify-between">
-                        <p className="terminal-text">Flow Snapshot</p>
-                        <HistoryIcon className="w-5 h-5 text-brand-primary/20" />
-                      </div>
-                      <div className="space-y-4">
-                        {transactions.slice(0, 3).map(t => (
-                          <div key={t.id} className="flex justify-between items-center gap-4">
-                            <span className="text-[10px] font-bold text-brand-primary/60 uppercase truncate max-w-[100px]">{t.description}</span>
-                            <span className={cn(
-                              "text-xs font-mono font-bold shrink-0",
-                              (t.type === 'income' || t.type === 'refund') ? "text-brand-accent" : "text-brand-primary"
-                            )}>
-                              {formatCurrency(t.amount)}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                   </div>
-                   <button 
-                    onClick={() => setActiveTab('history')}
-                    className="w-full py-4 bg-brand-bg border border-brand-border rounded-xl text-[9px] font-bold text-brand-primary uppercase tracking-[0.3em] hover:bg-brand-primary hover:text-brand-surface hover:border-brand-primary transition-all duration-500 mt-8 md:mt-12"
-                   >
-                     Inspect Ledger
-                   </button>
+                    className="inline-flex items-center gap-1.5 text-[9px] font-black hover:text-brand-accent text-brand-primary uppercase tracking-widest hover:gap-3 transition-all font-mono"
+                  >
+                    <span>Analyze Strategic Scenarios</span>
+                    <ArrowRight className="w-3.5 h-3.5 text-brand-accent" />
+                  </button>
                 </div>
               </div>
             </motion.div>
@@ -1150,200 +1289,629 @@ function MainApp() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.2, ease: "easeOut" }}
-              className="space-y-10 md:space-y-16"
+              className="space-y-8"
             >
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-              <div className="space-y-1">
-                <h2 className="section-header">Ledger</h2>
-                <p className="data-label">Comprehensive history of your money movement</p>
-              </div>
-            </div>
+              {/* LEDGER HEADER & QUICK ACTION CONSOLE */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-brand-border pb-6">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <h2 className="section-header">Artha Transaction Ledger</h2>
+                    <span className="text-[9px] font-mono font-extrabold bg-brand-primary/5 border border-brand-border/60 text-brand-primary px-2.5 py-0.5 rounded-full select-none">
+                      {filteredTransactions.length} of {transactions.length} records matching
+                    </span>
+                  </div>
+                  <p className="data-label">Comprehensive microfinancial records, automated strategist audits, and interactive filter parameters</p>
+                </div>
+                
+                {/* Ledger Management Fast Hooks */}
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={handleExportCSV}
+                    disabled={filteredTransactions.length === 0}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-brand-surface hover:bg-brand-bg/60 disabled:opacity-40 border border-brand-border text-brand-primary rounded-xl text-[9px] font-mono font-bold uppercase tracking-wider transition-all duration-200 active:scale-95 shadow-sm"
+                    title="Generate professional CSV spreadsheet export"
+                  >
+                    <Download className="w-3.5 h-3.5 text-brand-accent animate-pulse" />
+                    <span>Export CSV</span>
+                  </button>
 
-              <div className="bg-brand-surface rounded-[2rem] border border-brand-border shadow-sm overflow-hidden grid grid-cols-3 divide-x divide-brand-border font-mono relative">
-                <div className="p-5 md:p-8 text-center space-y-2">
-                  <p className="data-label">Total Spent</p>
-                  <p className="text-xl md:text-2xl font-bold text-brand-primary tabular-nums">{formatCurrency(historySummary.spent)}</p>
-                </div>
-                <div className="p-5 md:p-8 text-center space-y-2">
-                  <p className="data-label">Total Earned</p>
-                  <p className="text-xl md:text-2xl font-bold text-brand-accent tabular-nums">{formatCurrency(historySummary.earned)}</p>
-                </div>
-                <div className="p-5 md:p-8 text-center space-y-2">
-                  <p className="data-label">Net Flow</p>
-                  <p className={cn(
-                    "text-xl md:text-2xl font-bold tabular-nums",
-                    historySummary.net >= 0 ? "text-brand-accent" : "text-rose-500"
-                  )}>
-                    {historySummary.net >= 0 ? '+' : ''}{formatCurrency(historySummary.net)}
-                  </p>
+                  <button 
+                    onClick={() => {
+                      setEditingTransaction(null);
+                      setCommandTab('transaction');
+                      setShowCommandCenter(true);
+                    }}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-brand-primary hover:bg-brand-primary/95 text-brand-surface rounded-xl text-[9px] font-bold uppercase tracking-wider shadow-lg transition-all duration-200 active:scale-95"
+                  >
+                    <Plus className="w-3.5 h-3.5 text-brand-accent" />
+                    <span>Record Entry</span>
+                  </button>
                 </div>
               </div>
-              
+
+              {/* CFO EXECUTIVE LEDGER DIAGNOSTIC BRIEFING */}
+              <div className="bg-brand-surface border border-brand-border rounded-2xl p-5 shadow-[0_2px_8px_rgba(0,0,0,0.02)] relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-brand-accent/5 rounded-full blur-3xl -mr-32 -mt-32 pointer-events-none" />
+                
+                <div className="flex items-center gap-2 pb-4 border-b border-brand-border/40">
+                  <span className="p-1.5 rounded-lg bg-brand-accent/10 border border-brand-accent/20">
+                    <Sparkles className="w-4 h-4 text-brand-accent" />
+                  </span>
+                  <div className="space-y-0.5">
+                    <h3 className="text-xs font-sans font-extrabold text-brand-primary uppercase tracking-wide">🎯 CFO Executive Ledger Diagnostics</h3>
+                    <p className="text-[9.5px] font-mono text-brand-primary/40">Dynamic run-rate audit, commitment ratio weights, and leak diagnostics based on your chosen filters</p>
+                  </div>
+                </div>
+
+                {/* Diagnostic Insights Columns */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-5">
+                  {/* Insight 1: Burn Velocity */}
+                  <div className="space-y-2.5 border-r border-brand-border/30 last:border-0 pr-0 md:pr-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-mono font-bold text-brand-primary/40 uppercase tracking-widest">
+                        1. Net Cushion Inflow Runrate
+                      </span>
+                      {filteredHistorySummary.earned > 0 ? (
+                        <span className={cn(
+                          "text-[8px] font-mono font-black px-2 py-0.5 rounded",
+                          (filteredHistorySummary.spent / filteredHistorySummary.earned) <= 0.4 ? "bg-emerald-500/10 text-emerald-500" :
+                          (filteredHistorySummary.spent / filteredHistorySummary.earned) <= 0.75 ? "bg-amber-500/10 text-amber-500" : "bg-rose-500/10 text-rose-500"
+                        )}>
+                          {((filteredHistorySummary.spent / filteredHistorySummary.earned) * 100).toFixed(0)}% Outflow Ratio
+                        </span>
+                      ) : (
+                        <span className="text-[8px] font-mono font-black text-brand-primary/25 bg-brand-bg px-2 py-0.5 rounded">No Inflow records matched</span>
+                      )}
+                    </div>
+                    <p className="text-xs font-sans font-medium text-brand-primary leading-relaxed">
+                      {filteredHistorySummary.earned === 0 ? (
+                        <span className="text-brand-primary/40 font-mono font-normal text-[9px] block">Awaiting income stream records in this specific filtered set to calculate burn statistics.</span>
+                      ) : (filteredHistorySummary.spent / filteredHistorySummary.earned) <= 0.35 ? (
+                        "🔒 Super-Saver Setup: Outstanding capital retention. You preserve over 65% of dynamic inflow. This allows for rapid wealth compounding."
+                      ) : (filteredHistorySummary.spent / filteredHistorySummary.earned) <= 0.60 ? (
+                        "🚀 Efficient Run Rate: Safe, healthy burn rate. Structural parameters are optimized; you are leaving generous breathing room."
+                      ) : (filteredHistorySummary.spent / filteredHistorySummary.earned) <= 0.85 ? (
+                        "⚠️ Accelerating Cash Squeeze: Over 60% of dynamic inflow flows straight back out. Squeezes discretionary room and slows your goals."
+                      ) : (
+                        "🚨 Extreme Burn Pressure: Barely any savings buffer left. Immediate action is recommended to offload secondary discretionary costs."
+                      )}
+                    </p>
+                  </div>
+
+                  {/* Insight 2: Structural Overheads */}
+                  <div className="space-y-2.5 border-r border-brand-border/30 last:border-0 px-0 md:px-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-mono font-bold text-brand-primary/40 uppercase tracking-widest">
+                        2. Capital Flexibility Ratio
+                      </span>
+                      {filteredHistorySummary.spent > 0 ? (
+                        <span className={cn(
+                          "text-[8px] font-mono font-black px-2 py-0.5 rounded",
+                          (filteredFixedCommitment / filteredHistorySummary.spent) <= 0.35 ? "bg-emerald-500/10 text-emerald-500" :
+                          (filteredFixedCommitment / filteredHistorySummary.spent) <= 0.60 ? "bg-amber-500/10 text-amber-500" : "bg-rose-500/10 text-rose-500"
+                        )}>
+                          {((filteredFixedCommitment / filteredHistorySummary.spent) * 100).toFixed(0)}% Rigid Base
+                        </span>
+                      ) : (
+                        <span className="text-[8px] font-mono font-black text-brand-primary/25 bg-brand-bg px-2 py-0.5 rounded">No Outflows</span>
+                      )}
+                    </div>
+                    <p className="text-xs font-sans font-medium text-brand-primary leading-relaxed">
+                      {filteredHistorySummary.spent === 0 ? (
+                        <span className="text-brand-primary/40 font-mono font-normal text-[9px] block">Add outflows marked with 'Fixed Commitment' to calculate overhead stress tests.</span>
+                      ) : (filteredFixedCommitment / filteredHistorySummary.spent) <= 0.35 ? (
+                        "⚡ Exceptional Asset Agility: Superior flexibility base! Your low committed fixed base makes your lifestyle highly recession-proof."
+                      ) : (filteredFixedCommitment / filteredHistorySummary.spent) <= 0.60 ? (
+                        "⚖️ Healthy Leverage Balance: Safe strategic overhead footprint. Rent, EMIs, and essential commitments are under control."
+                      ) : (
+                        "🚨 Severe Fixed Overhead Load: Over 60% of outflows are hardcoded bills/rent. Squeezes capacity to cut back during critical periods."
+                      )}
+                    </p>
+                  </div>
+
+                  {/* Insight 3: Leak Optimality */}
+                  <div className="space-y-2.5 last:border-0 pl-0 md:pl-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-mono font-bold text-brand-primary/40 uppercase tracking-widest">
+                        3. Microfinancial Leaks
+                      </span>
+                      {filteredHistorySummary.spent > 0 ? (
+                        <span className={cn(
+                          "text-[8px] font-mono font-black px-2 py-0.5 rounded",
+                          filteredAvoidableLoss === 0 ? "bg-emerald-500/10 text-emerald-500" :
+                          (filteredAvoidableLoss / filteredHistorySummary.spent) <= 0.12 ? "bg-amber-500/10 text-amber-500" : "bg-rose-500/10 text-rose-500"
+                        )}>
+                          {((filteredAvoidableLoss / filteredHistorySummary.spent) * 100).toFixed(0)}% Friction
+                        </span>
+                      ) : (
+                        <span className="text-[8px] font-mono font-black text-brand-primary/25 bg-brand-bg px-2 py-0.5 rounded">No Outflows</span>
+                      )}
+                    </div>
+                    <p className="text-xs font-sans font-medium text-brand-primary leading-relaxed">
+                      {filteredHistorySummary.spent === 0 ? (
+                        <span className="text-brand-primary/40 font-mono font-normal text-[9px] block">Awaiting variable outlays to determine frictional pipeline resistance.</span>
+                      ) : filteredAvoidableLoss === 0 ? (
+                        "🛡️ Pristine Cash pipeline: Zero avoidable leakage detected in this ledger slice. Brilliant discipline is maximizing your potential savings."
+                      ) : (filteredAvoidableLoss / filteredHistorySummary.spent) <= 0.15 ? (
+                        `💡 Variable Leak Identified: Discretionary bleeding is ${formatCurrency(filteredAvoidableLoss)}. Eliminating this raises investment velocity.`
+                      ) : (
+                        `📉 Severe Leakage Diagnostic: You lost ${formatCurrency(filteredAvoidableLoss)} in avoidable friction. Fast-track cuts on non-essential tools.`
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* DYNAMIC REAL-TIME KPI STAT RIBBONS */}
+              <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+                {/* 1. Net Position Dynamic */}
+                <div className="bg-brand-surface border border-brand-border p-4.5 rounded-xl flex flex-col justify-between shadow-[0_1px_3px_rgba(0,0,0,0.01)] hover:border-brand-primary/10 transition-colors">
+                  <div className="space-y-1">
+                    <p className="text-[8px] font-mono font-extrabold text-brand-primary/35 uppercase tracking-wider">Filtered Net Surplus</p>
+                    <h4 className={cn(
+                      "text-base md:text-lg font-mono font-extrabold tracking-tight truncate",
+                      filteredHistorySummary.net >= 0 ? "text-brand-accent" : "text-rose-500"
+                    )}>
+                      {filteredHistorySummary.net >= 0 ? '+' : ''}{formatCurrency(filteredHistorySummary.net)}
+                    </h4>
+                  </div>
+                  <div className="text-[8px] font-mono text-brand-primary/40 pt-2 mt-2 border-t border-brand-border/40 truncate">
+                    Actual Dynamic Cushion
+                  </div>
+                </div>
+
+                {/* 2. Total Inflow Dynamic */}
+                <div className="bg-brand-surface border border-brand-border p-4.5 rounded-xl flex flex-col justify-between shadow-[0_1px_3px_rgba(0,0,0,0.01)] hover:border-brand-primary/10 transition-colors">
+                  <div className="space-y-1">
+                    <p className="text-[8px] font-mono font-extrabold text-emerald-500/40 uppercase tracking-wider">Total Inflows</p>
+                    <h4 className="text-base md:text-lg font-mono font-extrabold text-emerald-500 tracking-tight truncate">
+                      {formatCurrency(filteredHistorySummary.earned)}
+                    </h4>
+                  </div>
+                  <div className="text-[8px] font-mono text-brand-primary/40 pt-2 mt-2 border-t border-brand-border/40 truncate">
+                    Dynamic Revenue Stream
+                  </div>
+                </div>
+
+                {/* 3. Total Outflow Dynamic */}
+                <div className="bg-brand-surface border border-brand-border p-4.5 rounded-xl flex flex-col justify-between shadow-[0_1px_3px_rgba(0,0,0,0.01)] hover:border-brand-primary/10 transition-colors">
+                  <div className="space-y-1">
+                    <p className="text-[8px] font-mono font-extrabold text-brand-primary/35 uppercase tracking-wider">Total Outflows</p>
+                    <h4 className="text-base md:text-lg font-mono font-extrabold text-brand-primary tracking-tight truncate">
+                      {formatCurrency(filteredHistorySummary.spent)}
+                    </h4>
+                  </div>
+                  <div className="text-[8px] font-mono text-brand-primary/40 pt-2 mt-2 border-t border-brand-border/40 truncate">
+                    Current Direct Burn
+                  </div>
+                </div>
+
+                {/* 4. Strategic Leakage (Avoidable Outlay) Dynamic */}
+                <div className="bg-brand-surface border border-brand-border p-4.5 rounded-xl flex flex-col justify-between shadow-[0_1px_3px_rgba(0,0,0,0.01)] hover:border-brand-primary/10 transition-colors">
+                  <div className="space-y-1">
+                    <p className="text-[8px] font-mono font-extrabold text-rose-500/40 uppercase tracking-wider">Avoidable Leakage</p>
+                    <h4 className={cn(
+                      "text-base md:text-lg font-mono font-extrabold tracking-tight truncate",
+                      filteredAvoidableLoss > 0 ? "text-rose-500" : "text-brand-primary/30"
+                    )}>
+                      {formatCurrency(filteredAvoidableLoss)}
+                    </h4>
+                  </div>
+                  <div className="text-[8px] font-mono text-brand-primary/40 pt-2 mt-2 border-t border-brand-border/40 truncate">
+                    Frictional bleeding out
+                  </div>
+                </div>
+
+                {/* 5. Committed Workload (Mandatory Overhead) Dynamic */}
+                <div className="bg-brand-surface border border-brand-border p-4.5 rounded-xl flex flex-col justify-between shadow-[0_1px_3px_rgba(0,0,0,0.01)] hover:border-brand-primary/10 transition-colors">
+                  <div className="space-y-1">
+                    <p className="text-[8px] font-mono font-extrabold text-brand-accent/40 uppercase tracking-wider">Committed Load</p>
+                    <h4 className="text-base md:text-lg font-mono font-extrabold text-brand-accent tracking-tight truncate">
+                      {formatCurrency(filteredFixedCommitment)}
+                    </h4>
+                  </div>
+                  <div className="text-[8px] font-mono text-brand-primary/40 pt-2 mt-2 border-t border-brand-border/40 truncate">
+                    Necessary Overheads
+                  </div>
+                </div>
+
+                {/* 6. Average Ticket Size Dynamic */}
+                <div className="bg-brand-surface border border-brand-border p-4.5 rounded-xl flex flex-col justify-between shadow-[0_1px_3px_rgba(0,0,0,0.01)] hover:border-brand-primary/10 transition-colors">
+                  <div className="space-y-1">
+                    <p className="text-[8px] font-mono font-extrabold text-brand-primary/35 uppercase tracking-wider">Average Ticket</p>
+                    <h4 className="text-base md:text-lg font-mono font-extrabold text-brand-primary tracking-tight truncate">
+                      {formatCurrency(filteredAverageExpense)}
+                    </h4>
+                  </div>
+                  <div className="text-[8px] font-mono text-brand-primary/40 pt-2 mt-2 border-t border-brand-border/40 truncate">
+                    Mean Cash Outflow rate
+                  </div>
+                </div>
+              </div>
+
+              {/* HIGH-CRAFT ANALYTICAL CHARTS SECTION */}
               {transactions.length > 0 && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Category Distribution */}
-                  <div className="bg-brand-surface border border-brand-border rounded-[2rem] p-6 space-y-6 shadow-sm">
-                    <div className="flex items-center justify-between">
-                      <p className="data-label">Category Volume</p>
-                      <div className="w-8 h-8 rounded-lg bg-brand-bg flex items-center justify-center text-brand-primary/20">
+                  {/* Category Distribution chart */}
+                  <div className="bg-brand-surface border border-brand-border rounded-xl p-6 space-y-6 shadow-[0_1px_3px_rgba(0,0,0,0.01)] relative overflow-hidden">
+                    <div className="flex items-center justify-between pb-3 border-b border-brand-border/40">
+                      <div className="space-y-0.5">
+                        <p className="data-label !text-[9px] uppercase font-mono tracking-widest text-brand-primary/40">Dynamic Categorical Volume</p>
+                        <p className="text-xs font-sans font-bold text-brand-primary">Direct Active Outlay Breakdown</p>
+                      </div>
+                      <div className="w-8 h-8 rounded-lg bg-brand-bg flex items-center justify-center text-brand-primary/20 border border-brand-border/55">
                         <PieChartIcon className="w-4 h-4" />
                       </div>
                     </div>
-                    <div className="h-48 w-full">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={historyCategoryData.slice(0, 5)}>
-                          <XAxis 
-                            dataKey="name" 
-                            hide 
-                          />
-                          <Tooltip 
-                            contentStyle={{ 
-                              backgroundColor: '#1E1E1E', 
-                              border: '1px solid #333', 
-                              borderRadius: '12px',
-                              fontSize: '10px',
-                              fontFamily: 'JetBrains Mono' 
-                            }}
-                            cursor={{ fill: 'rgba(255,255,255,0.05)' }}
-                          />
-                          <Bar 
-                            dataKey="value" 
-                            fill="var(--color-brand-primary)" 
-                            radius={[6, 6, 0, 0]}
-                            barSize={32}
-                          />
-                        </BarChart>
-                      </ResponsiveContainer>
+                    
+                    <div className="h-44 w-full">
+                      {filteredCategoryData.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={filteredCategoryData.slice(0, 5)}>
+                            <XAxis 
+                              dataKey="name" 
+                              hide 
+                            />
+                            <Tooltip 
+                              contentStyle={{ 
+                                backgroundColor: '#161616', 
+                                border: '1px solid #2B2B2B', 
+                                borderRadius: '8px',
+                                fontSize: '10px',
+                                fontFamily: 'JetBrains Mono',
+                                color: '#FFFFFF'
+                              }}
+                              itemStyle={{
+                                color: '#FFFFFF',
+                                fontWeight: 'bold',
+                                fontSize: '10px'
+                              }}
+                              labelStyle={{
+                                color: 'rgba(255, 255, 255, 0.5)',
+                                fontSize: '10px',
+                                marginBottom: '2px'
+                              }}
+                              formatter={(value: any) => [formatCurrency(Number(value)), "Outflow"]}
+                              cursor={{ fill: 'rgba(255, 255, 255, 0.03)' }}
+                            />
+                            <Bar 
+                              dataKey="value" 
+                              fill="var(--color-brand-primary)" 
+                              radius={[4, 4, 0, 0]}
+                              barSize={28}
+                            />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="h-full flex items-center justify-center text-center text-brand-primary/30 text-[10px] font-mono">
+                          No matching outlay categories in this dynamic slice.
+                        </div>
+                      )}
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
-                       {historyCategoryData.slice(0, 4).map((item, idx) => (
-                         <div key={item.name} className="flex flex-col gap-1">
-                           <p className="text-[10px] font-bold text-brand-primary/40 uppercase truncate">{item.name}</p>
-                           <p className="text-xs font-mono font-bold text-brand-primary leading-none">
-                             {((item.value / (totalExpense || 1)) * 100).toFixed(0)}%
-                           </p>
+                    
+                    <div className="grid grid-cols-2 gap-y-3 gap-x-4 pt-2 border-t border-brand-border/40">
+                       {filteredCategoryData.length > 0 ? (
+                         filteredCategoryData.slice(0, 4).map((item) => (
+                           <div key={item.name} className="flex flex-col gap-0.5">
+                             <p className="text-[8.5px] font-mono font-bold text-brand-primary/40 uppercase truncate">{item.name}</p>
+                             <div className="flex items-baseline gap-1.5 flex-wrap">
+                               <p className="text-xs font-mono font-bold text-brand-primary leading-none">
+                                 {formatCurrency(item.value)}
+                               </p>
+                               <span className="text-[8px] text-brand-primary/30 font-mono">
+                                 ({((item.value / (filteredTotalExpense || 1)) * 100).toFixed(0)}%)
+                               </span>
+                             </div>
+                           </div>
+                         ))
+                       ) : (
+                         <div className="col-span-2 text-center text-[10px] text-brand-primary/25 font-mono py-1">
+                           Diagnostic index silent (No categories)
                          </div>
-                       ))}
+                       )}
                     </div>
                   </div>
 
-                  {/* Spending Velocity */}
-                  <div className="bg-brand-surface border border-brand-border rounded-[2rem] p-6 space-y-6 shadow-sm relative overflow-hidden">
+                  {/* Spending velocity trend chart */}
+                  <div className="bg-brand-surface border border-brand-border rounded-xl p-6 space-y-6 shadow-[0_1px_3px_rgba(0,0,0,0.01)] relative overflow-hidden">
                     <div className="absolute top-0 right-0 w-32 h-32 bg-brand-accent/5 rounded-full blur-3xl -mr-16 -mt-16" />
-                    <div className="flex items-center justify-between">
-                      <p className="data-label">Spending Trends</p>
-                      <div className="w-8 h-8 rounded-lg bg-brand-accent/5 flex items-center justify-center text-brand-accent/40">
+                    <div className="flex items-center justify-between pb-3 border-b border-brand-border/40">
+                      <div className="space-y-0.5">
+                        <p className="data-label !text-[9px] uppercase font-mono tracking-widest text-brand-primary/40">Dynamic Temporal Activity Trend</p>
+                        <p className="text-xs font-sans font-bold text-brand-primary">Incremental Cash Run Rate</p>
+                      </div>
+                      <div className="w-8 h-8 rounded-lg bg-brand-accent/5 flex items-center justify-center text-brand-accent/40 border border-brand-accent/10">
                         <Activity className="w-4 h-4" />
                       </div>
                     </div>
-                    <div className="h-48 w-full">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={historyTrendData}>
-                          <defs>
-                            <linearGradient id="colorAmount" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="var(--color-brand-accent)" stopOpacity={0.3}/>
-                              <stop offset="95%" stopColor="var(--color-brand-accent)" stopOpacity={0}/>
-                            </linearGradient>
-                          </defs>
-                          <XAxis 
-                            dataKey="date" 
-                            axisLine={false}
-                            tickLine={false}
-                            tick={{ fontSize: 9, fill: 'var(--color-brand-primary)', opacity: 0.3 }}
-                          />
-                          <Tooltip 
-                            contentStyle={{ 
-                              backgroundColor: '#1E1E1E', 
-                              border: '1px solid #333', 
-                              borderRadius: '12px',
-                              fontSize: '10px',
-                              fontFamily: 'JetBrains Mono' 
-                            }}
-                          />
-                          <Area 
-                            type="monotone" 
-                            dataKey="amount" 
-                            stroke="var(--color-brand-accent)" 
-                            fillOpacity={1} 
-                            fill="url(#colorAmount)" 
-                            strokeWidth={3}
-                          />
-                        </AreaChart>
-                      </ResponsiveContainer>
+                    
+                    <div className="h-44 w-full">
+                      {filteredTrendData.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart data={filteredTrendData}>
+                            <defs>
+                              <linearGradient id="colorAmount" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="var(--color-brand-accent)" stopOpacity={0.2}/>
+                                <stop offset="95%" stopColor="var(--color-brand-accent)" stopOpacity={0}/>
+                              </linearGradient>
+                            </defs>
+                            <XAxis 
+                              dataKey="date" 
+                              axisLine={false}
+                              tickLine={false}
+                              tick={{ fontSize: 8, fill: 'var(--color-brand-primary)', opacity: 0.3, fontFamily: 'JetBrains Mono' }}
+                            />
+                            <Tooltip 
+                              contentStyle={{ 
+                                backgroundColor: '#161616', 
+                                border: '1px solid #2B2B2B', 
+                                borderRadius: '8px',
+                                fontSize: '10px',
+                                fontFamily: 'JetBrains Mono',
+                                color: '#FFFFFF'
+                              }}
+                              itemStyle={{
+                                color: '#FFFFFF',
+                                fontWeight: 'bold',
+                                fontSize: '10px'
+                              }}
+                              labelStyle={{
+                                color: 'rgba(255, 255, 255, 0.5)',
+                                fontSize: '10px',
+                                marginBottom: '2px'
+                              }}
+                              formatter={(value: any) => [formatCurrency(Number(value)), "Spending"]}
+                            />
+                            <Area 
+                              type="monotone" 
+                              dataKey="amount" 
+                              stroke="var(--color-brand-accent)" 
+                              fillOpacity={1} 
+                              fill="url(#colorAmount)" 
+                              strokeWidth={2}
+                            />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="h-full flex items-center justify-center text-center text-brand-primary/30 text-[10px] font-mono">
+                          No matching entries in this temporal slice to graph.
+                        </div>
+                      )}
                     </div>
-                    <div className="flex items-center justify-between pt-2">
-                       <div className="space-y-1">
-                         <p className="data-label !text-[8px]">Daily Spending</p>
-                         <p className="text-sm font-bold text-brand-primary lowercase bg-brand-bg px-2 py-1 rounded-lg border border-brand-border">
-                           {formatCurrency(historyTrendData[historyTrendData.length - 1]?.amount || 0)}/day
+                    
+                    <div className="flex items-center justify-between pt-2 border-t border-brand-border/40">
+                       <div className="space-y-0.5">
+                         <p className="data-label !text-[8.5px] uppercase font-mono tracking-wider text-brand-primary/30 font-bold">Velocity Estimation</p>
+                         <p className="text-xs font-mono font-bold text-brand-primary">
+                           {formatCurrency(filteredTrendData[filteredTrendData.length - 1]?.amount || 0)}/day
                          </p>
                        </div>
-                       <div className="text-right space-y-1">
-                         <p className="data-label !text-[8px]">Status</p>
-                         <p className="text-xs font-mono font-bold text-brand-accent">
-                           STEADY
-                         </p>
+                       <div className="text-right space-y-0.5">
+                         <p className="data-label !text-[8.5px] uppercase font-mono tracking-wider text-brand-primary/30">CFO Status Flag</p>
+                         <span className="inline-flex items-center gap-1 text-[8.5px] font-mono font-bold text-brand-accent uppercase tracking-widest bg-brand-accent/5 border border-brand-accent/10 px-2 py-0.5 rounded">
+                           ⚡ Active Runrate
+                         </span>
                        </div>
                     </div>
                   </div>
                 </div>
               )}
 
-              <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-                <div className="space-y-1">
-                  <h2 className="section-header">All Transactions</h2>
-                  <p className="data-label">Every record saved to Artha</p>
+              {/* ARTHA INTERACTIVE QUERY ENGINE & ADVANCED FILTERS PANEL */}
+              <div className="bg-brand-surface border border-brand-border rounded-xl p-5 space-y-5 shadow-[0_1px_3px_rgba(0,0,0,0.01)]">
+                
+                {/* Visual Section Header */}
+                <div className="flex items-center justify-between pb-3 border-b border-brand-border/40">
+                  <div className="flex items-center gap-2">
+                    <SlidersHorizontal className="w-4 h-4 text-brand-accent" />
+                    <span className="text-xs font-mono font-bold text-brand-primary uppercase tracking-widest">Interactive Ledger Filters</span>
+                  </div>
+                  {(searchQuery || filter !== 'All' || historyTimeframe !== 'all' || historySelectedCategory !== 'All' || historySelectedTag !== 'all') && (
+                    <button 
+                      onClick={() => {
+                        setSearchQuery('');
+                        setFilter('All');
+                        setHistoryTimeframe('all');
+                        setHistorySelectedCategory('All');
+                        setHistorySelectedTag('all');
+                      }}
+                      className="text-[9px] font-mono font-bold text-rose-500 hover:text-rose-400 uppercase tracking-widest bg-rose-500/5 hover:bg-rose-500/10 border border-rose-500/10 px-2 py-1 rounded transition-all"
+                      title="Reset all dynamic filter parameters"
+                    >
+                      Clear All Filters
+                    </button>
+                  )}
                 </div>
-                <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
-                   <div className="relative group/search">
-                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-brand-primary/40 group-focus-within/search:text-brand-accent transition-colors" />
-                      <input 
-                        type="text"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder="SEARCH_LEDGER..."
-                        className="w-full md:w-64 bg-brand-surface border border-brand-border rounded-full py-2 pl-10 pr-4 text-[9px] font-mono font-bold text-brand-primary outline-none focus:border-brand-accent/30 transition-all placeholder:text-brand-primary/30"
-                      />
-                   </div>
-                   <div className="flex bg-brand-bg p-1.5 rounded-full border border-brand-border shadow-inner">
-                    {['All', 'Expenses', 'Income'].map(f => (
+
+                {/* Subgrid 1: Text Search & Type Toggle */}
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                  {/* Search Bar input */}
+                  <div className="md:col-span-6 relative group/search">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-brand-primary/40 group-focus-within/search:text-brand-accent transition-colors" />
+                    <input 
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search description, categories, tags..."
+                      className="w-full bg-brand-bg border border-brand-border rounded-xl py-2 pl-9 pr-8 text-[10px] font-mono font-bold text-brand-primary outline-none focus:border-brand-accent/40 transition-all placeholder:text-brand-primary/25"
+                    />
+                    {searchQuery && (
+                      <button 
+                        onClick={() => setSearchQuery('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-brand-primary/30 hover:text-brand-primary text-xs"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Cashflow Type Filters Segment pills */}
+                  <div className="md:col-span-6 flex bg-brand-bg p-1 rounded-xl border border-brand-border shadow-inner justify-between">
+                    {(['All', 'Expenses', 'Income'] as const).map(f => (
                       <button 
                         key={f} 
-                        onClick={() => setFilter(f as any)} 
+                        onClick={() => setFilter(f)} 
                         className={cn(
-                          "px-6 py-2 rounded-full text-[10px] font-bold uppercase tracking-[0.2em] transition-all",
-                          filter === f ? "bg-brand-primary text-brand-surface shadow-lg" : "text-brand-primary/30 hover:text-brand-primary/60"
+                          "flex-1 text-center py-1.5 rounded-lg text-[9px] font-mono font-black uppercase tracking-widest transition-all",
+                          filter === f 
+                            ? "bg-brand-primary text-brand-surface shadow-md font-bold" 
+                            : "text-brand-primary/40 hover:text-brand-primary/70"
                         )}
                       >
                         {f}
                       </button>
                     ))}
-                   </div>
+                  </div>
                 </div>
+
+                {/* Subgrid 2: Date Timeframe & Strategic Dimension Categorization */}
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-4 pt-3 border-t border-brand-border/45">
+                  
+                  {/* Timeframe selector column */}
+                  <div className="md:col-span-4 space-y-1.5">
+                    <label className="text-[8px] font-mono font-bold text-brand-primary/40 uppercase tracking-widest block">Timeframe Interval</label>
+                    <div className="grid grid-cols-5 gap-1 bg-brand-bg p-0.5 rounded-lg border border-brand-border">
+                      {([
+                        { id: 'all', label: 'All' },
+                        { id: '7days', label: '7D' },
+                        { id: '30days', label: '30D' },
+                        { id: 'this-month', label: '1M' },
+                        { id: 'last-month', label: 'Prev' }
+                      ] as const).map(tf => (
+                        <button
+                          key={tf.id}
+                          onClick={() => setHistoryTimeframe(tf.id)}
+                          className={cn(
+                            "py-1.5 text-[8.5px] font-mono font-bold uppercase rounded text-center transition-all",
+                            historyTimeframe === tf.id 
+                              ? "bg-brand-primary text-brand-surface font-black" 
+                              : "text-brand-primary/40 hover:text-brand-primary/70"
+                          )}
+                          title={`Filter to ${tf.label}`}
+                        >
+                          {tf.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Strategic Tag Dimension classification filter */}
+                  <div className="md:col-span-4 space-y-1.5">
+                    <label className="text-[8px] font-mono font-bold text-brand-primary/40 uppercase tracking-widest block">Strategic Category Segment</label>
+                    <div className="grid grid-cols-4 gap-1 bg-brand-bg p-0.5 rounded-lg border border-brand-border">
+                      {([
+                        { id: 'all', label: 'All' },
+                        { id: 'avoidable', label: 'Avoid' },
+                        { id: 'fixed', label: 'Fixed' },
+                        { id: 'recurring', label: 'Recur' }
+                      ] as const).map(tag => (
+                        <button
+                          key={tag.id}
+                          onClick={() => setHistorySelectedTag(tag.id)}
+                          className={cn(
+                            "py-1.5 text-[8.5px] font-mono font-bold uppercase rounded text-center transition-all truncate px-1",
+                            historySelectedTag === tag.id 
+                              ? "bg-brand-primary text-brand-surface font-black" 
+                              : "text-brand-primary/40 hover:text-brand-primary/70"
+                          )}
+                          title={`Segment to ${tag.label}`}
+                        >
+                          {tag.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Sorting dropdown controls */}
+                  <div className="md:col-span-4 space-y-1.5">
+                    <label className="text-[8px] font-mono font-bold text-brand-primary/40 uppercase tracking-widest block flex items-center gap-1">
+                      <ArrowUpDown className="w-2.5 h-2.5 text-brand-accent" />
+                      <span>Ledger Sorting Method</span>
+                    </label>
+                    <div className="relative">
+                      <select 
+                        value={historySortBy}
+                        onChange={(e) => setHistorySortBy(e.target.value as any)}
+                        className="w-full bg-brand-bg border border-brand-border rounded-lg py-1.5 px-3 text-[9px] font-mono font-bold text-brand-primary outline-none focus:border-brand-primary/30 cursor-pointer appearance-none"
+                      >
+                        <option value="date-desc">📆 Date: Newer First</option>
+                        <option value="date-asc">📆 Date: Older First</option>
+                        <option value="amount-desc">🚀 Amount: Highest First</option>
+                        <option value="amount-asc">📉 Amount: Lowest First</option>
+                      </select>
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-brand-primary/40 text-[8px] font-mono font-bold">
+                        ▼
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Horizontal dynamic scroll list of Categories present */}
+                {uniqueHistoryCategories.length > 2 && (
+                  <div className="space-y-1.5 pt-3 border-t border-brand-border/45">
+                    <span className="text-[8px] font-mono font-bold text-brand-primary/40 uppercase tracking-widest block flex items-center gap-1">
+                      <Tag className="w-2.5 h-2.5 text-brand-secondary" />
+                      <span>Categorical Fast Filters</span>
+                    </span>
+                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 scrollbar-thin scrollbar-thumb-brand-border select-none no-scrollbar">
+                      {uniqueHistoryCategories.map(cat => (
+                        <button
+                          key={cat}
+                          onClick={() => setHistorySelectedCategory(cat)}
+                          className={cn(
+                            "px-3 py-1 flex items-center justify-center rounded-lg text-[8.5px] font-mono font-bold whitespace-nowrap transition-all border shrink-0",
+                            historySelectedCategory === cat
+                              ? "bg-brand-primary text-brand-surface border-brand-primary shadow-sm font-black"
+                              : "bg-brand-bg text-brand-primary/50 border-brand-border hover:text-brand-primary hover:border-brand-primary/20"
+                          )}
+                        >
+                          {cat}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
-            {/* Transaction List */}
-            <div className="space-y-8">
-              {transactions.length === 0 ? (
-                <div className="bg-brand-surface border border-brand-border border-dashed rounded-[2rem] p-12 text-center space-y-6">
-                  <div className="w-16 h-16 bg-brand-bg rounded-2xl flex items-center justify-center mx-auto text-brand-primary/10">
-                    <HistoryIcon className="w-8 h-8" />
-                  </div>
-                  <div className="space-y-2">
-                    <p className="text-xl font-display font-medium text-brand-primary">Nothing here yet</p>
-                    <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-widest leading-relaxed">No records found. Click below to add your first transaction.</p>
-                  </div>
-                  <button 
-                    onClick={() => {
-                        setCommandTab('transaction');
-                        setShowCommandCenter(true);
-                    }}
-                    className="px-6 py-3 bg-brand-primary text-brand-surface rounded-xl text-[9px] font-bold uppercase tracking-widest shadow-lg active:scale-95 transition-all"
-                  >
-                    Add First Record
-                  </button>
+              {/* LEDGER RENDER LIST */}
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-[10px] font-mono font-bold text-brand-primary/40 uppercase tracking-widest">
+                    Ledger Log Entries ({filteredTransactions.length})
+                  </h3>
+                  {historySelectedCategory !== 'All' && (
+                    <span className="text-[8px] font-mono font-medium text-brand-accent bg-brand-accent/5 px-2 py-0.5 rounded border border-brand-accent/10 whitespace-nowrap">
+                      filtering category: {historySelectedCategory}
+                    </span>
+                  )}
                 </div>
-              ) : Object.entries(groupedTransactions).map(([date, items]) => (
+
+                <div className="space-y-8">
+                  {filteredTransactions.length === 0 ? (
+                    <div className="bg-brand-surface border border-brand-border border-dashed rounded-[1.5rem] p-12 text-center space-y-6">
+                      <div className="w-14 h-14 bg-brand-bg rounded-xl flex items-center justify-center mx-auto text-brand-primary/10 border border-brand-border/40">
+                        <HistoryIcon className="w-7 h-7" />
+                      </div>
+                      <div className="space-y-2">
+                        <p className="text-base font-medium font-sans text-brand-primary">No transaction assets discovered</p>
+                        <p className="text-[9px] text-brand-primary/40 font-bold uppercase tracking-widest max-w-sm mx-auto leading-relaxed">
+                          Your active filter constraints or search keywords produced no results. Refine inputs or add a record.
+                        </p>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          setSearchQuery('');
+                          setFilter('All');
+                          setHistoryTimeframe('all');
+                          setHistorySelectedCategory('All');
+                          setHistorySelectedTag('all');
+                        }}
+                        className="px-5 py-2.5 bg-brand-surface hover:bg-brand-bg text-brand-primary border border-brand-border rounded-xl text-[9px] font-mono font-bold uppercase tracking-widest transition-all"
+                      >
+                        Reset All Filters
+                      </button>
+                    </div>
+                  ) : Object.entries(groupedTransactions).map(([date, items]) => (
                 <motion.div 
                   key={date} 
                   variants={listContainer}
@@ -1357,106 +1925,148 @@ function MainApp() {
                     <h4 className="data-label !text-brand-primary/60">{date}</h4>
                     <div className="h-px flex-1 bg-brand-border/60" />
                   </motion.div>
-                  <div className="space-y-3">
-                    {items.map(t => (
-                      <motion.div 
-                        key={t.id} 
-                        variants={listItem}
-                        className="bg-brand-surface p-5 border border-brand-border rounded-[1.5rem] shadow-sm hover:shadow-xl transition-all flex items-center justify-between group overflow-hidden relative"
-                      >
-                        <div className="absolute top-0 left-0 w-1 h-full transition-all group-hover:w-1.5"
-                          style={{ backgroundColor: t.type === 'income' ? 'var(--color-brand-accent)' : 'transparent' }}
-                        />
-                        <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 bg-brand-bg rounded-xl flex items-center justify-center text-brand-primary/60 group-hover:bg-brand-primary group-hover:text-brand-surface transition-all border border-brand-border/50">
-                            {getCategoryIcon(t.category)}
-                          </div>
-                          <div className="space-y-0.5">
-                            <p className="text-sm font-bold text-brand-primary uppercase tracking-tight leading-none">{t.description}</p>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="data-label !text-[8.5px] !text-brand-primary/60">{t.category}</span>
-                              {t.subcategory && (
-                                <>
-                                  <span className="w-1 h-1 rounded-full bg-brand-primary/10" />
-                                  <span className="data-label !text-[8.5px] !text-brand-primary/50">{t.subcategory}</span>
-                                </>
-                              )}
-                              <div className="flex items-center gap-1.5 ml-1">
+                  <div className="space-y-2.5">
+                    {items.map(t => {
+                      const isIncomeFlow = t.type === 'income' || t.type === 'refund';
+
+                      return (
+                        <motion.div 
+                          key={t.id} 
+                          variants={listItem}
+                          className="bg-brand-surface hover:bg-brand-bg/40 py-3 px-4 border border-brand-border rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.01)] transition-all duration-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 group relative overflow-hidden"
+                        >
+                          <div className={cn(
+                            "absolute top-0 left-0 w-1 sm:w-1 h-full transition-all group-hover:w-1.5",
+                            isIncomeFlow ? "bg-brand-accent" : t.isAvoidable ? "bg-rose-500 animate-pulse" : "bg-transparent"
+                          )} />
+                          
+                          {/* Left: Metadata descriptor split */}
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                            {/* Visual categorization ring */}
+                            <div className={cn(
+                              "w-8.5 h-8.5 rounded-lg flex items-center justify-center border font-mono transition-all shrink-0 select-none",
+                              isIncomeFlow 
+                                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" 
+                                : t.isAvoidable 
+                                ? "bg-rose-500/10 text-rose-400 border-rose-500/20" 
+                                : "bg-brand-bg text-brand-primary/50 border-brand-border/60 group-hover:bg-brand-primary/5"
+                            )}>
+                              <span className="scale-[0.8]">{getCategoryIcon(t.category)}</span>
+                            </div>
+
+                            {/* Core descriptor tags */}
+                            <div className="space-y-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="text-xs font-sans font-extrabold text-brand-primary uppercase tracking-normal leading-tight truncate max-w-[200px] sm:max-w-lg">
+                                  {t.description}
+                                </p>
+                                {t.subcategory && (
+                                  <span className="px-1.5 py-0.5 bg-brand-bg border border-brand-border text-[8px] font-mono font-bold text-brand-primary/40 rounded uppercase tracking-wider truncate max-w-[120px]">
+                                    {t.subcategory}
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Dimensions labels */}
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="text-[8px] font-mono font-black text-brand-primary/45 uppercase tracking-wide bg-brand-bg px-1.5 py-0.5 rounded border border-brand-border/40">
+                                  📂 {t.category}
+                                </span>
+
+                                {/* Human tags */}
                                 {t.isMandatory && (
-                                  <span className="px-1.5 py-0.5 bg-brand-primary/5 text-brand-primary/60 text-[8px] font-bold uppercase tracking-wider rounded border border-brand-primary/5 font-mono">FIXED</span>
-                                )}
-                                {t.type === 'refund' && (
-                                  <span className="px-1.5 py-0.5 bg-brand-accent/10 text-brand-accent text-[8px] font-bold uppercase tracking-wider rounded border border-brand-accent/20 font-mono">REFUND</span>
-                                )}
-                                {t.isRecurring && (
-                                  <span className="px-1.5 py-0.5 bg-brand-accent/5 text-brand-accent/60 text-[8px] font-bold uppercase tracking-wider rounded border border-brand-accent/5 font-mono">REC</span>
+                                  <span className="px-1.5 py-0.5 bg-brand-primary/5 border border-brand-border text-brand-primary text-[8px] font-bold uppercase tracking-wide rounded font-mono flex items-center gap-1 select-none">
+                                    <span>🔒</span> Fixed Need
+                                  </span>
                                 )}
                                 {t.isAvoidable && (
-                                  <span className="px-1.5 py-0.5 bg-rose-500/5 text-rose-500/60 text-[8px] font-bold uppercase tracking-wider rounded border border-rose-500/5 font-mono">AVOID</span>
+                                  <span className="px-1.5 py-0.5 bg-rose-500/10 border border-rose-500/20 text-rose-400 text-[8px] font-bold uppercase tracking-wide rounded font-mono flex items-center gap-0.5 select-none font-extrabold">
+                                    <span>⚠️</span> Avoid Leak
+                                  </span>
+                                )}
+                                {t.isRecurring && (
+                                  <span className="px-1.5 py-0.5 bg-brand-accent/10 border border-brand-accent/20 text-brand-accent text-[8px] font-bold uppercase tracking-wide rounded font-mono flex items-center gap-1 select-none">
+                                    <span>🔄</span> Recurring
+                                  </span>
+                                )}
+                                {t.type === 'refund' && (
+                                  <span className="px-1.5 py-0.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[8px] font-bold uppercase tracking-wide rounded font-mono flex items-center gap-1 select-none">
+                                    <span>💰</span> Refund Offset
+                                  </span>
+                                )}
+                                {t.type === 'income' && (
+                                  <span className="px-1.5 py-0.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[8px] font-bold uppercase tracking-wide rounded font-mono flex items-center gap-1 select-none">
+                                    <span>📈</span> Inflow
+                                  </span>
                                 )}
                               </div>
                             </div>
                           </div>
-                        </div>
-                        <div className="text-right flex items-center gap-4">
-                          <div className="text-right flex flex-col items-end gap-1">
-                            <p className={cn(
-                              "text-lg md:text-xl font-mono font-bold tabular-nums leading-none",
-                              (t.type === 'income' || t.type === 'refund') ? "text-brand-accent" : "text-brand-primary"
-                            )}>
-                              {(t.type === 'income' || t.type === 'refund') ? '+' : '-'}{formatCurrency(t.amount)}
-                            </p>
-                            <div className="flex flex-col items-end gap-0.5">
-                              {t.description && t.description !== t.subcategory.toUpperCase() && (
-                                <p className="text-[7px] font-bold text-brand-primary/30 uppercase tracking-widest truncate max-w-[150px] leading-none">
-                                  {t.description}
-                                </p>
-                              )}
-                              <p className="text-[8px] font-bold text-brand-primary/10 uppercase tracking-widest leading-none">
+
+                          {/* Right: Cash Movement + Controls */}
+                          <div className="flex items-center justify-between sm:justify-end gap-4 border-t sm:border-t-0 border-brand-border/40 pt-2.5 sm:pt-0 shrink-0">
+                            {/* Direction metrics */}
+                            <div className="text-left sm:text-right flex flex-col sm:items-end justify-center">
+                              <p className={cn(
+                                "text-sm sm:text-base font-mono font-extrabold tabular-nums leading-none flex items-center gap-1",
+                                isIncomeFlow ? "text-brand-accent" : "text-brand-primary"
+                              )}>
+                                {isIncomeFlow ? (
+                                  <ArrowUpRight className="w-3.5 h-3.5 text-brand-accent shrink-0" />
+                                ) : (
+                                  <ArrowDownRight className="w-3.5 h-3.5 text-brand-primary/40 shrink-0" />
+                                )}
+                                {isIncomeFlow ? '+' : '-'}{formatCurrency(t.amount)}
+                              </p>
+                              <p className="text-[8px] font-mono font-bold text-brand-primary/25 uppercase tracking-wider mt-1 leading-none">
                                 {new Date(t.date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
                               </p>
                             </div>
+
+                            {/* Options action buttons */}
+                            <div className="flex gap-1.5 border-l border-brand-border/40 pl-3">
+                              <button 
+                                onClick={() => {
+                                  setEditingTransaction(t);
+                                  setCommandTab('transaction');
+                                  setShowCommandCenter(true);
+                                }}
+                                className="p-1 px-1.5 bg-brand-bg hover:bg-brand-primary hover:text-brand-surface rounded-lg transition-all border border-brand-border group/edit"
+                                title="Edit Transaction Detail"
+                              >
+                                <Settings2 className="w-3.5 h-3.5 opacity-40 group-hover/edit:opacity-100 transition-opacity" />
+                              </button>
+                              <button 
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handleDeleteTransaction(t);
+                                }}
+                                className={cn(
+                                  "p-1 px-1.5 transition-all rounded-lg active:scale-90 border h-6 flex items-center justify-center",
+                                  transactionIdToConfirmDelete === t.id 
+                                    ? "bg-rose-500 text-white border-rose-600 shadow-md scale-105" 
+                                    : "text-rose-500/10 hover:text-rose-600 hover:bg-rose-500/10 border-transparent hover:border-rose-500/10"
+                                )}
+                                title="Purge Entry"
+                              >
+                                {transactionIdToConfirmDelete === t.id ? (
+                                  <span className="text-[7.5px] font-black uppercase tracking-widest px-0.5 whitespace-nowrap animate-pulse">Purge</span>
+                                ) : (
+                                  <Trash2 className="w-3.5 h-3.5 opacity-40 group-hover:opacity-100 transition-opacity" />
+                                )}
+                              </button>
+                            </div>
                           </div>
-                          <div className="flex gap-2">
-                            <button 
-                              onClick={() => {
-                                setEditingTransaction(t);
-                                setCommandTab('transaction');
-                                setShowCommandCenter(true);
-                              }}
-                              className="p-2.5 bg-brand-primary/5 hover:bg-brand-primary hover:text-brand-surface rounded-lg transition-all border border-brand-border group/edit"
-                            >
-                              <Settings2 className="w-4 h-4 opacity-40 group-hover/edit:opacity-100" />
-                            </button>
-                            <button 
-                              type="button"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                handleDeleteTransaction(t);
-                              }}
-                              className={cn(
-                                "p-2.5 transition-all rounded-lg active:scale-90 border",
-                                transactionIdToConfirmDelete === t.id 
-                                  ? "bg-rose-500 text-white border-rose-600 shadow-lg" 
-                                  : "text-rose-500/10 hover:text-rose-600 hover:bg-rose-500/10 border-transparent hover:border-rose-500/10"
-                              )}
-                              title="Purge Entry"
-                            >
-                              {transactionIdToConfirmDelete === t.id ? (
-                                <span className="text-[8px] font-bold uppercase tracking-widest px-1 whitespace-nowrap">Purge</span>
-                              ) : (
-                                <Trash2 className="w-4 h-4 opacity-40 group-hover:opacity-100" />
-                              )}
-                            </button>
-                          </div>
-                        </div>
-                      </motion.div>
-                    ))}
+                        </motion.div>
+                      );
+                    })}
                   </div>
                 </motion.div>
               ))}
             </div>
+          </div>
         </motion.div>
       )}
 
@@ -1467,41 +2077,68 @@ function MainApp() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.2, ease: "easeOut" }}
-              className="space-y-12 md:space-y-16"
+              className="space-y-6 md:space-y-8"
             >
-            <div className="flex gap-2 p-1 bg-brand-bg/50 border border-brand-border rounded-xl w-fit mb-8">
+            <div className="flex gap-2 flex-wrap justify-center no-scrollbar pb-1">
               <button 
                 onClick={() => setGoalsSubTab('strategy')}
                 className={cn(
-                  "px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all",
-                  goalsSubTab === 'strategy' ? "bg-brand-primary text-brand-surface shadow-lg" : "text-brand-primary/40 hover:text-brand-primary"
+                  "px-4 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all",
+                  goalsSubTab === 'strategy' ? "bg-brand-primary text-brand-surface shadow-md" : "text-brand-primary/40 hover:text-brand-primary"
                 )}
               >
-                Capital Strategy
+                Strategy
               </button>
               <button 
                 onClick={() => setGoalsSubTab('mandates')}
                 className={cn(
-                  "px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all",
-                  goalsSubTab === 'mandates' ? "bg-brand-primary text-brand-surface shadow-lg" : "text-brand-primary/40 hover:text-brand-primary"
+                  "px-4 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all",
+                  goalsSubTab === 'mandates' ? "bg-brand-primary text-brand-surface shadow-md" : "text-brand-primary/40 hover:text-brand-primary"
                 )}
               >
-                SIP Mandates
+                Auto-Save
               </button>
             </div>
 
             {goalsSubTab === 'strategy' ? (
-              <div className="space-y-16 animate-in fade-in slide-in-from-left-4 duration-500">
-                {/* Asset Accumulation Section */}
-                <div className="space-y-8">
-                  <div className="flex flex-col md:flex-row md:items-end justify-between px-1 gap-4">
+              <div className="space-y-8 animate-in fade-in slide-in-from-left-4 duration-500">
+                {/* Visual Goals Overview Metric Panel */}
+                {goals.length > 0 && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-brand-surface p-5 border border-brand-border rounded-2xl shadow-[0_1px_3px_rgba(0,0,0,0.01)] font-sans">
                     <div className="space-y-1">
-                      <h2 className="text-3xl font-sans font-bold uppercase tracking-tight text-brand-primary leading-tight py-1">Capital Portfolio</h2>
-                      <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-wider py-0.5">Wealth & Savings Goals</p>
+                      <p className="text-[9px] font-mono font-bold text-brand-primary/40 uppercase tracking-widest">Total Goal Targets</p>
+                      <h3 className="text-xl font-bold text-brand-primary leading-none">
+                        {formatCurrency(totalGoalTarget)}
+                      </h3>
+                      <p className="text-[10px] text-brand-primary/50">Your active saving & payoff targets combined</p>
+                    </div>
+                    <div className="space-y-1 border-t sm:border-t-0 sm:border-l border-brand-border/40 pt-3 sm:pt-0 sm:pl-4">
+                      <p className="text-[9px] font-mono font-bold text-emerald-600 uppercase tracking-widest">Amount Completed</p>
+                      <h3 className="text-xl font-bold text-emerald-600 leading-none">
+                        {formatCurrency(totalGoalCurrent)}
+                      </h3>
+                      <p className="text-[10px] text-emerald-600/70">{totalGoalProgress.toFixed(0)}% of your total milestones reached</p>
+                    </div>
+                    <div className="space-y-1 border-t sm:border-t-0 sm:border-l border-brand-border/40 pt-3 sm:pt-0 sm:pl-4">
+                      <p className="text-[9px] font-mono font-bold text-brand-accent uppercase tracking-widest font-sans">Yet to achieve</p>
+                      <h3 className="text-xl font-bold text-brand-accent leading-none">
+                        {formatCurrency(Math.max(0, totalGoalTarget - totalGoalCurrent))}
+                      </h3>
+                      <p className="text-[10px] text-brand-primary/50">Fund gap remaining to reach full stability</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Asset Accumulation Section */}
+                <div className="space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between px-1 gap-2 border-b border-brand-border/40 pb-2">
+                    <div className="space-y-0.5">
+                      <h2 className="text-sm font-sans font-black uppercase tracking-wider text-brand-primary leading-none">Savings Goals</h2>
+                      <p className="text-[8px] text-brand-primary/40 font-bold uppercase tracking-widest">Active capital growth targets</p>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {goals.filter(g => g.type !== 'debt').map(goal => (
                       <GoalItem 
                         key={goal.id} 
@@ -1515,33 +2152,33 @@ function MainApp() {
                       />
                     ))}
                     {goals.filter(g => g.type !== 'debt').length === 0 && (
-                      <div className="col-span-full py-20 text-center border-2 border-dashed border-brand-border rounded-[2.5rem] bg-brand-surface/30">
-                        <p className="data-label text-brand-primary/20">No accumulation goals defined</p>
-                        <p className="text-[8px] font-mono text-brand-primary/20 uppercase tracking-widest mt-2">Capital growth requires intentional allocation</p>
+                      <div className="col-span-full py-12 text-center border border-dashed border-brand-border rounded-xl bg-brand-surface/30">
+                        <p className="data-label text-brand-primary/25">No accumulation goals defined</p>
+                        <p className="text-[8px] font-mono text-brand-primary/20 uppercase tracking-widest mt-1">Capital growth requires intentional allocation</p>
                       </div>
                     )}
                   </div>
                 </div>
 
                 {/* Liability Management Section */}
-                <div className="space-y-8 pt-8 border-t border-brand-border/30">
-                  <div className="flex flex-col md:flex-row md:items-end justify-between px-1 gap-4">
-                    <div className="space-y-1">
-                      <h2 className="text-3xl font-sans font-bold uppercase tracking-tight text-brand-primary leading-tight py-1 text-brand-accent">Debt Portfolio</h2>
-                      <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-wider py-0.5">Liability Amortization Schedule</p>
+                <div className="space-y-4 pt-6 border-t border-brand-border/30">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between px-1 gap-3 border-b border-brand-border/40 pb-2">
+                    <div className="space-y-0.5">
+                      <h2 className="text-sm font-sans font-black uppercase tracking-wider text-brand-accent leading-none">Debts</h2>
+                      <p className="text-[8px] text-brand-primary/40 font-bold uppercase tracking-widest">Active liability management</p>
                     </div>
                     {goals.some(g => g.type === 'debt') && (
                       <button 
                         onClick={() => setActiveTab('insights')}
-                        className="flex items-center gap-2 px-6 py-3 bg-brand-accent text-brand-surface rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-brand-accent/90 transition-all shadow-lg group"
+                        className="flex items-center gap-1.5 px-3 py-1 bg-brand-accent text-brand-surface rounded text-[8px] font-bold uppercase tracking-widest hover:bg-brand-accent/90 transition-all shadow-sm group leading-none"
                       >
-                        <Zap className="w-4 h-4 transition-transform group-hover:scale-110" />
-                        Optimize Liability Map
+                        <Zap className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
+                        Optimize Debts
                       </button>
                     )}
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {goals.filter(g => g.type === 'debt').map(goal => (
                       <GoalItem 
                         key={goal.id} 
@@ -1555,35 +2192,35 @@ function MainApp() {
                       />
                     ))}
                     {goals.filter(g => g.type === 'debt').length === 0 && (
-                      <div className="col-span-full py-20 text-center border-2 border-dashed border-brand-border rounded-[2.5rem] bg-brand-surface/30">
-                        <p className="data-label text-brand-primary/20">No active liabilities tracked</p>
+                      <div className="col-span-full py-12 text-center border border-dashed border-brand-border rounded-xl bg-brand-surface/30">
+                        <p className="data-label text-brand-primary/25">No active liabilities tracked</p>
                       </div>
                     )}
                   </div>
                 </div>
 
                 {goals.length === 0 && (
-                  <div className="py-20 text-center">
+                  <div className="py-12 text-center">
                     <button 
-                      onClick={() => {
+                       onClick={() => {
                         setCommandTab('goal');
                         setShowCommandCenter(true);
                       }}
-                      className="px-10 py-5 bg-brand-primary text-brand-surface rounded-2xl text-xs font-bold uppercase tracking-[0.2em] shadow-2xl hover:scale-105 transition-all"
+                      className="px-6 py-2.5 bg-brand-primary text-brand-surface rounded-lg text-[9px] font-bold uppercase tracking-widest shadow-md hover:scale-105 transition-all"
                     >
-                      Architect Strategic Portfolio
+                      Create Your First Goal
                     </button>
                   </div>
                 )}
               </div>
             ) : (
-              <div className="space-y-16 animate-in fade-in slide-in-from-right-4 duration-500">
+              <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
                 {/* Income Streams Section */}
-                <div className="space-y-8">
-                  <div className="flex flex-col md:flex-row md:items-end justify-between px-1 gap-4">
-                    <div className="space-y-1">
-                      <h2 className="text-3xl font-sans font-bold uppercase tracking-tight text-brand-primary leading-tight py-1">Income Streams</h2>
-                      <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-wider py-0.5">Recurring Baseline Inflow Mandates</p>
+                <div className="space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between px-1 gap-3 border-b border-brand-border/40 pb-2">
+                    <div className="space-y-0.5">
+                      <h2 className="text-sm font-sans font-black uppercase tracking-wider text-brand-primary leading-none">Income Sources</h2>
+                      <p className="text-[8px] text-brand-primary/40 font-bold uppercase tracking-widest">Baseline revenue baseline streams</p>
                     </div>
                     <button 
                       onClick={() => {
@@ -1591,14 +2228,14 @@ function MainApp() {
                         setEditingIncomeStream(null);
                         setShowCommandCenter(true);
                       }}
-                      className="flex items-center gap-2 px-6 py-3 bg-brand-primary text-brand-surface rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-brand-primary/90 transition-all shadow-lg group shadow-emerald-500/10"
+                      className="flex items-center gap-1.5 px-3 py-1 bg-brand-primary text-brand-surface rounded text-[8px] font-bold uppercase tracking-widest hover:bg-brand-primary/90 transition-all shadow-sm leading-none"
                     >
-                      <Plus className="w-4 h-4" />
-                      Add Income Stream
+                      <Plus className="w-3.5 h-3.5" />
+                      Add Income
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {incomeStreams.map(stream => (
                       <IncomeStreamItem 
                         key={stream.id} 
@@ -1612,19 +2249,19 @@ function MainApp() {
                       />
                     ))}
                     {incomeStreams.length === 0 && (
-                      <div className="col-span-full py-16 text-center border-2 border-dashed border-brand-border rounded-[2.5rem] bg-brand-surface/30">
-                        <p className="data-label text-brand-primary/20">No recurring income streams defined</p>
+                      <div className="col-span-full py-12 text-center border border-dashed border-brand-border rounded-xl bg-brand-surface/30">
+                        <p className="data-label text-brand-primary/25">No recurring income streams defined</p>
                       </div>
                     )}
                   </div>
                 </div>
 
                 {/* SIP Portfolio Section */}
-                <div className="space-y-8 pt-8 border-t border-brand-border/30">
-                  <div className="flex flex-col md:flex-row md:items-end justify-between px-1 gap-4">
-                    <div className="space-y-1">
-                      <h2 className="text-3xl font-sans font-bold uppercase tracking-tight text-brand-primary leading-tight py-1 text-emerald-500">SIP Portfolio</h2>
-                      <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-wider py-0.5">Automated Investment Protocols</p>
+                <div className="space-y-4 pt-6 border-t border-brand-border/30">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between px-1 gap-3 border-b border-brand-border/40 pb-2">
+                    <div className="space-y-0.5">
+                      <h2 className="text-sm font-sans font-black uppercase tracking-wider text-emerald-650 leading-none">Auto-Save Plan</h2>
+                      <p className="text-[8px] text-brand-primary/40 font-bold uppercase tracking-widest">Systematic wealth accumulation mandates</p>
                     </div>
                     <button 
                       onClick={() => {
@@ -1632,14 +2269,14 @@ function MainApp() {
                         setEditingSip(null);
                         setShowCommandCenter(true);
                       }}
-                      className="flex items-center gap-2 px-6 py-3 bg-brand-primary text-brand-surface rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-brand-primary/90 transition-all shadow-lg group shadow-emerald-500/10"
+                      className="flex items-center gap-1.5 px-3 py-1 bg-brand-primary text-brand-surface rounded text-[8px] font-bold uppercase tracking-widest hover:bg-brand-primary/90 transition-all shadow-sm leading-none"
                     >
-                      <Plus className="w-4 h-4" />
-                      New SIP Strategy
+                      <Plus className="w-3.5 h-3.5" />
+                      New Auto-Save
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {sips.map(sip => (
                       <SIPItem 
                         key={sip.id} 
@@ -1660,8 +2297,8 @@ function MainApp() {
                       />
                     ))}
                     {sips.length === 0 && (
-                      <div className="col-span-full py-16 text-center border-2 border-dashed border-brand-border rounded-[2.5rem] bg-brand-surface/30">
-                        <p className="data-label text-brand-primary/20">No automated investment plans configured</p>
+                      <div className="col-span-full py-12 text-center border border-dashed border-brand-border rounded-xl bg-brand-surface/30">
+                        <p className="data-label text-brand-primary/25">No automated plans configured</p>
                       </div>
                     )}
                   </div>
@@ -1685,15 +2322,15 @@ function MainApp() {
                 <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-brand-primary"></div>
               </div>
             }>
-            <div className="space-y-16">
-              <div className="flex flex-col md:flex-row md:items-end justify-between px-1 gap-4">
-                <div className="space-y-1">
-                  <h2 className="text-4xl font-sans font-bold uppercase tracking-tight text-brand-primary leading-none py-1">Tactical Analysis</h2>
-                  <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-[0.3em] py-0.5">Asset Optimization & Risk Modeling</p>
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between px-1 gap-2 border-b border-brand-border/40 pb-2">
+                <div className="space-y-0.5">
+                  <h2 className="text-sm font-sans font-black uppercase tracking-wider text-brand-primary leading-none">Strategy & Logic</h2>
+                  <p className="text-[8px] text-brand-primary/40 font-bold uppercase tracking-widest">Compounding simulations and smart models</p>
                 </div>
               </div>
               
-              <div className="space-y-16">
+              <div className="space-y-6">
                 {/* Scenario Planning Hub */}
                 <StressTestConsole 
                   monthlyIncome={estimatedMonthlyIncome}
@@ -1706,7 +2343,7 @@ function MainApp() {
                   onShockChange={(income, expense) => setStressTest({ incomeShock: income, expenseShock: expense })}
                 />
 
-                <div className="pt-16 border-t border-brand-border">
+                <div className="pt-6 border-t border-brand-border/30">
                   <StrategyInsights 
                     transactions={transactions} 
                     goals={goals} 
@@ -1725,24 +2362,24 @@ function MainApp() {
                   />
                 </div>
                 
-                <div className="pt-16 border-t border-brand-border">
+                <div className="pt-6 border-t border-brand-border/30">
                   <DebtOptimization goals={goals} />
                 </div>
 
-                {/* Tactical Deletion & Reset Protocol */}
-                <div className="bg-brand-surface border border-rose-500/10 rounded-3xl p-6 md:p-8 space-y-6">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-2xl bg-rose-500/10 flex items-center justify-center text-rose-500">
-                      <Trash2 className="w-6 h-6" />
+                 {/* Tactical Deletion & Reset Protocol */}
+                <div className="bg-brand-surface border border-rose-500/10 rounded-xl p-4 md:p-5 space-y-3.5">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-lg bg-rose-500/10 flex items-center justify-center text-rose-500">
+                      <Trash2 className="w-5 h-5" />
                     </div>
                     <div>
-                      <h4 className="text-sm font-bold text-brand-primary uppercase tracking-tight">Danger Zone</h4>
-                      <p className="text-[10px] text-brand-primary/20 font-bold uppercase tracking-widest mt-1">Delete all your data</p>
+                      <h4 className="text-xs font-black text-brand-primary uppercase tracking-wider leading-none">Danger Zone</h4>
+                      <p className="text-[8px] text-brand-primary/20 font-bold uppercase tracking-widest mt-0.5">Delete all your data</p>
                     </div>
                   </div>
                   
-                  <p className="text-[11px] text-brand-primary/50 leading-relaxed max-w-md">
-                    This will permanently delete all your transactions, goals, and history. This cannot be undone.
+                  <p className="text-[10px] text-brand-primary/50 leading-relaxed max-w-md">
+                    This will permanently delete all your transactions, goals, and history from our secure servers. This action is irreversible.
                   </p>
 
                   <button 
@@ -1769,14 +2406,14 @@ function MainApp() {
                       }
                     }}
                     className={cn(
-                      "w-full py-5 rounded-2xl font-bold text-[10px] uppercase tracking-[0.4em] transition-all flex items-center justify-center gap-3",
+                      "w-full py-2 rounded-lg font-bold text-[9px] uppercase tracking-widest transition-all flex items-center justify-center gap-2",
                       showTotalPurgeConfirm 
-                        ? "bg-rose-500 text-white shadow-[0_10px_30px_rgba(244,63,94,0.3)] animate-pulse" 
-                        : "bg-brand-bg border border-rose-500/20 text-rose-500 hover:bg-rose-500/5"
+                        ? "bg-rose-500 text-white shadow-md animate-pulse" 
+                        : "bg-brand-bg border border-rose-500/15 text-rose-500 hover:bg-rose-500/5 hover:border-rose-500/35"
                     )}
                   >
                     {isPurging ? (
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                     ) : showTotalPurgeConfirm ? (
                       "Yes, Delete Everything"
                     ) : (
@@ -1786,20 +2423,20 @@ function MainApp() {
                 </div>
 
                 {/* Secure Node Access / Logout */}
-                <div className="bg-brand-surface border border-brand-border rounded-3xl p-6 md:p-8 space-y-6">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-2xl bg-brand-primary/5 flex items-center justify-center text-brand-primary/40 text-xs font-bold border border-brand-border">
+                <div className="bg-brand-surface border border-brand-border/60 rounded-xl p-4 md:p-5">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-brand-primary/5 flex items-center justify-center text-brand-primary/45 text-[10px] font-black border border-brand-border/60">
                         {user.displayName?.charAt(0) || 'U'}
                       </div>
                       <div>
-                        <h4 className="text-sm font-bold text-brand-primary uppercase tracking-tight">{user.displayName}</h4>
-                        <p className="text-[10px] text-brand-primary/20 font-bold uppercase tracking-widest font-mono mt-1">Logged In Securely</p>
+                        <h4 className="text-xs font-black text-brand-primary uppercase tracking-wider leading-none">{user.displayName}</h4>
+                        <p className="text-[8px] text-brand-primary/20 font-bold uppercase tracking-widest font-mono mt-0.5">Logged In Securely</p>
                       </div>
                     </div>
                     <button 
                       onClick={logout}
-                      className="px-6 py-3 rounded-xl bg-brand-bg border border-brand-border text-brand-primary/40 hover:text-rose-500 hover:border-rose-500/20 text-[10px] font-bold uppercase tracking-widest transition-all active:scale-95"
+                      className="px-3 py-1.5 rounded-lg bg-brand-bg border border-brand-border hover:text-rose-500 hover:border-rose-500/20 text-[9px] font-bold uppercase tracking-widest transition-all active:scale-95 leading-none"
                     >
                       Log Out
                     </button>
@@ -1868,308 +2505,6 @@ function MainApp() {
         )}
       </AnimatePresence>
     </div>
-  );
-}
-
-function IncomeStreamItem({ stream, onEdit, onDelete }: { stream: IncomeStream, onEdit?: () => void, onDelete?: () => void }) {
-  const statusColor = {
-    active: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20',
-    inactive: 'text-brand-primary/40 bg-brand-primary/5 border-brand-primary/10',
-  };
-
-  return (
-    <motion.div 
-      whileHover={{ y: -2 }}
-      className="bg-brand-surface border border-brand-border rounded-[2.5rem] p-8 space-y-6 flex flex-col justify-between group hover:border-brand-primary/20 transition-all shadow-sm"
-    >
-      <div className="space-y-4">
-        <div className="flex justify-between items-start">
-          <div className="space-y-1">
-            <div className="flex items-center gap-3">
-              <h3 className="text-xl font-sans font-bold text-brand-primary uppercase tracking-tight">{stream.name}</h3>
-              <div className={cn(
-                "px-2 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-widest border",
-                statusColor[stream.status as keyof typeof statusColor]
-              )}>
-                {stream.status}
-              </div>
-            </div>
-            <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-wider">Baseline Income Mandate</p>
-          </div>
-          <p className="text-2xl font-mono font-bold text-brand-primary">{formatCurrency(stream.amount)}</p>
-        </div>
-      </div>
-
-      <div className="pt-4 border-t border-brand-border/30 flex justify-between items-center">
-        <div className="flex items-center gap-2">
-           <Calendar className="w-3 h-3 text-brand-primary/20" />
-           <span className="text-[8px] font-bold text-brand-primary/40 uppercase tracking-widest">Expected Credit: {stream.dayOfMonth}th of month</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <button 
-            onClick={(e) => { e.stopPropagation(); onDelete?.(); }}
-            className="p-2 text-brand-primary/20 hover:text-rose-500 transition-colors"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
-          <button 
-            onClick={(e) => { e.stopPropagation(); onEdit?.(); }}
-            className="p-2 text-brand-primary/20 hover:text-brand-primary transition-colors"
-          >
-             <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-    </motion.div>
-  );
-}
-
-function SIPItem({ sip, onEdit, onDelete, transactions, onLogPayment }: { sip: SIP, onEdit?: () => void, onDelete?: () => void, transactions: Transaction[], onLogPayment?: (sip: SIP) => void }) {
-  const statusColor = {
-    active: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20',
-    paused: 'text-amber-500 bg-amber-500/10 border-amber-500/20',
-    stopped: 'text-rose-500 bg-rose-500/10 border-rose-500/20'
-  };
-
-  const currentMonth = new Date().getMonth();
-  const currentYear = new Date().getFullYear();
-  const isFulfilled = transactions.some(t => 
-    t.sipId === sip.id && 
-    new Date(t.date).getMonth() === currentMonth &&
-    new Date(t.date).getFullYear() === currentYear
-  );
-
-  return (
-    <motion.div 
-      whileHover={{ y: -2 }}
-      className="bg-brand-surface p-5 border border-brand-border rounded-[1.5rem] shadow-sm hover:shadow-xl transition-all group relative overflow-hidden flex flex-col justify-between h-full"
-    >
-      <div className="absolute top-0 right-0 w-32 h-32 rounded-full blur-[80px] -mr-16 -mt-16 bg-brand-accent/10 opacity-30 group-hover:opacity-50 transition-all pointer-events-none" />
-      
-      <div className="space-y-4 relative z-10">
-        <div className="flex justify-between items-start">
-          <div className="space-y-1.5 cursor-pointer flex-1" onClick={onEdit}>
-            <div className="flex items-center gap-2">
-              <h4 className="text-sm font-sans font-bold uppercase tracking-tight text-brand-primary leading-tight">{sip.name}</h4>
-              <div className={cn(
-                "px-1.5 py-0.5 rounded text-[7px] font-bold uppercase tracking-widest border",
-                statusColor[sip.status]
-              )}>
-                {sip.status}
-              </div>
-            </div>
-            {isFulfilled && (
-              <div className="flex items-center gap-1 text-[8px] font-bold text-emerald-500 uppercase tracking-widest">
-                <CheckCircle2 className="w-3 h-3" />
-                Fulfilled this month
-              </div>
-            )}
-            <div className="flex flex-wrap gap-1.5">
-              <div className="flex items-center gap-1.5 bg-brand-bg/50 px-2 py-0.5 rounded-lg border border-brand-border">
-                <span className="text-[7px] font-bold text-brand-primary/30 uppercase tracking-widest">Monthly</span>
-                <span className="text-[10px] font-mono font-bold text-brand-primary">{formatCurrency(sip.amount)}</span>
-              </div>
-              <div className="flex items-center gap-1.5 bg-brand-bg/50 px-2 py-0.5 rounded-lg border border-brand-border">
-                <span className="text-[7px] font-bold text-brand-primary/30 uppercase tracking-widest">Cycle Date</span>
-                <span className="text-[10px] font-mono font-bold text-brand-primary">{sip.dayOfMonth}<sup>th</sup></span>
-              </div>
-            </div>
-          </div>
-          <div className="text-right">
-            <p className="text-[10px] font-bold text-brand-primary/30 uppercase tracking-widest">{sip.category}</p>
-            <Calendar className="w-4 h-4 text-brand-accent ml-auto mt-2 opacity-20" />
-          </div>
-        </div>
-
-        <div className="pt-4 border-t border-brand-border/30 flex justify-between items-center">
-          <div className="flex items-center gap-2">
-             {!isFulfilled && sip.status === 'active' && (
-               <button 
-                 onClick={(e) => { e.stopPropagation(); onLogPayment?.(sip); }}
-                 className="px-3 py-1.5 bg-brand-primary text-brand-surface rounded-lg text-[8px] font-bold uppercase tracking-widest hover:bg-brand-primary/90 transition-all flex items-center gap-1.5 shadow-md shadow-brand-primary/10"
-               >
-                 <Plus className="w-3 h-3" />
-                 Log Installment
-               </button>
-             )}
-             {isFulfilled && (
-               <span className="text-[8px] font-bold text-brand-primary/40 uppercase tracking-widest">Next Run: {sip.dayOfMonth}/{new Date().getMonth() + 2}</span>
-             )}
-             {!isFulfilled && sip.status !== 'active' && (
-               <span className="text-[8px] font-bold text-brand-primary/40 uppercase tracking-widest">SIP {sip.status.toUpperCase()}</span>
-             )}
-          </div>
-          <button 
-            onClick={(e) => { e.stopPropagation(); onDelete?.(); }}
-            className="p-2 text-brand-primary/10 hover:text-rose-500 transition-colors"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      </div>
-    </motion.div>
-  );
-}
-
-function GoalItem({ goal, onEdit, onDelete }: { goal: Goal, onEdit?: () => void, onDelete?: () => void }) {
-  const [isDeleting, setIsDeleting] = useState(false);
-  const progress = goal.targetAmount > 0 ? Math.min((goal.currentAmount / goal.targetAmount) * 100, 100) : 0;
-  
-  const calculatePayoffDate = (g: Goal) => {
-    if (g.type !== 'debt' || !g.emi || g.emi <= 0) return null;
-    
-    const balance = g.targetAmount - g.currentAmount;
-    if (balance <= 0) return 'PAID';
-    
-    const rate = (g.interestRate || 8.5) / 100 / 12;
-    const emi = g.emi;
-    
-    // N = -log(1 - (B*r)/EMI) / log(1 + r)
-    let months = 0;
-    if (rate > 0) {
-      const numerator = Math.log(1 - (balance * rate) / emi);
-      if (isNaN(numerator)) {
-        // EMI is too low to cover interest
-        months = balance / emi;
-      } else {
-        months = -numerator / Math.log(1 + rate);
-      }
-    } else {
-      months = balance / emi;
-    }
-
-    const date = new Date();
-    date.setMonth(date.getMonth() + Math.ceil(months));
-    return date.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }).toUpperCase();
-  };
-
-  const payoffDate = calculatePayoffDate(goal);
-  
-  return (
-    <motion.div 
-      whileHover={{ y: -2 }}
-      className="bg-brand-surface p-5 border border-brand-border rounded-[1.5rem] shadow-sm hover:shadow-xl transition-all group relative overflow-hidden flex flex-col justify-between h-full"
-    >
-      <div className={cn(
-        "absolute top-0 right-0 w-32 h-32 rounded-full blur-[80px] -mr-16 -mt-16 opacity-30 group-hover:opacity-50 transition-all pointer-events-none",
-        goal.type === 'debt' ? "bg-brand-accent/20" : "bg-brand-primary/10"
-      )} />
-      
-      <div className="space-y-4 relative z-10">
-        <div className="flex justify-between items-start">
-          <div className="space-y-1.5 cursor-pointer flex-1" onClick={onEdit}>
-            <div className="flex items-center gap-2">
-              <h4 className="text-sm font-sans font-bold uppercase tracking-tight text-brand-primary leading-tight">{goal.name}</h4>
-              {goal.priority === 'high' && (
-                <div className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.4)]" />
-              )}
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              <div className="flex items-center gap-1.5 bg-brand-bg/50 px-2 py-0.5 rounded-lg border border-brand-border">
-                <span className="text-[7px] font-bold text-brand-primary/30 uppercase tracking-widest">{goal.type === 'debt' ? 'Total' : 'Goal'}</span>
-                <span className="text-[10px] font-mono font-bold text-brand-primary">{formatCurrency(goal.targetAmount)}</span>
-              </div>
-              <div className={cn(
-                "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border",
-                goal.type === 'debt' ? "bg-brand-accent/5 border-brand-accent/20" : "bg-emerald-500/5 border-emerald-500/10"
-              )}>
-                <span className={cn(
-                  "text-[7px] font-bold uppercase tracking-widest",
-                  goal.type === 'debt' ? "text-brand-accent" : "text-emerald-500"
-                )}>{goal.type === 'debt' ? 'Paid' : 'Saved'}</span>
-                <span className={cn(
-                  "text-[10px] font-mono font-bold",
-                  goal.type === 'debt' ? "text-brand-accent" : "text-emerald-500"
-                )}>{formatCurrency(goal.currentAmount)}</span>
-              </div>
-            </div>
-          </div>
-          <div className="text-right">
-            <p className={cn(
-              "text-sm font-mono font-bold tabular-nums leading-none",
-              progress >= 100 ? "text-emerald-500" : "text-brand-primary"
-            )}>{progress.toFixed(0)}%</p>
-            <p className="text-[7px] font-bold text-brand-primary/30 uppercase tracking-widest mt-1">Status</p>
-          </div>
-        </div>
-
-        <div className="h-1.5 w-full bg-brand-bg rounded-full overflow-hidden border border-brand-border p-[1px]">
-          <motion.div 
-            initial={{ width: 0 }}
-            animate={{ width: `${progress}%` }}
-            className={cn(
-              "h-full rounded-full shadow-sm",
-              goal.type === 'debt' ? "bg-brand-accent" : "bg-brand-primary"
-            )}
-          />
-        </div>
-      </div>
-
-      <div className="flex items-center justify-between pt-4 mt-4 border-t border-brand-border/50 relative z-10">
-        <div className="flex gap-4">
-          <div className="space-y-0.5">
-            <p className="text-[7px] font-bold text-brand-primary/20 uppercase tracking-widest">Horizon</p>
-            <p className="text-[9px] font-mono font-bold text-brand-primary">
-              {goal.type === 'debt' && payoffDate ? (
-                <span className="text-brand-accent">{payoffDate}</span>
-              ) : (
-                goal.deadline ? new Date(goal.deadline).toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }).toUpperCase() : 'OPEN'
-              )}
-            </p>
-          </div>
-          {goal.type === 'debt' && goal.emi && (
-            <div className="space-y-0.5">
-              <p className="text-[7px] font-bold text-brand-accent uppercase tracking-widest">Monthly EMI</p>
-              <p className="text-[9px] font-mono font-bold text-brand-accent">{formatCurrency(goal.emi)}</p>
-            </div>
-          )}
-          {goal.monthlyContribution && goal.type !== 'debt' && (
-            <div className="space-y-0.5">
-              <p className="text-[7px] font-bold text-emerald-500 uppercase tracking-widest">Commitment</p>
-              <p className="text-[9px] font-mono font-bold text-emerald-500">{formatCurrency(goal.monthlyContribution)}</p>
-            </div>
-          )}
-        </div>
-        
-        <div className="flex items-center gap-2">
-          <button 
-            onClick={(e) => {
-              e.stopPropagation();
-              onEdit?.();
-            }}
-            className="p-1.5 bg-brand-primary/5 hover:bg-brand-primary hover:text-brand-surface rounded-lg transition-all border border-brand-border group/edit"
-          >
-            <Target className="w-3.5 h-3.5" />
-          </button>
-          
-          <button
-            type="button"
-            onClick={async (e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              if (isDeleting) {
-                onDelete?.();
-              } else {
-                setIsDeleting(true);
-                setTimeout(() => setIsDeleting(false), 3000);
-              }
-            }}
-            className={cn(
-              "p-1.5 rounded-lg border transition-all h-8 flex items-center justify-center",
-              isDeleting 
-                ? "bg-rose-500 text-white border-rose-600 px-3 w-auto" 
-                : "text-rose-500/20 hover:text-rose-600 hover:bg-rose-500/10 border-transparent"
-            )}
-          >
-            {isDeleting ? (
-              <span className="text-[7px] font-bold uppercase tracking-widest">Confirm</span>
-            ) : (
-              <Trash2 className="w-3.5 h-3.5" />
-            )}
-          </button>
-        </div>
-      </div>
-    </motion.div>
   );
 }
 
@@ -2426,7 +2761,7 @@ function CommandCenter({
 
             {/* Unified Navigation at bottom of flex container */}
             <div className="pt-2 border-t border-brand-primary/5">
-              <div className="flex gap-1.5 pb-1">
+              <div className="flex gap-1.5 flex-wrap justify-center pb-1">
                 {[
                   { id: 'transaction', label: 'ADD', icon: Plus },
                   { id: 'income', label: 'INFLOW', icon: ArrowUpRight },

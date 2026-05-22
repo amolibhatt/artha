@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { motion } from 'motion/react';
-import { Landmark, TrendingDown, ArrowRight, Zap, Info } from 'lucide-react';
+import { Landmark, ArrowRight, Zap, Info } from 'lucide-react';
 import { Goal } from '../types';
 import { formatCurrency, cn } from '../lib/utils';
 
@@ -24,13 +23,13 @@ export function DebtOptimization({ goals }: DebtOptimizationProps) {
 
   if (loans.length === 0) {
     return (
-      <div className="bg-brand-surface p-8 md:p-12 border border-brand-border rounded-3xl shadow-sm text-center space-y-6">
-        <div className="w-16 h-16 bg-brand-bg rounded-2xl flex items-center justify-center mx-auto">
-          <Landmark className="w-8 h-8 text-brand-primary/20" />
+      <div className="bg-brand-surface border border-brand-border rounded-xl p-4 text-center space-y-3">
+        <div className="w-10 h-10 bg-brand-bg rounded-lg flex items-center justify-center mx-auto">
+          <Landmark className="w-5 h-5 text-brand-primary/20" />
         </div>
-        <div className="space-y-2">
-          <p className="text-xl font-sans font-bold uppercase tracking-tight text-brand-primary">No Loans Found</p>
-          <p className="text-[10px] text-brand-primary/40 font-bold uppercase tracking-widest">Add a loan goal to start planning</p>
+        <div className="space-y-1">
+          <p className="text-xs font-bold uppercase tracking-tight text-brand-primary">No Loans Tracked</p>
+          <p className="text-[8px] text-brand-primary/40 font-bold uppercase tracking-widest">Add a loan goal under Strategy to start planning prepayments</p>
         </div>
       </div>
     );
@@ -59,7 +58,6 @@ export function DebtOptimization({ goals }: DebtOptimizationProps) {
       const interest = r > 0 ? normalBalance * r : 0;
       const principal = emi - interest;
       if (principal <= 0) {
-        // If EMI is less than interest, interest is infinite.
         totalInterestWithoutPrepayment = 999999999;
         break;
       }
@@ -111,24 +109,24 @@ export function DebtOptimization({ goals }: DebtOptimizationProps) {
   const impact = selectedLoan ? calculateImpact(selectedLoan, prepayment) : null;
 
   return (
-    <div id="debt-optimization-engine" className="bg-brand-surface p-8 md:p-12 border border-brand-border rounded-[2.5rem] shadow-sm space-y-12 md:space-y-16 relative overflow-hidden group">
-      <div className="absolute top-0 right-0 w-64 h-64 bg-brand-bg rounded-full blur-[120px] -mr-32 -mt-32 opacity-50" />
+    <div id="debt-optimization-engine" className="bg-brand-surface border border-brand-border rounded-xl p-4 md:p-5 shadow-[0_1px_3px_rgba(0,0,0,0.01)] space-y-4 relative overflow-hidden group">
+      <div className="absolute top-0 right-0 w-48 h-48 bg-brand-bg rounded-full blur-3xl -mr-24 -mt-24 opacity-40" />
       
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
-        <div className="space-y-1">
-          <h3 className="section-header">Debt Payoff Plan</h3>
-          <p className="data-label">Save on Interest</p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 relative z-10 border-b border-brand-border/40 pb-2.5">
+        <div className="space-y-0.5">
+          <h3 className="text-xs font-black uppercase tracking-wider text-brand-primary">Debt Payoff Plan</h3>
+          <p className="text-[8px] font-bold text-brand-primary/30 uppercase tracking-widest">Amortization interest multiplier saving calculator</p>
         </div>
         
-        <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+        <div className="flex gap-1.5 flex-wrap">
           {loans.map(loan => (
             <button
               key={loan.id}
               onClick={() => setSelectedLoanId(loan.id || null)}
               className={cn(
-                "flex-shrink-0 px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all border",
+                "px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-widest transition-all border leading-none",
                 selectedLoanId === loan.id 
-                  ? "bg-brand-primary text-brand-surface border-brand-primary shadow-lg" 
+                  ? "bg-brand-primary text-brand-surface border-brand-primary shadow-sm" 
                   : "bg-brand-bg/50 text-brand-primary/30 border-brand-border hover:bg-brand-primary/5"
               )}
             >
@@ -139,120 +137,102 @@ export function DebtOptimization({ goals }: DebtOptimizationProps) {
       </div>
 
       {selectedLoan && impact && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 md:gap-12 relative z-10">
-          <div className="space-y-10">
-            <div className="space-y-8">
-              <div className="flex justify-between items-end border-b border-brand-border pb-6">
-                <div className="space-y-2">
-                  <p className="data-label">Outstanding Balance</p>
-                  <p className="text-3xl md:text-4xl font-mono font-bold text-brand-primary tracking-tight">{formatCurrency(selectedLoan.targetAmount - selectedLoan.currentAmount)}</p>
-                </div>
-                <div className="text-right space-y-2">
-                  <p className="data-label">Interest Rate</p>
-                  <p className="text-xl md:text-2xl font-mono font-bold text-brand-primary">{selectedLoan.interestRate || 8.5}%</p>
-                </div>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 relative z-10">
+          <div className="lg:col-span-7 space-y-4">
+            <div className="grid grid-cols-2 gap-3 bg-brand-bg/30 p-3 rounded-lg border border-brand-border/30">
+              <div className="space-y-0.5">
+                <p className="text-[8px] font-bold uppercase tracking-wider text-brand-primary/45">Outstanding Pool</p>
+                <p className="text-sm font-mono font-bold text-brand-primary">{formatCurrency(selectedLoan.targetAmount - selectedLoan.currentAmount)}</p>
               </div>
-
-              <div className="flex justify-between items-end border-b border-brand-border pb-6">
-                <div className="space-y-2">
-                  <p className="data-label">Monthly EMI</p>
-                  <p className="text-3xl md:text-4xl font-mono font-bold text-brand-primary tracking-tight">{formatCurrency(impact.emi)}</p>
-                </div>
-                <div className="text-right space-y-2">
-                  <p className="data-label">Normal Tenure</p>
-                  <p className="text-xl md:text-2xl font-mono font-bold text-brand-primary">{impact.normalMonths} Months</p>
-                </div>
+              <div className="space-y-0.5 text-right">
+                <p className="text-[8px] font-bold uppercase tracking-wider text-brand-primary/45">Interest Rate</p>
+                <p className="text-sm font-mono font-bold text-brand-primary">{selectedLoan.interestRate || 8.5}%</p>
               </div>
-
-              <div className="flex justify-between items-end border-b border-brand-border pb-6">
-                <div className="space-y-2">
-                  <p className="data-label">Extra Monthly Payment</p>
-                  <p className="text-3xl md:text-4xl font-mono font-bold text-brand-primary tracking-tight">{formatCurrency(prepayment)}</p>
-                </div>
-                <div className="text-right space-y-2">
-                  <p className="data-label !text-brand-accent">Money Saved</p>
-                  <p className="text-xl md:text-2xl font-mono font-bold text-brand-accent">{formatCurrency(impact.interestSaved)}</p>
-                </div>
+              <div className="space-y-0.5 pt-2 border-t border-brand-border/25">
+                <p className="text-[8px] font-bold uppercase tracking-wider text-brand-primary/45">Monthly EMI</p>
+                <p className="text-sm font-mono font-bold text-brand-primary">{formatCurrency(impact.emi)}</p>
               </div>
-              
-              <div className="space-y-4">
-                <input 
-                  type="range"
-                  min="0"
-                  max={Math.max(200000, (selectedLoan.targetAmount - selectedLoan.currentAmount) / 2)}
-                  step="5000"
-                  value={prepayment}
-                  onChange={(e) => setPrepayment(parseInt(e.target.value))}
-                  className="w-full h-1 bg-brand-bg rounded-full appearance-none cursor-pointer accent-brand-accent"
-                />
-                <div className="flex justify-between items-center opacity-30">
-                  <p className="data-label">Low</p>
-                  <p className="data-label">High</p>
-                </div>
-              </div>
-              
-              <div className="flex items-center gap-4 p-5 bg-brand-primary text-brand-surface rounded-2xl border border-white/5 shadow-xl relative overflow-hidden group/alert">
-                <div className="w-10 h-10 bg-brand-accent/20 rounded-xl flex items-center justify-center border border-brand-accent/20 relative z-10">
-                  <Zap className="w-5 h-5 text-brand-accent" />
-                </div>
-                <div className="relative z-10 flex-1">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="data-label !text-brand-accent">Debt-Free Date</p>
-                      <p className="text-lg font-mono font-bold text-brand-surface tracking-tight">{impact.payoffDate}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="data-label !text-white/30 text-[7px]">Time Saved</p>
-                      <p className="text-xs font-mono font-bold text-brand-accent">-{impact.monthsSaved}M</p>
-                    </div>
-                  </div>
-                </div>
+              <div className="space-y-0.5 text-right pt-2 border-t border-brand-border/25">
+                <p className="text-[8px] font-bold uppercase tracking-wider text-brand-primary/45">Base Tenure</p>
+                <p className="text-sm font-mono font-bold text-brand-primary">{impact.normalMonths} Mo</p>
               </div>
             </div>
 
-            <div className="space-y-4 bg-brand-bg/30 p-5 rounded-2xl border border-brand-border">
-              <div className="flex items-center gap-2">
-                <Info className="w-3.5 h-3.5 text-brand-primary/20" />
-                <p className="data-label">Why pay extra?</p>
+            <div className="space-y-1.5 p-3 bg-brand-bg/60 rounded-lg border border-brand-border/40">
+              <div className="flex justify-between items-baseline">
+                <p className="text-[9px] font-mono font-bold text-brand-primary/40 uppercase tracking-widest">Extra Monthly Payoff</p>
+                <span className="text-xs font-mono font-bold text-brand-accent">{formatCurrency(prepayment)}</span>
               </div>
-              <p className="text-xs text-brand-primary/60 font-medium leading-relaxed">
-                Paying <span className="font-bold text-brand-primary">{formatCurrency(prepayment)}</span> extra each month goes straight to your principal, stopping interest from building up and saving you money.
-              </p>
+              <input 
+                type="range"
+                min="0"
+                max={Math.max(100000, (selectedLoan.targetAmount - selectedLoan.currentAmount) / 2)}
+                step="5000"
+                value={prepayment}
+                onChange={(e) => setPrepayment(parseInt(e.target.value))}
+                className="w-full h-1 bg-brand-border rounded-full appearance-none cursor-pointer accent-brand-accent"
+              />
+              <div className="flex justify-between items-center text-[7px] font-mono font-bold text-brand-primary/25 uppercase tracking-wider">
+                <span>Low</span>
+                <span>Incremental prepayment target</span>
+                <span>High</span>
+              </div>
+            </div>
+
+            <div className="p-3 bg-brand-primary text-brand-surface rounded-lg border border-white/5 shadow-sm relative overflow-hidden">
+              <div className="relative z-10 flex justify-between items-center text-[10px] leading-none">
+                <div>
+                  <p className="text-[8px] font-bold uppercase tracking-wider text-white/40">Accelerated Freedom</p>
+                  <p className="text-sm font-mono font-bold text-brand-surface tracking-tight mt-1">{impact.payoffDate}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[8px] font-bold uppercase tracking-wider text-white/40">Timeline Cut</p>
+                  <p className="text-sm font-mono font-bold text-brand-accent mt-1">-{impact.monthsSaved} Months</p>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="bg-brand-primary text-brand-surface p-8 md:p-10 rounded-[2rem] flex flex-col justify-center space-y-10 md:space-y-12 relative overflow-hidden shadow-xl border border-white/10 group/metrics">
-            <div className="absolute top-0 right-0 w-48 h-48 bg-brand-accent rounded-full blur-[100px] -mr-24 -mt-24 opacity-10" />
-            
-            <div className="space-y-6 text-center relative z-10">
-              <p className="data-label !text-brand-surface/30">Interest & Timeline Comparison</p>
-              <div className="flex items-center justify-center gap-6 md:gap-10">
-                <div className="text-center space-y-2 opacity-30">
-                  <p className="data-label !text-brand-surface/60">Normal ({impact.normalPayoffDate})</p>
-                  <p className="text-lg md:text-xl font-mono font-bold line-through">{formatCurrency(impact.totalInterestWithoutPrepayment)}</p>
+          <div className="lg:col-span-5 bg-brand-primary text-brand-surface p-4 rounded-lg flex flex-col justify-between space-y-4 shadow-md border border-white/5">
+            <div className="space-y-3">
+              <p className="text-[8px] font-bold uppercase tracking-widest text-white/40 text-center">Interest Savings Matrix</p>
+              
+              <div className="flex items-center justify-between gap-2 border-b border-white/5 pb-2.5 text-center">
+                <div className="space-y-0.5 text-left">
+                  <p className="text-[7px] font-bold text-white/30 uppercase tracking-wider">Normal Plan ({impact.normalPayoffDate})</p>
+                  <p className="text-sm font-mono text-white/50 line-through leading-none">{formatCurrency(impact.totalInterestWithoutPrepayment)}</p>
                 </div>
-                <div className="w-12 h-[1px] bg-white/20 relative">
-                  <ArrowRight className="w-4 h-4 text-brand-accent absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" />
+                <div className="shrink-0 text-white/20">
+                  <ArrowRight className="w-3 h-3 text-brand-accent" />
                 </div>
-                <div className="text-center space-y-2">
-                  <p className="data-label !text-brand-accent">Strategic ({impact.payoffDate})</p>
-                  <p className="text-2xl md:text-3xl font-mono font-bold text-brand-surface">{formatCurrency(impact.totalInterestWithPrepayment)}</p>
+                <div className="space-y-0.5 text-right">
+                  <p className="text-[7px] font-bold text-brand-accent uppercase tracking-wider">Strategic Prepay ({impact.payoffDate})</p>
+                  <p className="text-sm font-mono font-bold text-brand-surface leading-none">{formatCurrency(impact.totalInterestWithPrepayment)}</p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-1">
+                <div className="space-y-0.5">
+                  <p className="text-[8px] font-bold uppercase tracking-widest text-brand-accent">Total Net Savings</p>
+                  <p className="text-lg font-mono font-black text-brand-accent leading-none">{formatCurrency(impact.interestSaved)}</p>
+                </div>
+                
+                <div className="bg-white/5 px-2 py-1 rounded border border-white/5 flex flex-col items-center">
+                  <span className="text-base font-mono font-black leading-none">
+                    {impact.totalInterestWithoutPrepayment > 0 
+                      ? (( (impact.totalInterestWithoutPrepayment - impact.totalInterestWithPrepayment) / impact.totalInterestWithoutPrepayment * 100 ).toFixed(0))
+                      : '0'}%
+                  </span>
+                  <span className="text-[6px] font-bold opacity-35 uppercase tracking-wider mt-0.5">Off interest</span>
                 </div>
               </div>
             </div>
 
-            <div className="space-y-6 relative z-10 text-center">
-               <div className="relative inline-flex items-center justify-center">
-                 <div className="w-40 h-40 md:w-44 md:h-44 rounded-full border-8 border-white/5 flex flex-col items-center justify-center gap-1">
-                    <p className="text-5xl md:text-6xl font-mono font-bold text-brand-accent tracking-tighter leading-none">
-                      {impact.totalInterestWithoutPrepayment > 0 
-                        ? (( (impact.totalInterestWithoutPrepayment - impact.totalInterestWithPrepayment) / impact.totalInterestWithoutPrepayment * 100 ).toFixed(0))
-                        : '0'}
-                    </p>
-                    <p className="data-label !text-brand-surface/30">% SAVED</p>
-                 </div>
-               </div>
-               <p className="data-label !text-brand-surface/10">Reducing your debt</p>
+            <div className="p-2.5 bg-white/5 rounded border border-white/10 flex gap-1.5 items-start text-[9px] font-sans">
+              <Zap className="w-3.5 h-3.5 text-brand-accent shrink-0 mt-0.5 animate-pulse" />
+              <p className="text-white/70 leading-normal">
+                Every <span className="font-bold text-white">{formatCurrency(prepayment)}</span> added goes straight to the principal, skipping high early-stage interest charges.
+              </p>
             </div>
           </div>
         </div>

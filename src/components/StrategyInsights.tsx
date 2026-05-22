@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
-import { Sparkles, TrendingUp, AlertCircle, Loader2, ChevronRight, Plus, ShieldCheck, Compass, AlertTriangle, Landmark, Zap, ArrowUpRight } from 'lucide-react';
+import { Sparkles, TrendingUp, AlertCircle, Loader2, ShieldCheck, Compass, AlertTriangle, Landmark, Zap, ArrowUpRight } from 'lucide-react';
 import { Transaction, Goal } from '../types';
 import { generateCFOStrategy } from '../services/aiService';
 import { cn, formatCurrency } from '../lib/utils';
@@ -56,8 +56,6 @@ export function StrategyInsights({
     return balanceDrift || volumeDrift;
   }, [balance, transactions.length, lastAuditSnapshot, strategy]);
 
-  const totalIncomeCalc = totalIncome; 
-
   // Capital Efficiency Score: (Income - Mandatory) / Income
   const efficiencyScore = estimatedMonthlyIncome > 0 ? ((estimatedMonthlyIncome - estimatedFixedCosts) / estimatedMonthlyIncome) * 100 : 0;
 
@@ -77,7 +75,7 @@ export function StrategyInsights({
     .sort(([, a], [, b]) => b - a)
     .slice(0, 3);
 
-  // Subscription Audit: Detect recurring descriptions with similar amounts
+  // Subscription Audit
   const subscriptionAudit = React.useMemo(() => {
     const counts: Record<string, { amounts: Set<number>, dates: Date[] }> = {};
     transactions.forEach(t => {
@@ -93,11 +91,11 @@ export function StrategyInsights({
       .map(([name, data]) => ({
         name,
         amount: Array.from(data.amounts)[0],
-        frequency: 'Monthly' // Simplified assumption
+        frequency: 'Monthly'
       }));
   }, [transactions]);
 
-  // Spending Velocity: Discretionary this month vs last month
+  // Spending Velocity
   const velocityAudit = React.useMemo(() => {
     const now = new Date();
     const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -148,15 +146,19 @@ export function StrategyInsights({
       );
       setStrategy(result || "Unable to generate strategy at this time.");
       setLastAuditSnapshot({ balance, count: transactions.length });
-    } catch (err) {
-      setError("Failed to generate strategy. Please try again.");
-      console.error(err);
+    } catch (err: any) {
+      console.error("Strategy generation failed:", err);
+      try {
+        const errorObj = JSON.parse(err.message);
+        setError(errorObj.details || errorObj.error || "Failed to generate strategy. Please check your setup.");
+      } catch {
+        setError(err.message || "Failed to generate strategy. Please try again.");
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Capital Leak Detection: Expenses marked as avoidable
   const leakAudit = React.useMemo(() => {
     return transactions
       .filter(t => t.type === 'expense' && t.isAvoidable)
@@ -164,88 +166,84 @@ export function StrategyInsights({
   }, [transactions]);
 
   return (
-    <div className="space-y-16 pb-24">
+    <div className="space-y-6 pb-12">
       {/* Strategic Vision Header */}
-      <div className="flex flex-col md:flex-row gap-12 items-start justify-between border-b border-brand-border pb-16">
-        <div className="max-w-xl space-y-6">
-           <div className="flex items-center gap-3">
-             <div className="w-1.5 h-1.5 rounded-full bg-brand-primary" />
-             <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-[0.4em]">CFO OPERATING MODEL v2.0</p>
-           </div>
-           <h2 className="text-4xl md:text-5xl font-sans font-black text-brand-primary tracking-tighter leading-[0.9] uppercase">Capital Efficiency Framework</h2>
-           <p className="text-xs text-brand-primary/50 leading-relaxed font-medium max-w-sm">
-             Categorizing flows into Operational Baseline, Capital Growth, and Tactical Reserve. Goal: Maximize velocity, minimize leakage.
-           </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-brand-border pb-3.5 px-0.5">
+        <div className="space-y-0.5 max-w-md">
+          <div className="flex items-center gap-1.5">
+            <div className="w-1.5 h-1.5 rounded-full bg-brand-primary" />
+            <span className="text-[8px] font-bold text-brand-primary/45 uppercase tracking-wider">Strategic Framework</span>
+          </div>
+          <h2 className="text-base font-sans font-black uppercase tracking-tight text-brand-primary">LTV Growth & Allocation</h2>
+          <p className="text-[10px] text-brand-primary/50 font-normal leading-normal">
+            Automated capital allocation audit. Primary objective: optimize debt payoff velocity, run cost control checks, and secure liquidity thresholds.
+          </p>
         </div>
-        <div className="grid grid-cols-2 gap-6 w-full md:w-auto">
-           <div className="p-8 bg-brand-surface border border-brand-border rounded-[2rem] space-y-2 min-w-[180px] shadow-sm">
-              <p className="text-[9px] font-bold text-brand-primary/30 uppercase tracking-[0.2em]">Active Leaks</p>
-              <div className="flex items-center gap-2">
-                 <div className={cn("w-1.5 h-1.5 rounded-full", leakAudit > 0 ? "bg-rose-500 animate-pulse" : "bg-emerald-500")} />
-                 <p className="text-2xl font-mono font-bold text-brand-primary">{leakAudit > 0 ? 'ALERT' : 'CLEAN'}</p>
-              </div>
-           </div>
-           <div className="p-8 bg-brand-primary border border-white/5 rounded-[2rem] space-y-2 min-w-[180px] shadow-xl text-brand-surface">
-              <p className="text-[9px] font-bold text-white/30 uppercase tracking-[0.2em]">Net Surplus</p>
-              <p className="text-2xl font-mono font-bold text-brand-accent">{formatCurrency(strategicSpendingCeiling)}</p>
-           </div>
+        <div className="flex gap-2 shrink-0">
+          <div className="px-3 py-1.5 bg-brand-surface border border-brand-border/60 rounded-lg flex flex-col justify-center min-w-[100px] shadow-[0_1px_2px_rgba(0,0,0,0.01)]">
+            <p className="text-[7px] font-bold text-brand-primary/40 uppercase tracking-widest">Wastage Pool</p>
+            <div className="flex items-center gap-1 mt-0.5">
+               <div className={cn("w-1 h-1 rounded-full", leakAudit > 0 ? "bg-rose-500 animate-pulse" : "bg-emerald-500")} />
+               <p className="text-xs font-mono font-bold text-brand-primary">{leakAudit > 0 ? 'ALERT' : 'CLEAN'}</p>
+            </div>
+          </div>
+          <div className="px-3 py-1.5 bg-brand-primary rounded-lg flex flex-col justify-center min-w-[110px] shadow-sm text-brand-surface">
+            <p className="text-[7px] font-bold text-white/35 uppercase tracking-widest">Surplus Ceiling</p>
+            <p className="text-xs font-mono font-bold text-brand-accent mt-0.5 leading-none">{formatCurrency(strategicSpendingCeiling)}</p>
+          </div>
         </div>
       </div>
 
       {/* Efficiency & Velocity Dashboard */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8">
-        <div className="bg-brand-surface p-8 border border-brand-border rounded-[2.5rem] shadow-sm space-y-6 relative overflow-hidden group">
-          <p className="data-label">Capital Efficiency</p>
-          <div className="flex items-end justify-between relative z-10">
-            <h4 className="text-4xl font-mono font-bold text-brand-primary leading-none">{efficiencyScore.toFixed(0)}%</h4>
-            <div className={cn(
-              "px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest border",
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="bg-brand-surface p-3 border border-brand-border/60 rounded-xl space-y-2 relative overflow-hidden">
+          <p className="text-[8px] font-bold text-brand-primary/40 uppercase tracking-widest">Cap. Efficiency</p>
+          <div className="flex items-baseline justify-between">
+            <h4 className="text-lg font-mono font-bold text-brand-primary leading-none">{efficiencyScore.toFixed(0)}%</h4>
+            <span className={cn(
+              "text-[7px] font-bold px-1 py-0.5 rounded leading-none border",
               efficiencyScore > 40 ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : "bg-rose-500/10 text-rose-500 border-rose-500/20"
             )}>
-              {efficiencyScore > 40 ? 'OPTIMAL' : 'BELOW PAR'}
-            </div>
+              {efficiencyScore > 40 ? 'OK' : 'IMPROVE'}
+            </span>
           </div>
-          <p className="text-[10px] text-brand-primary/20 font-bold uppercase tracking-widest pl-0.5">Surplus availability score</p>
-          <div className="h-1.5 w-full bg-brand-bg rounded-full overflow-hidden p-0.5 border border-brand-border">
+          <div className="h-1 w-full bg-brand-bg rounded-full overflow-hidden p-0.5 border border-brand-border/40">
             <motion.div 
               initial={{ width: 0 }}
               animate={{ width: `${efficiencyScore}%` }}
-              className={cn("h-full rounded-full transition-all duration-1000", efficiencyScore > 40 ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" : "bg-rose-500")}
+              className={cn("h-full rounded-full transition-all duration-1000", efficiencyScore > 40 ? "bg-emerald-500" : "bg-rose-500")}
             />
           </div>
         </div>
 
-        <div className="bg-brand-surface p-8 border border-brand-border rounded-[2.5rem] shadow-sm space-y-6 relative overflow-hidden group">
-          <p className="data-label">Spending Momentum</p>
-          <div className="flex items-end justify-between relative z-10">
-            <h4 className="text-4xl font-mono font-bold text-brand-primary leading-none">
+        <div className="bg-brand-surface p-3 border border-brand-border/60 rounded-xl space-y-2 relative overflow-hidden">
+          <p className="text-[8px] font-bold text-brand-primary/40 uppercase tracking-widest">Spending Trend</p>
+          <div className="flex items-baseline justify-between">
+            <h4 className="text-lg font-mono font-bold text-brand-primary leading-none">
               {velocityAudit.change > 0 ? '+' : ''}{velocityAudit.change.toFixed(0)}%
             </h4>
-            <div className={cn(
-              "px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest border",
+            <span className={cn(
+              "text-[7px] font-bold px-1 py-0.5 rounded leading-none border",
               velocityAudit.change <= 5 ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : "bg-rose-500/10 text-rose-500 border-rose-500/20"
             )}>
-              {velocityAudit.change <= 5 ? 'RESTRAINED' : 'ACCELERATING'}
-            </div>
+              {velocityAudit.change <= 5 ? 'STABLE' : 'RISING'}
+            </span>
           </div>
-          <p className="text-[10px] text-brand-primary/20 font-bold uppercase tracking-widest pl-0.5">Month-on-month velocity</p>
-          <div className="h-1.5 w-full bg-brand-bg rounded-full overflow-hidden relative p-0.5 border border-brand-border">
-             <div className="absolute left-1/2 top-0 h-full w-[1px] bg-brand-border z-10" />
+          <div className="h-1 w-full bg-brand-bg rounded-full overflow-hidden relative p-0.5 border border-brand-border/40">
              <div className={cn(
                "h-full rounded-full transition-all duration-1000",
-               velocityAudit.change > 0 ? "bg-rose-500" : "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]"
-             )} style={{ width: `${Math.min(Math.abs(velocityAudit.change), 100)}%`, marginLeft: velocityAudit.change > 0 ? '50%' : `${50 - Math.min(Math.abs(velocityAudit.change), 50)}%` }} />
+               velocityAudit.change > 0 ? "bg-rose-500" : "bg-emerald-500"
+             )} style={{ width: `${Math.min(Math.abs(velocityAudit.change), 100)}%` }} />
           </div>
         </div>
 
-        <div className="bg-brand-surface p-8 border border-brand-border rounded-[2.5rem] shadow-sm space-y-6 relative overflow-hidden group">
-          <p className="data-label">Fixed Cost Intensity</p>
-          <div className="flex items-end justify-between relative z-10">
-            <h4 className="text-4xl font-mono font-bold text-brand-primary leading-none">{fixedRatio.toFixed(0)}%</h4>
-            <p className="data-label !text-brand-primary/20">OF TOTAL</p>
+        <div className="bg-brand-surface p-3 border border-brand-border/60 rounded-xl space-y-2 relative overflow-hidden">
+          <p className="text-[8px] font-bold text-brand-primary/40 uppercase tracking-widest">Bills Quotient</p>
+          <div className="flex items-baseline justify-between">
+            <h4 className="text-lg font-mono font-bold text-brand-primary leading-none">{fixedRatio.toFixed(0)}%</h4>
+            <p className="text-[8px] font-mono opacity-30">MANDATORY</p>
           </div>
-          <p className="text-[10px] text-brand-primary/20 font-bold uppercase tracking-widest pl-0.5">Non-discretionary burn</p>
-          <div className="h-1.5 w-full bg-brand-bg rounded-full overflow-hidden p-0.5 border border-brand-border">
+          <div className="h-1 w-full bg-brand-bg rounded-full overflow-hidden p-0.5 border border-brand-border/40">
             <motion.div 
                initial={{ width: 0 }}
                animate={{ width: `${fixedRatio}%` }}
@@ -254,290 +252,264 @@ export function StrategyInsights({
           </div>
         </div>
 
-        <div className="bg-brand-surface p-8 border border-brand-border rounded-[2.5rem] shadow-sm space-y-6 relative overflow-hidden group">
-          <p className="data-label">Avoidable Leakage</p>
-          <div className="flex items-end justify-between relative z-10">
+        <div className="bg-brand-surface p-3 border border-brand-border/60 rounded-xl space-y-2 relative overflow-hidden">
+          <p className="text-[8px] font-bold text-brand-primary/40 uppercase tracking-widest">Avoidable Leakage</p>
+          <div className="flex items-baseline justify-between">
             <h4 className={cn(
-              "text-4xl font-mono font-bold leading-none",
+              "text-lg font-mono font-bold leading-none",
               leakAudit > 0 ? "text-rose-500" : "text-brand-primary"
             )}>
               {formatCurrency(leakAudit)}
             </h4>
-            <div className={cn(
-              "px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest border",
+            <span className={cn(
+              "text-[7px] font-bold px-1 py-0.5 rounded leading-none border",
               leakAudit === 0 ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : "bg-rose-500/10 text-rose-500 border-rose-500/20"
             )}>
-               {leakAudit === 0 ? 'CLEAN' : 'LEAK DETECTED'}
-            </div>
+               {leakAudit === 0 ? 'CLEAN' : 'LEAK'}
+            </span>
           </div>
-          <div className="flex items-center gap-2">
-            <div className={cn(
-              "w-1.5 h-1.5 rounded-full animate-pulse",
-              leakAudit > 0 ? "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.6)]" : "bg-emerald-500"
-            )} />
-            <p className="text-[7px] font-bold text-brand-primary/20 uppercase tracking-[0.2em]">Non-essential accumulation</p>
+          <div className="flex items-center gap-1.5 text-[8px] leading-none text-brand-primary/30 font-bold uppercase tracking-wider">
+            <div className={cn("w-1 h-1 rounded-full", leakAudit > 0 ? "bg-rose-500 animate-pulse" : "bg-emerald-500")} />
+            <span>Avoidable bills total</span>
           </div>
         </div>
+      </div>
 
-        {/* Flow Forensics Expansion */}
-        <div className="col-span-full grid grid-cols-1 md:grid-cols-2 gap-8">
-           <div className="bg-brand-surface border border-brand-border rounded-[2.5rem] p-8 flex items-center justify-between group hover:border-brand-primary/20 transition-all">
-             <div className="space-y-1">
-               <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest">Surplus Conversion</p>
-               <h4 className="text-3xl font-mono font-bold text-brand-primary tracking-tighter">{savingsRate.toFixed(1)}%</h4>
-               <p className="text-[9px] font-medium text-brand-primary/20 uppercase tracking-widest">Portfolio retention rate</p>
-             </div>
-             <div className="text-right">
-               <div className={cn(
-                 "px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest inline-block border",
-                 savingsRate > 20 ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : "bg-rose-500/10 text-rose-500 border-rose-500/20"
-               )}>
-                 {savingsRate > 40 ? 'Elite' : savingsRate > 20 ? 'Optimal' : 'Leakage Risk'}
-               </div>
-             </div>
+      {/* Forensics Stats Strip */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+         <div className="bg-brand-surface border border-brand-border/60 rounded-xl px-3.5 py-2.5 flex items-center justify-between">
+           <div className="space-y-0.5">
+             <p className="text-[8px] font-bold text-brand-primary/40 uppercase tracking-widest">Net Savings Rate</p>
+             <h4 className="text-base font-mono font-bold text-brand-primary">{savingsRate.toFixed(1)}%</h4>
+             <p className="text-[7px] font-medium text-brand-primary/30 uppercase tracking-widest">Ratio of retained capitalization</p>
            </div>
-           <div className="bg-brand-surface border border-brand-border rounded-[2.5rem] p-8 flex items-center justify-between group hover:border-brand-primary/20 transition-all">
-             <div className="space-y-1">
-               <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest">Income Coverage</p>
-               <h4 className="text-3xl font-mono font-bold text-brand-primary tracking-tighter">{incomeCoverage.toFixed(1)}x</h4>
-               <p className="text-[9px] font-medium text-brand-primary/20 uppercase tracking-widest">Multiple of monthly burn</p>
-             </div>
-             <div className="text-right">
-                <div className={cn(
-                 "px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest inline-block border",
-                 incomeCoverage >= 1 ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : "bg-rose-500/10 text-rose-500 border-rose-500/20"
-               )}>
-                 {incomeCoverage > 2 ? 'High Cushion' : incomeCoverage >= 1 ? 'Balanced' : 'Deficit'}
-               </div>
-             </div>
+           <span className={cn(
+             "px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider border leading-none",
+             savingsRate > 20 ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : "bg-rose-500/10 text-rose-500 border-rose-500/20"
+           )}>
+             {savingsRate > 40 ? 'Excellent' : savingsRate > 20 ? 'Good' : 'Low Savings'}
+           </span>
+         </div>
+         <div className="bg-brand-surface border border-brand-border/60 rounded-xl px-3.5 py-2.5 flex items-center justify-between">
+           <div className="space-y-0.5">
+             <p className="text-[8px] font-bold text-brand-primary/40 uppercase tracking-widest">Income Multiplier Scale</p>
+             <h4 className="text-base font-mono font-bold text-brand-primary">{incomeCoverage.toFixed(1)}x</h4>
+             <p className="text-[7px] font-medium text-brand-primary/30 uppercase tracking-widest">Income coverage factors</p>
            </div>
-        </div>
+           <span className={cn(
+             "px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider border leading-none",
+             incomeCoverage >= 1 ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : "bg-rose-500/10 text-rose-500 border-rose-500/20"
+           )}>
+             {incomeCoverage > 2 ? 'Strong' : incomeCoverage >= 1 ? 'Stable' : 'Risk'}
+           </span>
+         </div>
+      </div>
 
-        {/* Global Strategy Allocation */}
-        <div className="col-span-full bg-brand-primary text-brand-surface p-12 rounded-[3.5rem] relative overflow-hidden shadow-2xl group/alloc">
-          <div className="absolute inset-0 opacity-[0.03] pointer-events-none group-hover:opacity-[0.06] transition-opacity" style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
-          <div className="space-y-10 relative z-10">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center border border-white/10 group-hover:rotate-12 transition-transform duration-500">
-                <Compass className="w-6 h-6 text-brand-accent/60" />
-              </div>
-              <div className="space-y-0.5">
-                <h3 className="text-2xl font-sans font-bold uppercase tracking-tight leading-none text-brand-surface">Capital Deployment Map</h3>
-                <p className="text-[10px] text-white/30 font-bold uppercase tracking-[0.3em]">Current Interval Allocation</p>
-              </div>
+      {/* Global Strategy Allocation */}
+      <div className="bg-brand-primary text-brand-surface p-4 rounded-xl relative overflow-hidden shadow-sm">
+        <div className="space-y-3 relative z-10">
+          <div className="flex items-center gap-2 border-b border-white/10 pb-2">
+            <Compass className="w-4 h-4 text-brand-accent" />
+            <div className="space-y-0.5">
+              <h3 className="text-xs font-sans font-black uppercase tracking-wider text-brand-surface leading-none">Monthly Money Breakdown</h3>
+              <p className="text-[8px] text-white/30 font-bold uppercase tracking-widest">Optimized capital partition strategy</p>
             </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-12">
-              <div className="space-y-2">
-                <p className="text-[10px] font-bold text-white/20 uppercase tracking-widest">Baseline Income</p>
-                <p className="text-3xl font-mono font-bold tracking-tighter tabular-nums">{formatCurrency(estimatedMonthlyIncome)}</p>
-              </div>
-              <div className="space-y-2">
-                <p className="text-[10px] font-bold text-white/20 uppercase tracking-widest">Fixed Asset Absorption</p>
-                <p className="text-3xl font-mono font-bold text-rose-400 tracking-tighter tabular-nums">-{formatCurrency(estimatedFixedCosts)}</p>
-              </div>
-              <div className="space-y-2">
-                <p className="text-[10px] font-bold text-white/20 uppercase tracking-widest">Growth Commitment</p>
-                <p className="text-3xl font-mono font-bold text-brand-accent tracking-tighter tabular-nums">-{formatCurrency(monthlyGoalCommitments)}</p>
-              </div>
-              <div className="space-y-2 md:pl-10 md:border-l border-white/10">
-                <p className="text-[10px] font-bold text-brand-accent uppercase tracking-widest">Strategic Capacity</p>
-                <p className="text-5xl font-mono font-bold text-brand-surface tracking-tighter tabular-nums">{formatCurrency(strategicSpendingCeiling)}</p>
-              </div>
+          </div>
+          
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+            <div className="space-y-0.5">
+              <p className="text-[8px] font-bold text-white/30 uppercase tracking-widest">Base Revenue</p>
+              <p className="text-sm font-mono font-bold tracking-tight">{formatCurrency(estimatedMonthlyIncome)}</p>
             </div>
-            
-            <div className="h-3 w-full bg-white/5 rounded-full overflow-hidden flex p-0.5 border border-white/10 mt-10 shadow-inner">
-              <div className="h-full bg-rose-500/80 rounded-l-full" style={{ width: `${(estimatedFixedCosts/(estimatedMonthlyIncome || 1))*100}%` }} />
-              <div className="h-full bg-brand-accent" style={{ width: `${(monthlyGoalCommitments/(estimatedMonthlyIncome || 1))*100}%` }} />
-              <div className="h-full bg-white/40 rounded-r-full" style={{ width: `${(strategicSpendingCeiling/(estimatedMonthlyIncome || 1))*100}%` }} />
+            <div className="space-y-0.5">
+              <p className="text-[8px] font-bold text-white/30 uppercase tracking-widest">Bills & Commit.</p>
+              <p className="text-sm font-mono font-bold text-rose-400 tracking-tight">-{formatCurrency(estimatedFixedCosts)}</p>
             </div>
-            <div className="flex flex-wrap md:flex-nowrap justify-between items-start gap-8 text-[9px] font-bold uppercase tracking-[0.2em]">
-              <div className="flex items-start gap-3 flex-1 min-w-[200px]">
-                <div className="w-2 h-2 bg-rose-500 rounded-full mt-1 shrink-0" />
-                <div className="space-y-1">
-                  <p className="text-white/90">01_STABILIZE</p>
-                  <p className="text-white/30 lowercase font-normal leading-relaxed">Survival baseline: Mortgage, insurance, and mandatory nodes.</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3 flex-1 min-w-[200px]">
-                <div className="w-2 h-2 bg-brand-accent rounded-full mt-1 shrink-0" />
-                <div className="space-y-1">
-                  <p className="text-white/90">02_ACCEL</p>
-                  <p className="text-white/30 lowercase font-normal leading-relaxed">Growth propulsion: Wealth targets, retirement, and long-range goals.</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3 flex-1 min-w-[200px]">
-                <div className="w-2 h-2 bg-white/40 rounded-full mt-1 shrink-0" />
-                <div className="space-y-1">
-                  <p className="text-white/90">03_OPTIMIZE</p>
-                  <p className="text-white/30 lowercase font-normal leading-relaxed">Strategic freedom: Discretionary liquidity and alpha acquisitions.</p>
-                </div>
-              </div>
+            <div className="space-y-0.5">
+              <p className="text-[8px] font-bold text-white/30 uppercase tracking-widest">Goal Sinking</p>
+              <p className="text-sm font-mono font-bold text-brand-accent tracking-tight">-{formatCurrency(monthlyGoalCommitments)}</p>
+            </div>
+            <div className="space-y-0.5 border-t sm:border-t-0 sm:border-l border-white/10 pt-1 sm:pt-0 sm:pl-3">
+              <p className="text-[8px] font-bold text-brand-accent uppercase tracking-widest">Fluid Spending Power</p>
+              <p className="text-base font-mono font-black text-brand-surface tracking-tight">{formatCurrency(strategicSpendingCeiling)}</p>
+            </div>
+          </div>
+          
+          <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden flex p-0.5 shadow-inner mt-1">
+            <div className="h-full bg-rose-500/80 rounded-l-full" style={{ width: `${(estimatedFixedCosts/(estimatedMonthlyIncome || 1))*100}%` }} />
+            <div className="h-full bg-brand-accent" style={{ width: `${(monthlyGoalCommitments/(estimatedMonthlyIncome || 1))*100}%` }} />
+            <div className="h-full bg-white/40 rounded-r-full" style={{ width: `${(strategicSpendingCeiling/(estimatedMonthlyIncome || 1))*100}%` }} />
+          </div>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1.5 text-[8px] font-bold uppercase tracking-wider text-white/50 border-t border-white/5">
+            <div className="flex items-center gap-1.5">
+              <div className="w-1.5 h-1.5 bg-rose-500 rounded-full shrink-0" />
+              <span>01_BILLS: Rent, EMI & insurance.</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-1.5 h-1.5 bg-brand-accent rounded-full shrink-0" />
+              <span>02_GOALS: Sinking asset targets.</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-1.5 h-1.5 bg-white/40 rounded-full shrink-0" />
+              <span>03_SPENDING: Guilt-free fluid funds.</span>
             </div>
           </div>
         </div>
       </div>
 
       {/* Debt Strategy Engine */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between px-1">
+      <div className="space-y-2 pt-1">
+        <div className="flex items-center justify-between border-b border-brand-border pb-1 px-0.5">
           <div className="space-y-0.5">
-            <h3 className="text-xl font-display font-bold text-brand-primary tracking-tight">Pay off Debt</h3>
-            <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest pl-0.5">Loan Check & Optimization</p>
+            <h3 className="text-xs font-sans font-black uppercase tracking-wider text-brand-primary leading-none">Prepayment Check</h3>
+            <p className="text-[8px] font-bold text-brand-primary/30 uppercase tracking-widest">Active liabilities payoff optimization</p>
           </div>
-          {goals.some(g => g.type === 'debt') && (
-            <Landmark className="w-5 h-5 text-brand-primary/20" />
-          )}
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {goals.filter(g => g.type === 'debt').length > 0 ? (
-            goals.filter(g => g.type === 'debt').map(loan => (
-              <div key={loan.id} className="bg-brand-surface p-8 md:p-12 border border-brand-border rounded-[2.5rem] shadow-sm space-y-8 relative overflow-hidden group">
-                <div className="flex items-center justify-between border-b border-brand-border pb-6">
-                  <div className="space-y-1">
-                    <p className="data-label">Loan Status</p>
-                    <h3 className="text-xl font-display font-bold text-brand-primary tracking-tight">{loan.name}</h3>
-                  </div>
-                  <div className="w-12 h-12 rounded-2xl bg-brand-primary/5 flex items-center justify-center text-brand-primary border border-brand-border">
-                    <Landmark className="w-6 h-6" />
-                  </div>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-8">
-                  <div className="space-y-1">
-                    <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest">Interest Rate</p>
-                    <p className="text-2xl font-mono font-bold text-brand-primary">{loan.interestRate || 8.5}% <span className="text-[10px] opacity-30 text-brand-primary">p.a.</span></p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-[10px] font-bold text-brand-primary/40 uppercase tracking-widest">Time Left</p>
-                    <p className="text-2xl font-mono font-bold text-brand-primary">{loan.tenureMonths || 240} <span className="text-[10px] opacity-30 text-brand-primary">Months</span></p>
-                  </div>
-                </div>
+        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+          <div className="sm:col-span-8">
+            {goals.filter(g => g.type === 'debt').length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {goals.filter(g => g.type === 'debt').map(loan => (
+                  <div key={loan.id} className="bg-brand-surface p-3 border border-brand-border/60 rounded-xl relative overflow-hidden group space-y-2">
+                    <div className="flex items-center justify-between border-b border-brand-border/40 pb-1.5">
+                      <div className="space-y-0.5">
+                        <p className="text-[7.5px] font-bold text-brand-primary/40 uppercase tracking-wider">Loan Goal</p>
+                        <h3 className="text-xs font-extrabold text-brand-primary tracking-tight leading-none">{loan.name}</h3>
+                      </div>
+                      <Landmark className="w-3.5 h-3.5 text-brand-primary/30" />
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-2 text-[10px] leading-none">
+                      <div className="space-y-0.5">
+                        <p className="text-[7.5px] font-bold text-brand-primary/35 uppercase tracking-wider">Interest Rate</p>
+                        <p className="font-mono font-bold text-brand-primary">{loan.interestRate || 8.5}%</p>
+                      </div>
+                      <div className="space-y-0.5">
+                        <p className="text-[7.5px] font-bold text-brand-primary/35 uppercase tracking-wider">Remaining</p>
+                        <p className="font-mono font-bold text-brand-primary">{loan.tenureMonths || 240} Mo</p>
+                      </div>
+                    </div>
 
-                <div className="p-4 bg-brand-accent/5 rounded-2xl border border-brand-accent/10 flex items-center gap-4">
-                  <Zap className="w-5 h-5 text-brand-accent" />
-                  <div className="space-y-0.5">
-                    <p className="text-[10px] font-bold text-brand-accent uppercase tracking-widest">Pay Extra & Save</p>
-                    <p className="text-[11px] font-medium text-brand-primary/70">Check the <span className="font-bold underline cursor-pointer" onClick={() => (document.getElementById('debt-optimization-engine') as any)?.scrollIntoView({ behavior: 'smooth' })}>Debt Planner</span> below to see how much you can save.</p>
+                    <div className="p-1.5 bg-brand-accent/5 rounded border border-brand-accent/10 flex items-center gap-1.5 text-[9px] leading-snug">
+                      <Zap className="w-3 h-3 text-brand-accent shrink-0 animate-pulse" />
+                      <p className="text-brand-primary/60">
+                        Check payoff simulation below. Unlocks compounding interest reduction.
+                      </p>
+                    </div>
                   </div>
+                ))}
+              </div>
+            ) : (
+              <div className="bg-brand-surface border border-brand-border/60 rounded-xl p-4 flex flex-col items-center justify-center text-center space-y-2 min-h-[100px]">
+                <div className="w-8 h-8 rounded-lg bg-brand-primary/5 flex items-center justify-center text-brand-primary/20">
+                  <Landmark className="w-4 h-4" />
+                </div>
+                <div className="space-y-0.5 max-w-xs">
+                  <h3 className="text-xs font-bold text-brand-primary">No Active Debt Defined</h3>
+                  <p className="text-[8px] text-brand-primary/45 leading-normal">Declare home loans or liability accounts to audit compounding payoff speed.</p>
                 </div>
               </div>
-            ))
-          ) : (
-            <div className="bg-brand-surface p-8 md:p-12 border border-brand-border rounded-[2.5rem] shadow-sm flex flex-col items-center justify-center text-center space-y-6 relative overflow-hidden group">
-              <div className="absolute inset-0 opacity-[0.02] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#000 1px, transparent 1px)', backgroundSize: '20px 20px' }} />
-              <div className="w-16 h-16 rounded-3xl bg-brand-primary/5 flex items-center justify-center text-brand-primary/20 border border-brand-border">
-                <Landmark className="w-8 h-8" />
-              </div>
-              <div className="space-y-2 max-w-sm">
-                <h3 className="text-xl font-display font-medium text-brand-primary">No Loans Tracked</h3>
-                <p className="text-xs text-brand-primary/40 leading-relaxed font-medium">Tracking and prepaying your Home Loan is the best way to save on interest over the long term.</p>
-              </div>
-              <p className="text-[10px] font-bold text-brand-accent uppercase tracking-[0.2em]">Start a plan //</p>
-            </div>
-          )}
+            )}
+          </div>
 
-          <div className="bg-brand-accent/5 border border-brand-accent/10 rounded-[2.5rem] p-8 md:p-12 flex flex-col justify-center space-y-6">
-            <div className="space-y-2">
-              <h3 className="text-xl font-display font-bold text-brand-accent tracking-tight">Expert Tip</h3>
-              <p className="text-xs text-brand-primary/60 leading-relaxed font-medium">
-                Every extra payment you make in the first 5 years of a Home Loan can save you up to 3x that amount in interest. Use the calculator below to plan.
+          <div className="sm:col-span-4 bg-brand-accent/5 border border-brand-accent/10 rounded-xl p-3 flex flex-col justify-between space-y-2.5">
+            <div className="space-y-1">
+              <h3 className="text-[9px] font-black uppercase tracking-wider text-brand-accent">CFO Prepay Rule</h3>
+              <p className="text-[10px] text-brand-primary/60 leading-normal font-sans">
+                Incremental early payments cut long-term compounding interests of multi-year mortgages. Scale prepayments when budget allows.
               </p>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-brand-accent/20 flex items-center justify-center text-brand-accent">
-                <ArrowUpRight className="w-4 h-4" />
-              </div>
-              <span className="text-[10px] font-bold text-brand-accent uppercase tracking-widest">Saving on interest</span>
+            <div className="flex items-center gap-1.5 leading-none text-brand-accent">
+              <ArrowUpRight className="w-3.5 h-3.5 shrink-0" />
+              <span className="text-[8px] font-bold uppercase tracking-widest">Interest Optimizer active</span>
             </div>
           </div>
         </div>
       </div>
+
       {/* Expense Audit */}
-      <div className="bg-brand-surface p-8 md:p-16 border border-brand-border rounded-[2.5rem] shadow-sm space-y-12 md:space-y-16 relative overflow-hidden">
-        <div className="absolute inset-0 opacity-[0.02] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#000 1px, transparent 1px)', backgroundSize: '20px 20px' }} />
-        <div className="space-y-3 relative z-10">
-          <h3 className="section-header">Spending Check</h3>
-          <p className="data-label">Reviewing needs vs wants in your spending</p>
+      <div className="bg-brand-surface p-3 border border-brand-border/60 rounded-xl space-y-4">
+        <div className="space-y-0.5 border-b border-brand-border/40 pb-2">
+          <h3 className="text-xs font-sans font-black uppercase tracking-wider text-brand-primary leading-none">Leakage Checks</h3>
+          <p className="text-[8px] text-brand-primary/30 uppercase tracking-widest">Reassessment of fixed obligations vs discretionary burn</p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 md:gap-20 relative z-10">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
           {/* Visual Breakdown */}
-          <div className="space-y-12">
-            <div className="h-4 w-full bg-brand-bg rounded-full overflow-hidden flex border border-brand-border p-0.5">
+          <div className="lg:col-span-5 space-y-3 flex flex-col justify-center bg-brand-bg/20 p-3 rounded-lg border border-brand-border/30">
+            <div className="h-2 w-full bg-brand-border rounded-full overflow-hidden flex p-0.5">
               <motion.div 
                 initial={{ width: 0 }}
                 animate={{ width: `${fixedRatio}%` }}
-                className="h-full bg-brand-primary"
+                className="h-full bg-brand-primary rounded-l-full"
               />
               <motion.div 
                 initial={{ width: 0 }}
                 animate={{ width: `${discretionaryRatio}%` }}
-                className="h-full bg-brand-accent/20"
+                className="h-full bg-brand-accent/30 rounded-r-full"
               />
             </div>
             
-            <div className="grid grid-cols-2 gap-12">
-              <div className="space-y-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-4 h-[2px] rounded-full bg-brand-primary" />
-                  <p className="data-label">Must Pay (Needs)</p>
+            <div className="grid grid-cols-2 gap-3 pt-1 text-[10px] leading-tight">
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-1">
+                  <div className="w-2 h-[2px] rounded-full bg-brand-primary" />
+                  <p className="text-[8px] font-bold uppercase text-brand-primary/50">Needs (Bills)</p>
                 </div>
-                <p className="text-4xl font-mono font-bold text-brand-primary tracking-tight tabular-nums">{fixedRatio.toFixed(0)}%</p>
-                <p className="data-label !text-brand-primary/40 uppercase tracking-widest">{formatCurrency(mandatoryExpenses)}</p>
+                <p className="font-mono font-bold text-brand-primary text-sm leading-none mt-1">{fixedRatio.toFixed(0)}%</p>
+                <p className="text-[8px] font-mono text-brand-primary/45 mt-0.5">{formatCurrency(mandatoryExpenses)}</p>
               </div>
-              <div className="space-y-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-4 h-[2px] rounded-full bg-brand-accent/40" />
-                  <p className="data-label">Fun Spending (Wants)</p>
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-1">
+                  <div className="w-2 h-[2px] rounded-full bg-brand-accent/40" />
+                  <p className="text-[8px] font-bold uppercase text-brand-primary/50">Wants (Extra)</p>
                 </div>
-                <p className="text-4xl font-mono font-bold text-brand-primary tracking-tight tabular-nums">{discretionaryRatio.toFixed(0)}%</p>
-                <p className="data-label !text-brand-primary/40 uppercase tracking-widest">{formatCurrency(discretionaryExpenses)}</p>
+                <p className="font-mono font-bold text-brand-primary text-sm leading-none mt-1">{discretionaryRatio.toFixed(0)}%</p>
+                <p className="text-[8px] font-mono text-brand-primary/45 mt-0.5">{formatCurrency(discretionaryExpenses)}</p>
               </div>
             </div>
           </div>
 
           {/* Structural Waste Identification */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-            <div className="bg-brand-bg/50 p-8 rounded-[2rem] border border-brand-border space-y-8 relative overflow-hidden group">
-              <div className="absolute top-0 right-0 w-24 h-24 bg-rose-500/5 rounded-full blur-3xl -mr-12 -mt-12 transition-all group-hover:scale-150" />
-              <div className="flex items-center gap-4 relative z-10">
-                <AlertTriangle className="w-6 h-6 text-rose-500" />
-                <p className="data-label">Save More Here</p>
+          <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="bg-brand-bg/40 p-3 rounded-lg border border-brand-border/40 relative overflow-hidden group space-y-2">
+              <div className="flex items-center gap-1.5 relative z-10 border-b border-brand-border/40 pb-1.5 leading-none">
+                <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
+                <p className="text-[8px] font-bold text-brand-primary/40 uppercase tracking-widest">Discretionary Leaks</p>
               </div>
-              <div className="space-y-6 relative z-10">
+              <div className="space-y-2.5 relative z-10 text-[10px]">
                 {topWaste.length > 0 ? topWaste.map(([cat, amt]) => (
-                  <div key={cat} className="flex justify-between items-center border-b border-brand-border/10 pb-4 last:border-0 last:pb-0">
-                    <div className="space-y-1">
-                      <p className="text-sm font-bold uppercase tracking-tight text-brand-primary leading-none">{cat}</p>
-                      <p className="data-label !text-[8.5px]">Try to spend less here</p>
+                  <div key={cat} className="flex justify-between items-center border-b border-brand-border/10 pb-1.5 last:border-0 last:pb-0">
+                    <div className="space-y-0.5">
+                      <p className="font-bold uppercase tracking-tight text-brand-primary leading-none truncate max-w-[100px]">{cat}</p>
+                      <p className="text-[7.5px] font-medium text-brand-primary/30 uppercase tracking-widest pl-0.5">Suboptimal cost center</p>
                     </div>
-                    <p className="text-sm font-mono font-bold text-rose-500">{formatCurrency(amt)}</p>
+                    <p className="font-mono font-bold text-rose-500 leading-none">{formatCurrency(amt)}</p>
                   </div>
                 )) : (
-                  <p className="data-label !text-brand-primary/30">Good job, no high extra spending!</p>
+                  <p className="text-[8px] font-bold text-brand-primary/30 uppercase tracking-wider py-2">Good job, no significant budget leaks</p>
                 )}
               </div>
             </div>
 
-            <div className="bg-brand-bg/50 p-8 rounded-[2rem] border border-brand-border space-y-8 relative overflow-hidden group">
-              <div className="absolute top-0 right-0 w-24 h-24 bg-brand-primary/5 rounded-full blur-3xl -mr-12 -mt-12 transition-all group-hover:scale-150" />
-              <div className="flex items-center gap-4 relative z-10">
-                <ShieldCheck className="w-6 h-6 text-brand-accent/40" />
-                <p className="data-label">Subscriptions</p>
+            <div className="bg-brand-bg/40 p-3 rounded-lg border border-brand-border/40 relative overflow-hidden group space-y-2">
+              <div className="flex items-center gap-1.5 relative z-10 border-b border-brand-border/40 pb-1.5 leading-none">
+                <ShieldCheck className="w-3.5 h-3.5 text-brand-accent/50" />
+                <p className="text-[8px] font-bold text-brand-primary/40 uppercase tracking-widest">Recurring Subs</p>
               </div>
-              <div className="space-y-6 relative z-10">
+              <div className="space-y-2.5 relative z-10 text-[10px]">
                 {subscriptionAudit.length > 0 ? subscriptionAudit.map((sub) => (
-                  <div key={sub.name} className="flex justify-between items-center border-b border-brand-border/10 pb-4 last:border-0 last:pb-0">
-                    <div className="space-y-1">
-                      <p className="text-sm font-bold uppercase tracking-tight text-brand-primary leading-none truncate max-w-[120px]">{sub.name}</p>
-                      <p className="data-label !text-[8.5px]">Repeat monthly cost</p>
+                  <div key={sub.name} className="flex justify-between items-center border-b border-brand-border/10 pb-1.5 last:border-0 last:pb-0">
+                    <div className="space-y-0.5">
+                      <p className="font-bold uppercase tracking-tight text-brand-primary leading-none truncate max-w-[100px]">{sub.name}</p>
+                      <p className="text-[7.5px] font-medium text-brand-primary/30 uppercase tracking-widest pl-0.5">Repeating debit</p>
                     </div>
-                    <p className="text-sm font-mono font-bold text-brand-primary">{formatCurrency(sub.amount)}</p>
+                    <p className="font-mono font-bold text-brand-primary leading-none">{formatCurrency(sub.amount)}</p>
                   </div>
                 )) : (
-                  <p className="data-label !text-brand-primary/30">No subscriptions found.</p>
+                  <p className="text-[8px] font-bold text-brand-primary/30 uppercase tracking-wider py-2">No active subscriptions cataloged</p>
                 )}
               </div>
             </div>
@@ -546,96 +518,81 @@ export function StrategyInsights({
       </div>
 
       {/* AI Strategy Audit */}
-      <div className="bg-brand-primary text-brand-surface p-10 md:p-20 rounded-[3rem] shadow-[0_64px_128px_-32px_rgba(0,0,0,0.6)] space-y-12 md:space-y-16 relative overflow-hidden group">
-        <div className="absolute inset-0 opacity-[0.05] pointer-events-none" style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '100px 100px' }} />
-        <div className="absolute top-0 right-0 w-full h-full bg-brand-accent rounded-full blur-[180px] -mr-[30%] -mt-[30%] opacity-20 pointer-events-none" />
+      <div className="bg-brand-primary text-brand-surface p-4 rounded-xl relative overflow-hidden group">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-brand-accent rounded-full blur-3xl -mr-[10%] -mt-[10%] opacity-20 pointer-events-none" />
         
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-10 md:gap-14 relative z-10">
-          <div className="flex items-center gap-8 md:gap-10">
-            <div className="w-16 h-16 md:w-24 md:h-24 bg-white/5 rounded-[2rem] flex items-center justify-center border border-white/10 shadow-inner group-hover:rotate-12 transition-all duration-700 backdrop-blur-3xl">
-              <Sparkles className="w-8 h-8 md:w-12 md:h-12 text-brand-accent animate-pulse" />
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 relative z-10 border-b border-white/10 pb-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-white/5 rounded-lg flex items-center justify-center border border-white/10 shrink-0">
+              <Sparkles className="w-5 h-5 text-brand-accent" />
             </div>
-            <div className="space-y-3">
-              <h3 className="text-4xl md:text-6xl font-sans font-bold uppercase tracking-tighter text-brand-surface leading-none">CFO Strategist</h3>
-              <p className="data-label !text-brand-surface/30">McKinsey-grade capital optimization audit</p>
+            <div className="space-y-0.5">
+              <h3 className="text-xs font-sans font-black uppercase tracking-wider text-brand-surface leading-none">Artha Strategic Audit</h3>
+              <p className="text-[8px] text-white/30 font-bold uppercase tracking-widest">Compounding growth and timeline advisory</p>
             </div>
           </div>
           <button
             onClick={handleGenerate}
             disabled={isLoading}
-            className="bg-brand-accent text-brand-primary px-10 md:px-14 py-6 md:py-8 rounded-[2rem] shadow-2xl hover:scale-105 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-4 font-bold text-xs md:text-sm uppercase tracking-[0.4em] w-full md:w-auto"
+            className="bg-brand-accent text-brand-primary px-3 py-1.5 rounded text-[8px] font-bold uppercase tracking-widest hover:bg-brand-accent/90 transition-all disabled:opacity-50 flex items-center justify-center gap-1 leading-none shadow-sm shrink-0"
           >
-            {isLoading ? <Loader2 className="w-6 h-6 animate-spin" /> : <TrendingUp className="w-6 h-6" />}
-            {isLoading ? 'Thinking...' : 'Get Advice'}
+            {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <TrendingUp className="w-3.5 h-3.5" />}
+            {isLoading ? 'Reconstituting...' : 'Trigger CFO Audit'}
           </button>
         </div>
 
         <AnimatePresence mode="wait">
           {isLoading && !strategy ? (
-            <div className="py-32 flex flex-col items-center justify-center gap-10 relative z-10">
-              <div className="relative">
-                <Loader2 className="w-24 h-24 animate-spin text-brand-accent/20" />
-                <div className="absolute inset-0 flex items-center justify-center">
-                   <div className="w-4 h-4 bg-brand-accent rounded-full animate-ping" />
-                </div>
-              </div>
-              <div className="text-center space-y-4">
-                <p className="text-3xl font-sans font-bold uppercase tracking-tight text-brand-surface animate-pulse">Running Calculations</p>
-                <div className="flex items-center gap-3 justify-center opacity-30">
-                  <div className="w-8 h-[1px] bg-white" />
-                  <p className="data-label !text-brand-surface">Reviewing your spending & goals</p>
-                  <div className="w-8 h-[1px] bg-white" />
-                </div>
+            <div className="py-12 flex flex-col items-center justify-center gap-3 relative z-10">
+              <Loader2 className="w-8 h-8 animate-spin text-brand-accent" />
+              <div className="text-center space-y-0.5">
+                <p className="text-xs font-sans font-black uppercase tracking-tight text-white animate-pulse">Running Calculations</p>
+                <p className="text-[8px] text-white/30 font-bold uppercase tracking-widest">Reconciling transaction streams & liabilities</p>
               </div>
             </div>
           ) : strategy ? (
             <motion.div
               initial={{ opacity: 0, scale: 0.98 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="relative z-10 space-y-12"
+              className="relative z-10 space-y-3 pt-3"
             >
               {isDriftDetected && (
                 <motion.div 
-                  initial={{ opacity: 0, y: -20 }}
+                  initial={{ opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="glass-panel p-6 rounded-[1.5rem] flex items-center justify-between border-brand-accent/20"
+                  className="bg-white/5 p-2 rounded flex items-center justify-between border border-white/10"
                 >
-                  <div className="flex items-center gap-4">
-                    <div className="w-8 h-8 rounded-lg bg-brand-accent/20 flex items-center justify-center">
-                      <AlertCircle className="w-5 h-5 text-brand-accent" />
-                    </div>
-                    <p className="data-label !text-brand-accent">Changes Detected: Your spending has changed.</p>
-                  </div>
+                  <p className="text-[8px] font-bold uppercase text-brand-accent flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3 shrink-0" />
+                    Drift detected. Income/expense base modified.
+                  </p>
                   <button 
                     onClick={handleGenerate}
-                    className="data-label !text-brand-accent underline hover:text-white transition-colors"
+                    className="text-[8px] font-bold uppercase text-white underline hover:text-brand-accent leading-none"
                   >
-                    Update Advice
+                    Refresh
                   </button>
                 </motion.div>
               )}
-              <div className="bg-white/[0.03] p-10 md:p-16 rounded-[2.5rem] border border-white/10 relative overflow-hidden backdrop-blur-3xl shadow-inner">
-                <div className="markdown-body relative z-10 prose prose-invert prose-brand max-w-none">
+              <div className="bg-white/[0.02] p-3 md:p-4 rounded-lg border border-white/10 relative overflow-hidden">
+                <div className="markdown-body relative z-10 text-[11px] leading-relaxed select-text font-normal font-sans text-white/90">
                   <Markdown>{strategy}</Markdown>
                 </div>
               </div>
             </motion.div>
           ) : (
-            <div className="border-4 border-dashed border-white/10 p-24 text-center relative z-10 bg-white/[0.02] rounded-[3rem] group/init cursor-pointer hover:border-brand-accent/40 transition-all"
+            <div className="border border-dashed border-white/15 p-6 text-center relative z-10 bg-white/[0.01] rounded-lg cursor-pointer hover:border-brand-accent/40 transition-all mt-3"
                  onClick={handleGenerate}>
-              <div className="space-y-10">
-                <div className="w-24 h-24 bg-white/5 rounded-3xl flex items-center justify-center mx-auto shadow-sm group-hover/init:rotate-45 transition-all duration-700">
-                  <ShieldCheck className="w-12 h-12 text-brand-surface/10 group-hover/init:text-brand-accent transition-all" />
-                </div>
-                <div className="space-y-4">
-                  <p className="text-4xl font-sans font-bold uppercase tracking-tight text-brand-surface">Audit Engine Ready</p>
-                  <p className="data-label !text-brand-surface/20">Awaiting data reconciliation & analysis</p>
+              <div className="space-y-3">
+                <div className="space-y-0.5">
+                  <p className="text-xs font-sans font-black uppercase tracking-wider text-white">Strategy Engine Synchronized</p>
+                  <p className="text-[8px] text-white/20 font-bold uppercase tracking-widest">Click to run smart asset amortization review</p>
                 </div>
                 <button
-                  className="bg-brand-surface text-brand-primary px-12 py-5 rounded-2xl shadow-2xl font-bold text-xs uppercase tracking-[0.4em] mx-auto flex items-center gap-4 hover:scale-105 transition-all"
+                  className="bg-brand-surface text-brand-primary px-4 py-1.5 rounded text-[8px] font-bold uppercase tracking-widest mx-auto flex items-center gap-1 border border-brand-border"
                 >
-                  <TrendingUp className="w-5 h-5" />
-                  Initiate Strategy Audit
+                  <TrendingUp className="w-3 h-3" />
+                  Initiate AI Audit
                 </button>
               </div>
             </div>
@@ -646,12 +603,40 @@ export function StrategyInsights({
           <motion.div 
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="p-8 bg-rose-500/10 text-rose-500 border border-rose-500/20 rounded-[2rem] flex items-center gap-6 text-[10px] font-bold uppercase tracking-[0.3em] relative z-10"
+            className="w-full relative z-10 mt-3"
           >
-            <div className="w-10 h-10 bg-rose-500/20 rounded-xl flex items-center justify-center">
-               <AlertCircle className="w-5 h-5" />
-            </div>
-            {error}
+            {error.toLowerCase().includes("api key") || error.toLowerCase().includes("secrets") ? (
+              <div className="bg-brand-surface border border-brand-accent/20 rounded-lg p-3 space-y-3 shadow-md text-brand-primary">
+                <div className="flex items-center justify-between pb-2 border-b border-brand-border/40">
+                  <div className="space-y-0.5">
+                    <span className="text-[7px] font-bold text-amber-600 uppercase tracking-widest bg-amber-500/10 px-2 py-0.5 rounded leading-none inline-block">
+                      Authorization Required
+                    </span>
+                    <h4 className="text-[10px] font-sans font-black uppercase tracking-wider text-brand-primary mt-1">
+                      Gemini API Key Missing
+                    </h4>
+                  </div>
+                  <AlertTriangle className="w-4 h-4 text-amber-500 animate-pulse" />
+                </div>
+
+                <div className="space-y-1.5 text-[9px]">
+                  <p className="text-brand-primary/80 leading-normal">
+                    Artha relies on Google Gemini in the background to calculate custom savings strategies and portfolio optimization schedules.
+                  </p>
+                  <p className="text-brand-primary/50 leading-normal">
+                    Declare a secret key named <code className="font-mono bg-brand-primary/5 text-brand-primary font-bold px-1 py-0.5 rounded border border-brand-primary/10">GEMINI_API_KEY</code> under <strong className="text-brand-primary">Settings &gt; Secrets</strong> to unlock this.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="p-3 bg-rose-500/10 text-rose-500 border border-rose-500/20 rounded-lg flex items-center gap-3 text-[9px] font-bold uppercase tracking-wider">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <div>
+                  <h4 className="font-black text-[9.5px] uppercase tracking-wider mb-0.5">Calculations Halted</h4>
+                  <p className="font-semibold text-rose-500/85 normal-case font-mono">{error}</p>
+                </div>
+              </div>
+            )}
           </motion.div>
         )}
       </div>

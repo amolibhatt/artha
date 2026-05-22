@@ -11,6 +11,13 @@
   --color-brand-bg: #FBFBFA;
   --color-brand-surface: #FFFFFF;
   --color-brand-border: #F0F0EE;
+
+  --animate-ticker: ticker 40s linear infinite;
+
+  @keyframes ticker {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
 }
 
 @layer base {

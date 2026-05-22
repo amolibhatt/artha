@@ -77,14 +77,26 @@ You are a world-class financial strategist. Perform a ruthless strategic audit o
     });
 
     if (!response.ok) {
-      throw new Error(`AI Request failed: ${response.statusText}`);
+      let detailedMessage = `AI Request failed: ${response.statusText}`;
+      try {
+        const errorData = await response.json();
+        detailedMessage = errorData.details || errorData.error || detailedMessage;
+      } catch {
+        try {
+          const rawText = await response.text();
+          if (rawText) {
+            detailedMessage = rawText;
+          }
+        } catch {}
+      }
+      throw new Error(detailedMessage);
     }
 
     const data = await response.json();
     return data.text || "Strategic generation failed. Please review your manual entries.";
-  } catch (error) {
-    console.error("AI Strategy Error:", error);
-    throw error;
+  } catch (error: any) {
+    console.warn("AI Strategy Notice:", error);
+    throw new Error(error.message || "Financial Strategist is currently offline. Please check your API key.");
   }
 };
 
@@ -95,15 +107,21 @@ export const generateQuickInsights = async (
   incomeCoverage: number
 ): Promise<string[]> => {
   const prompt = `
-Analyze financial data and provide 3-4 sharp, structured 1-sentence insights.
-DATA:
+Analyze the following financial metrics and provide 3-4 razor-sharp, elite strategist-level 1-sentence directives. 
+The first directive MUST be the "Principal Strategic Directive"—a high-impact summary of the current user pulse.
+
+METRICS:
 - Savings Rate: ${savingsRate.toFixed(1)}%
 - Income Coverage: ${incomeCoverage.toFixed(2)}x
 - Goals: ${goals.map(g => `- ${g.name}: ${g.currentAmount}/${g.targetAmount}`).join('\n')}
-- Recent: ${transactions.slice(0, 5).map(t => `- ${t.category}: ${t.amount}`).join('\n')}
+- Velocity: ${transactions.slice(0, 5).map(t => `- ${t.category}: ${t.amount}`).join('\n')}
 
-Return a JSON array of strings ONLY. Focus on capital efficiency and cash flow health.
-Example: ["Insight 1", "Insight 2"]
+INSIGHT STYLE:
+- Sharp, structured, and opinionated (McKinsey Persona).
+- No generic advice like "save more". Use specific "Strategic Directives".
+- Example: "Authorized to deploy ₹15k surplus into Venture Goal; cash flow velocity is stable."
+
+Return a JSON array of strings ONLY.
 `;
 
   try {
@@ -121,10 +139,23 @@ Example: ["Insight 1", "Insight 2"]
     });
 
     if (!response.ok) {
-      throw new Error(`AI Insights Request failed: ${response.statusText}`);
+      let detailedMessage = `AI Insights Request failed: ${response.statusText}`;
+      try {
+        const errorData = await response.json();
+        detailedMessage = errorData.details || errorData.error || detailedMessage;
+      } catch {
+        try {
+          const rawText = await response.text();
+          if (rawText) {
+            detailedMessage = rawText;
+          }
+        } catch {}
+      }
+      throw new Error(detailedMessage);
     }
 
     const data = await response.json();
+
     let text = data.text || "[]";
     
     // Sanitize the response: extract only the JSON array if the model included extra text
@@ -146,7 +177,7 @@ Example: ["Insight 1", "Insight 2"]
       throw parseError;
     }
   } catch (error) {
-    console.error("AI Insights Error:", error);
+    console.warn("AI Insights Notice:", error);
     return [
       "Aggressive debt payoff recommended for high-interest loans.",
       "Discretionary leakage detected in lifestyle categories.",
