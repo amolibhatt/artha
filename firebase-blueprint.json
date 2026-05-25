@@ -22,15 +22,23 @@
     },
     "Goal": {
       "title": "Goal",
-      "description": "A financial goal (savings, debt, investment)",
+      "description": "A financial goal (savings, debt, investment, gold)",
       "type": "object",
       "properties": {
         "name": { "type": "string", "description": "Goal name" },
         "targetAmount": { "type": "number", "description": "Target amount to reach" },
         "currentAmount": { "type": "number", "description": "Current progress" },
-        "type": { "type": "string", "enum": ["savings", "debt", "investment", "lifestyle"], "description": "Goal type" },
+        "type": { "type": "string", "enum": ["savings", "debt", "investment", "lifestyle", "gold"], "description": "Goal type" },
         "userId": { "type": "string", "description": "Owner UID" },
-        "deadline": { "type": "string", "format": "date", "description": "Target date" }
+        "deadline": { "type": "string", "format": "date", "description": "Target date" },
+        "priority": { "type": "string", "enum": ["high", "medium", "low"] },
+        "monthlyContribution": { "type": "number" },
+        "isScheme": { "type": "boolean" },
+        "maturityValue": { "type": "number" },
+        "interestRate": { "type": "number" },
+        "tenureMonths": { "type": "number" },
+        "emi": { "type": "number" },
+        "startDate": { "type": "string" }
       },
       "required": ["name", "targetAmount", "currentAmount", "type", "userId"]
     },

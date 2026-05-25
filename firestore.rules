@@ -58,14 +58,16 @@ service cloud.firestore {
                data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
                data.targetAmount is number && data.targetAmount >= 0 &&
                data.currentAmount is number && data.currentAmount >= 0 &&
-               data.type in ['savings', 'debt', 'investment', 'lifestyle'] &&
+               data.type in ['savings', 'debt', 'investment', 'lifestyle', 'gold'] &&
                isOwner(data.userId) &&
                (!('priority' in data) || data.priority in ['low', 'medium', 'high']) &&
                (!('interestRate' in data) || data.interestRate == null || data.interestRate is number) &&
                (!('tenureMonths' in data) || data.tenureMonths == null || data.tenureMonths is number) &&
                (!('monthlyContribution' in data) || data.monthlyContribution == null || data.monthlyContribution is number) &&
                (!('deadline' in data) || data.deadline == null || data.deadline is string) &&
-               (!('startDate' in data) || data.startDate == null || data.startDate is string);
+               (!('startDate' in data) || data.startDate == null || data.startDate is string) &&
+               (!('isScheme' in data) || data.isScheme == null || data.isScheme is bool) &&
+               (!('maturityValue' in data) || data.maturityValue == null || data.maturityValue is number);
       }
 
       allow read: if isOwner(existing().userId);

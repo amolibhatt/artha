@@ -21,6 +21,7 @@ import {
   ArrowRight,
   Compass,
   PiggyBank,
+  Coins,
   Landmark,
   Calendar,
   Info,
@@ -38,6 +39,7 @@ import {
   Activity,
   AlertTriangle,
   Settings2,
+  Edit2,
   X,
   UtensilsCrossed,
   ShoppingCart,
@@ -51,7 +53,13 @@ import {
   Download,
   ArrowUpDown,
   SlidersHorizontal,
-  Tag
+  Tag,
+  CheckSquare,
+  Square,
+  ChevronDown,
+  ChevronUp,
+  Check,
+  Circle
 } from 'lucide-react';
 import { 
   Tooltip, 
@@ -74,6 +82,7 @@ import { useFinancialEngine } from './hooks/useFinancialEngine';
 import { IncomeStreamItem } from './components/IncomeStreamItem';
 import { SIPItem } from './components/SIPItem';
 import { GoalItem } from './components/GoalItem';
+import { GoalTimeline } from './components/GoalTimeline';
 
 // Lazy load heavy analytical components
 const StrategyInsights = React.lazy(() => import('./components/StrategyInsights').then(m => ({ default: m.StrategyInsights })));
@@ -193,7 +202,7 @@ export default function App() {
 
 function MainApp() {
   const [activeTab, setActiveTab] = useState<'home' | 'history' | 'insights' | 'goals'>('home');
-  const [goalsSubTab, setGoalsSubTab] = useState<'strategy' | 'mandates'>('strategy');
+  const [goalsSubTab, setGoalsSubTab] = useState<'strategy' | 'timeline' | 'mandates'>('strategy');
   const [showBudgetAlert, setShowBudgetAlert] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -212,15 +221,25 @@ function MainApp() {
   const [showMobileTip, setShowMobileTip] = useState(false);
   const [filter, setFilter] = useState<'All' | 'Expenses' | 'Income'>('All');
   const [searchQuery, setSearchQuery] = useState('');
+  const [sipFilterStatus, setSipFilterStatus] = useState<'all' | 'active' | 'paused'>('all');
+  const [sipFilterFrequency, setSipFilterFrequency] = useState<'all' | 'daily' | 'weekly' | 'fortnightly' | 'monthly' | 'quarterly'>('all');
+  const [sipSearchQuery, setSipSearchQuery] = useState('');
   const [historySortBy, setHistorySortBy] = useState<'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc'>('date-desc');
   const [historyTimeframe, setHistoryTimeframe] = useState<'all' | '7days' | '30days' | 'this-month' | 'last-month'>('all');
   const [historySelectedCategory, setHistorySelectedCategory] = useState<string>('All');
   const [historySelectedTag, setHistorySelectedTag] = useState<'all' | 'fixed' | 'avoidable' | 'recurring'>('all');
+  const [showHistoryFilters, setShowHistoryFilters] = useState(false);
+  const [ledgerActiveTabMenu, setLedgerActiveTabMenu] = useState<'all' | 'analytics' | 'optimizer' | 'allocator'>('all');
+  const [ledgerAllocationPreset, setLedgerAllocationPreset] = useState<'conservative' | 'balanced' | 'aggressive'>('balanced');
+  const [ledgerRunwayBurnRate, setLedgerRunwayBurnRate] = useState<number>(0);
   const [stressTest, setStressTest] = useState<StressTestState>(() => {
     const saved = localStorage.getItem('stressTest');
     return saved ? JSON.parse(saved) : { incomeShock: 1, expenseShock: 1 };
   });
   const [transactionIdToConfirmDelete, setTransactionIdToConfirmDelete] = useState<string | null>(null);
+  const [selectedTransactionIds, setSelectedTransactionIds] = useState<string[]>([]);
+  const [expandedTransactionId, setExpandedTransactionId] = useState<string | null>(null);
+  const [isBulkProcessing, setIsBulkProcessing] = useState(false);
   const [showGoalPurgeConfirm, setShowGoalPurgeConfirm] = useState(false);
   const [showTotalPurgeConfirm, setShowTotalPurgeConfirm] = useState(false);
   const [isPurging, setIsPurging] = useState(false);
@@ -711,6 +730,43 @@ function MainApp() {
     document.body.removeChild(link);
   };
 
+  const handleBulkUpdate = async (fields: Partial<Transaction>) => {
+    if (selectedTransactionIds.length === 0 || !user) return;
+    setIsBulkProcessing(true);
+    try {
+      const batch = writeBatch(db);
+      selectedTransactionIds.forEach(id => {
+        const ref = doc(db, 'transactions', id);
+        batch.update(ref, fields);
+      });
+      await batch.commit();
+      setSelectedTransactionIds([]);
+    } catch (error) {
+      console.error("Bulk update failed", error);
+    } finally {
+      setIsBulkProcessing(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedTransactionIds.length === 0 || !user) return;
+    if (!window.confirm(`Are you sure you want to delete ${selectedTransactionIds.length} select entries? This action is irreversible.`)) return;
+    setIsBulkProcessing(true);
+    try {
+      const batch = writeBatch(db);
+      selectedTransactionIds.forEach(id => {
+        const ref = doc(db, 'transactions', id);
+        batch.delete(ref);
+      });
+      await batch.commit();
+      setSelectedTransactionIds([]);
+    } catch (error) {
+      console.error("Bulk delete failed", error);
+    } finally {
+      setIsBulkProcessing(false);
+    }
+  };
+
   const getCategoryIcon = (category: string) => {
     const cat = category.toLowerCase();
     if (cat.includes('dining') || cat.includes('swiggy') || cat.includes('zomato')) return <UtensilsCrossed className="w-5 h-5 text-brand-accent/70" />;
@@ -727,7 +783,7 @@ function MainApp() {
   };
 
   const totalLiquidReserves = goals
-    .filter(g => g.type === 'savings' || g.type === 'investment')
+    .filter(g => g.type === 'savings' || g.type === 'investment' || g.type === 'gold')
     .reduce((acc, g) => acc + g.currentAmount, 0);
   const totalDebtPaid = goals
     .filter(g => g.type === 'debt')
@@ -1119,9 +1175,11 @@ function MainApp() {
                       const isCompleted = pct >= 100;
                       const icon = goal.type === 'debt' 
                         ? <Landmark className="w-3.5 h-3.5 text-brand-accent/70" /> 
-                        : goal.name.toLowerCase().includes('emergency') || goal.name.toLowerCase().includes('vault')
-                          ? <ShieldCheck className="w-3.5 h-3.5 text-emerald-500/70" />
-                          : <PiggyBank className="w-3.5 h-3.5 text-brand-primary/70" />;
+                        : goal.type === 'gold' || goal.name.toLowerCase().includes('gold')
+                          ? <Coins className="w-3.5 h-3.5 text-amber-500/95" />
+                          : goal.name.toLowerCase().includes('emergency') || goal.name.toLowerCase().includes('vault')
+                            ? <ShieldCheck className="w-3.5 h-3.5 text-emerald-500/70" />
+                            : <PiggyBank className="w-3.5 h-3.5 text-brand-primary/70" />;
                       
                       const remaining = Math.max(0, goal.targetAmount - goal.currentAmount);
 
@@ -1135,7 +1193,7 @@ function MainApp() {
                               <div className="min-w-0">
                                 <p className="font-bold text-brand-primary truncate max-w-[150px]">{goal.name}</p>
                                 <p className="text-[8px] font-bold text-brand-primary/40 uppercase tracking-wider mt-0.5">
-                                  {goal.type === 'debt' ? 'Debt Payoff' : 'Savings Goal'}
+                                  {goal.type === 'debt' ? 'Debt Payoff' : goal.type === 'gold' ? 'Gold Goal' : 'Savings Goal'}
                                 </p>
                               </div>
                             </div>
@@ -1285,790 +1343,1335 @@ function MainApp() {
           {activeTab === 'history' && (
             <motion.div 
               key="history"
-              initial={{ opacity: 0, y: 10 }}
+              initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2, ease: "easeOut" }}
-              className="space-y-8"
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+              className="space-y-6 md:space-y-8 px-1"
             >
-              {/* LEDGER HEADER & QUICK ACTION CONSOLE */}
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-brand-border pb-6">
+              {/* McKinsey-Grade Ledger Tab & Control Deck */}
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-brand-border pb-6">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
-                    <h2 className="section-header">Artha Transaction Ledger</h2>
-                    <span className="text-[9px] font-mono font-extrabold bg-brand-primary/5 border border-brand-border/60 text-brand-primary px-2.5 py-0.5 rounded-full select-none">
-                      {filteredTransactions.length} of {transactions.length} records matching
+                    <span className="text-[10px] uppercase font-mono tracking-widest px-2 py-0.5 bg-brand-accent/5 border border-brand-accent/15 text-brand-accent rounded font-bold">
+                      Corporate CFO Engine
                     </span>
+                    <h2 className="section-header !mb-0 !text-xl tracking-tight">Financial Ledger Workspace</h2>
                   </div>
-                  <p className="data-label">Comprehensive microfinancial records, automated strategist audits, and interactive filter parameters</p>
-                </div>
-                
-                {/* Ledger Management Fast Hooks */}
-                <div className="flex items-center gap-2">
-                  <button 
-                    onClick={handleExportCSV}
-                    disabled={filteredTransactions.length === 0}
-                    className="flex items-center gap-1.5 px-4 py-2 bg-brand-surface hover:bg-brand-bg/60 disabled:opacity-40 border border-brand-border text-brand-primary rounded-xl text-[9px] font-mono font-bold uppercase tracking-wider transition-all duration-200 active:scale-95 shadow-sm"
-                    title="Generate professional CSV spreadsheet export"
-                  >
-                    <Download className="w-3.5 h-3.5 text-brand-accent animate-pulse" />
-                    <span>Export CSV</span>
-                  </button>
-
-                  <button 
-                    onClick={() => {
-                      setEditingTransaction(null);
-                      setCommandTab('transaction');
-                      setShowCommandCenter(true);
-                    }}
-                    className="flex items-center gap-1.5 px-4 py-2 bg-brand-primary hover:bg-brand-primary/95 text-brand-surface rounded-xl text-[9px] font-bold uppercase tracking-wider shadow-lg transition-all duration-200 active:scale-95"
-                  >
-                    <Plus className="w-3.5 h-3.5 text-brand-accent" />
-                    <span>Record Entry</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* CFO EXECUTIVE LEDGER DIAGNOSTIC BRIEFING */}
-              <div className="bg-brand-surface border border-brand-border rounded-2xl p-5 shadow-[0_2px_8px_rgba(0,0,0,0.02)] relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-64 h-64 bg-brand-accent/5 rounded-full blur-3xl -mr-32 -mt-32 pointer-events-none" />
-                
-                <div className="flex items-center gap-2 pb-4 border-b border-brand-border/40">
-                  <span className="p-1.5 rounded-lg bg-brand-accent/10 border border-brand-accent/20">
-                    <Sparkles className="w-4 h-4 text-brand-accent" />
-                  </span>
-                  <div className="space-y-0.5">
-                    <h3 className="text-xs font-sans font-extrabold text-brand-primary uppercase tracking-wide">🎯 CFO Executive Ledger Diagnostics</h3>
-                    <p className="text-[9.5px] font-mono text-brand-primary/40">Dynamic run-rate audit, commitment ratio weights, and leak diagnostics based on your chosen filters</p>
-                  </div>
+                  <p className="data-label">Comprehensive audited cash flow registers, multi-dimensional query index, and dynamic allocation overlays</p>
                 </div>
 
-                {/* Diagnostic Insights Columns */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-5">
-                  {/* Insight 1: Burn Velocity */}
-                  <div className="space-y-2.5 border-r border-brand-border/30 last:border-0 pr-0 md:pr-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[9px] font-mono font-bold text-brand-primary/40 uppercase tracking-widest">
-                        1. Net Cushion Inflow Runrate
-                      </span>
-                      {filteredHistorySummary.earned > 0 ? (
-                        <span className={cn(
-                          "text-[8px] font-mono font-black px-2 py-0.5 rounded",
-                          (filteredHistorySummary.spent / filteredHistorySummary.earned) <= 0.4 ? "bg-emerald-500/10 text-emerald-500" :
-                          (filteredHistorySummary.spent / filteredHistorySummary.earned) <= 0.75 ? "bg-amber-500/10 text-amber-500" : "bg-rose-500/10 text-rose-500"
-                        )}>
-                          {((filteredHistorySummary.spent / filteredHistorySummary.earned) * 100).toFixed(0)}% Outflow Ratio
-                        </span>
-                      ) : (
-                        <span className="text-[8px] font-mono font-black text-brand-primary/25 bg-brand-bg px-2 py-0.5 rounded">No Inflow records matched</span>
-                      )}
-                    </div>
-                    <p className="text-xs font-sans font-medium text-brand-primary leading-relaxed">
-                      {filteredHistorySummary.earned === 0 ? (
-                        <span className="text-brand-primary/40 font-mono font-normal text-[9px] block">Awaiting income stream records in this specific filtered set to calculate burn statistics.</span>
-                      ) : (filteredHistorySummary.spent / filteredHistorySummary.earned) <= 0.35 ? (
-                        "🔒 Super-Saver Setup: Outstanding capital retention. You preserve over 65% of dynamic inflow. This allows for rapid wealth compounding."
-                      ) : (filteredHistorySummary.spent / filteredHistorySummary.earned) <= 0.60 ? (
-                        "🚀 Efficient Run Rate: Safe, healthy burn rate. Structural parameters are optimized; you are leaving generous breathing room."
-                      ) : (filteredHistorySummary.spent / filteredHistorySummary.earned) <= 0.85 ? (
-                        "⚠️ Accelerating Cash Squeeze: Over 60% of dynamic inflow flows straight back out. Squeezes discretionary room and slows your goals."
-                      ) : (
-                        "🚨 Extreme Burn Pressure: Barely any savings buffer left. Immediate action is recommended to offload secondary discretionary costs."
-                      )}
-                    </p>
-                  </div>
-
-                  {/* Insight 2: Structural Overheads */}
-                  <div className="space-y-2.5 border-r border-brand-border/30 last:border-0 px-0 md:px-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[9px] font-mono font-bold text-brand-primary/40 uppercase tracking-widest">
-                        2. Capital Flexibility Ratio
-                      </span>
-                      {filteredHistorySummary.spent > 0 ? (
-                        <span className={cn(
-                          "text-[8px] font-mono font-black px-2 py-0.5 rounded",
-                          (filteredFixedCommitment / filteredHistorySummary.spent) <= 0.35 ? "bg-emerald-500/10 text-emerald-500" :
-                          (filteredFixedCommitment / filteredHistorySummary.spent) <= 0.60 ? "bg-amber-500/10 text-amber-500" : "bg-rose-500/10 text-rose-500"
-                        )}>
-                          {((filteredFixedCommitment / filteredHistorySummary.spent) * 100).toFixed(0)}% Rigid Base
-                        </span>
-                      ) : (
-                        <span className="text-[8px] font-mono font-black text-brand-primary/25 bg-brand-bg px-2 py-0.5 rounded">No Outflows</span>
-                      )}
-                    </div>
-                    <p className="text-xs font-sans font-medium text-brand-primary leading-relaxed">
-                      {filteredHistorySummary.spent === 0 ? (
-                        <span className="text-brand-primary/40 font-mono font-normal text-[9px] block">Add outflows marked with 'Fixed Commitment' to calculate overhead stress tests.</span>
-                      ) : (filteredFixedCommitment / filteredHistorySummary.spent) <= 0.35 ? (
-                        "⚡ Exceptional Asset Agility: Superior flexibility base! Your low committed fixed base makes your lifestyle highly recession-proof."
-                      ) : (filteredFixedCommitment / filteredHistorySummary.spent) <= 0.60 ? (
-                        "⚖️ Healthy Leverage Balance: Safe strategic overhead footprint. Rent, EMIs, and essential commitments are under control."
-                      ) : (
-                        "🚨 Severe Fixed Overhead Load: Over 60% of outflows are hardcoded bills/rent. Squeezes capacity to cut back during critical periods."
-                      )}
-                    </p>
-                  </div>
-
-                  {/* Insight 3: Leak Optimality */}
-                  <div className="space-y-2.5 last:border-0 pl-0 md:pl-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[9px] font-mono font-bold text-brand-primary/40 uppercase tracking-widest">
-                        3. Microfinancial Leaks
-                      </span>
-                      {filteredHistorySummary.spent > 0 ? (
-                        <span className={cn(
-                          "text-[8px] font-mono font-black px-2 py-0.5 rounded",
-                          filteredAvoidableLoss === 0 ? "bg-emerald-500/10 text-emerald-500" :
-                          (filteredAvoidableLoss / filteredHistorySummary.spent) <= 0.12 ? "bg-amber-500/10 text-amber-500" : "bg-rose-500/10 text-rose-500"
-                        )}>
-                          {((filteredAvoidableLoss / filteredHistorySummary.spent) * 100).toFixed(0)}% Friction
-                        </span>
-                      ) : (
-                        <span className="text-[8px] font-mono font-black text-brand-primary/25 bg-brand-bg px-2 py-0.5 rounded">No Outflows</span>
-                      )}
-                    </div>
-                    <p className="text-xs font-sans font-medium text-brand-primary leading-relaxed">
-                      {filteredHistorySummary.spent === 0 ? (
-                        <span className="text-brand-primary/40 font-mono font-normal text-[9px] block">Awaiting variable outlays to determine frictional pipeline resistance.</span>
-                      ) : filteredAvoidableLoss === 0 ? (
-                        "🛡️ Pristine Cash pipeline: Zero avoidable leakage detected in this ledger slice. Brilliant discipline is maximizing your potential savings."
-                      ) : (filteredAvoidableLoss / filteredHistorySummary.spent) <= 0.15 ? (
-                        `💡 Variable Leak Identified: Discretionary bleeding is ${formatCurrency(filteredAvoidableLoss)}. Eliminating this raises investment velocity.`
-                      ) : (
-                        `📉 Severe Leakage Diagnostic: You lost ${formatCurrency(filteredAvoidableLoss)} in avoidable friction. Fast-track cuts on non-essential tools.`
-                      )}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* DYNAMIC REAL-TIME KPI STAT RIBBONS */}
-              <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
-                {/* 1. Net Position Dynamic */}
-                <div className="bg-brand-surface border border-brand-border p-4.5 rounded-xl flex flex-col justify-between shadow-[0_1px_3px_rgba(0,0,0,0.01)] hover:border-brand-primary/10 transition-colors">
-                  <div className="space-y-1">
-                    <p className="text-[8px] font-mono font-extrabold text-brand-primary/35 uppercase tracking-wider">Filtered Net Surplus</p>
-                    <h4 className={cn(
-                      "text-base md:text-lg font-mono font-extrabold tracking-tight truncate",
-                      filteredHistorySummary.net >= 0 ? "text-brand-accent" : "text-rose-500"
-                    )}>
-                      {filteredHistorySummary.net >= 0 ? '+' : ''}{formatCurrency(filteredHistorySummary.net)}
-                    </h4>
-                  </div>
-                  <div className="text-[8px] font-mono text-brand-primary/40 pt-2 mt-2 border-t border-brand-border/40 truncate">
-                    Actual Dynamic Cushion
-                  </div>
-                </div>
-
-                {/* 2. Total Inflow Dynamic */}
-                <div className="bg-brand-surface border border-brand-border p-4.5 rounded-xl flex flex-col justify-between shadow-[0_1px_3px_rgba(0,0,0,0.01)] hover:border-brand-primary/10 transition-colors">
-                  <div className="space-y-1">
-                    <p className="text-[8px] font-mono font-extrabold text-emerald-500/40 uppercase tracking-wider">Total Inflows</p>
-                    <h4 className="text-base md:text-lg font-mono font-extrabold text-emerald-500 tracking-tight truncate">
-                      {formatCurrency(filteredHistorySummary.earned)}
-                    </h4>
-                  </div>
-                  <div className="text-[8px] font-mono text-brand-primary/40 pt-2 mt-2 border-t border-brand-border/40 truncate">
-                    Dynamic Revenue Stream
-                  </div>
-                </div>
-
-                {/* 3. Total Outflow Dynamic */}
-                <div className="bg-brand-surface border border-brand-border p-4.5 rounded-xl flex flex-col justify-between shadow-[0_1px_3px_rgba(0,0,0,0.01)] hover:border-brand-primary/10 transition-colors">
-                  <div className="space-y-1">
-                    <p className="text-[8px] font-mono font-extrabold text-brand-primary/35 uppercase tracking-wider">Total Outflows</p>
-                    <h4 className="text-base md:text-lg font-mono font-extrabold text-brand-primary tracking-tight truncate">
-                      {formatCurrency(filteredHistorySummary.spent)}
-                    </h4>
-                  </div>
-                  <div className="text-[8px] font-mono text-brand-primary/40 pt-2 mt-2 border-t border-brand-border/40 truncate">
-                    Current Direct Burn
-                  </div>
-                </div>
-
-                {/* 4. Strategic Leakage (Avoidable Outlay) Dynamic */}
-                <div className="bg-brand-surface border border-brand-border p-4.5 rounded-xl flex flex-col justify-between shadow-[0_1px_3px_rgba(0,0,0,0.01)] hover:border-brand-primary/10 transition-colors">
-                  <div className="space-y-1">
-                    <p className="text-[8px] font-mono font-extrabold text-rose-500/40 uppercase tracking-wider">Avoidable Leakage</p>
-                    <h4 className={cn(
-                      "text-base md:text-lg font-mono font-extrabold tracking-tight truncate",
-                      filteredAvoidableLoss > 0 ? "text-rose-500" : "text-brand-primary/30"
-                    )}>
-                      {formatCurrency(filteredAvoidableLoss)}
-                    </h4>
-                  </div>
-                  <div className="text-[8px] font-mono text-brand-primary/40 pt-2 mt-2 border-t border-brand-border/40 truncate">
-                    Frictional bleeding out
-                  </div>
-                </div>
-
-                {/* 5. Committed Workload (Mandatory Overhead) Dynamic */}
-                <div className="bg-brand-surface border border-brand-border p-4.5 rounded-xl flex flex-col justify-between shadow-[0_1px_3px_rgba(0,0,0,0.01)] hover:border-brand-primary/10 transition-colors">
-                  <div className="space-y-1">
-                    <p className="text-[8px] font-mono font-extrabold text-brand-accent/40 uppercase tracking-wider">Committed Load</p>
-                    <h4 className="text-base md:text-lg font-mono font-extrabold text-brand-accent tracking-tight truncate">
-                      {formatCurrency(filteredFixedCommitment)}
-                    </h4>
-                  </div>
-                  <div className="text-[8px] font-mono text-brand-primary/40 pt-2 mt-2 border-t border-brand-border/40 truncate">
-                    Necessary Overheads
-                  </div>
-                </div>
-
-                {/* 6. Average Ticket Size Dynamic */}
-                <div className="bg-brand-surface border border-brand-border p-4.5 rounded-xl flex flex-col justify-between shadow-[0_1px_3px_rgba(0,0,0,0.01)] hover:border-brand-primary/10 transition-colors">
-                  <div className="space-y-1">
-                    <p className="text-[8px] font-mono font-extrabold text-brand-primary/35 uppercase tracking-wider">Average Ticket</p>
-                    <h4 className="text-base md:text-lg font-mono font-extrabold text-brand-primary tracking-tight truncate">
-                      {formatCurrency(filteredAverageExpense)}
-                    </h4>
-                  </div>
-                  <div className="text-[8px] font-mono text-brand-primary/40 pt-2 mt-2 border-t border-brand-border/40 truncate">
-                    Mean Cash Outflow rate
-                  </div>
-                </div>
-              </div>
-
-              {/* HIGH-CRAFT ANALYTICAL CHARTS SECTION */}
-              {transactions.length > 0 && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Category Distribution chart */}
-                  <div className="bg-brand-surface border border-brand-border rounded-xl p-6 space-y-6 shadow-[0_1px_3px_rgba(0,0,0,0.01)] relative overflow-hidden">
-                    <div className="flex items-center justify-between pb-3 border-b border-brand-border/40">
-                      <div className="space-y-0.5">
-                        <p className="data-label !text-[9px] uppercase font-mono tracking-widest text-brand-primary/40">Dynamic Categorical Volume</p>
-                        <p className="text-xs font-sans font-bold text-brand-primary">Direct Active Outlay Breakdown</p>
-                      </div>
-                      <div className="w-8 h-8 rounded-lg bg-brand-bg flex items-center justify-center text-brand-primary/20 border border-brand-border/55">
-                        <PieChartIcon className="w-4 h-4" />
-                      </div>
-                    </div>
-                    
-                    <div className="h-44 w-full">
-                      {filteredCategoryData.length > 0 ? (
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={filteredCategoryData.slice(0, 5)}>
-                            <XAxis 
-                              dataKey="name" 
-                              hide 
-                            />
-                            <Tooltip 
-                              contentStyle={{ 
-                                backgroundColor: '#161616', 
-                                border: '1px solid #2B2B2B', 
-                                borderRadius: '8px',
-                                fontSize: '10px',
-                                fontFamily: 'JetBrains Mono',
-                                color: '#FFFFFF'
-                              }}
-                              itemStyle={{
-                                color: '#FFFFFF',
-                                fontWeight: 'bold',
-                                fontSize: '10px'
-                              }}
-                              labelStyle={{
-                                color: 'rgba(255, 255, 255, 0.5)',
-                                fontSize: '10px',
-                                marginBottom: '2px'
-                              }}
-                              formatter={(value: any) => [formatCurrency(Number(value)), "Outflow"]}
-                              cursor={{ fill: 'rgba(255, 255, 255, 0.03)' }}
-                            />
-                            <Bar 
-                              dataKey="value" 
-                              fill="var(--color-brand-primary)" 
-                              radius={[4, 4, 0, 0]}
-                              barSize={28}
-                            />
-                          </BarChart>
-                        </ResponsiveContainer>
-                      ) : (
-                        <div className="h-full flex items-center justify-center text-center text-brand-primary/30 text-[10px] font-mono">
-                          No matching outlay categories in this dynamic slice.
-                        </div>
-                      )}
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-y-3 gap-x-4 pt-2 border-t border-brand-border/40">
-                       {filteredCategoryData.length > 0 ? (
-                         filteredCategoryData.slice(0, 4).map((item) => (
-                           <div key={item.name} className="flex flex-col gap-0.5">
-                             <p className="text-[8.5px] font-mono font-bold text-brand-primary/40 uppercase truncate">{item.name}</p>
-                             <div className="flex items-baseline gap-1.5 flex-wrap">
-                               <p className="text-xs font-mono font-bold text-brand-primary leading-none">
-                                 {formatCurrency(item.value)}
-                               </p>
-                               <span className="text-[8px] text-brand-primary/30 font-mono">
-                                 ({((item.value / (filteredTotalExpense || 1)) * 100).toFixed(0)}%)
-                               </span>
-                             </div>
-                           </div>
-                         ))
-                       ) : (
-                         <div className="col-span-2 text-center text-[10px] text-brand-primary/25 font-mono py-1">
-                           Diagnostic index silent (No categories)
-                         </div>
-                       )}
-                    </div>
-                  </div>
-
-                  {/* Spending velocity trend chart */}
-                  <div className="bg-brand-surface border border-brand-border rounded-xl p-6 space-y-6 shadow-[0_1px_3px_rgba(0,0,0,0.01)] relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-brand-accent/5 rounded-full blur-3xl -mr-16 -mt-16" />
-                    <div className="flex items-center justify-between pb-3 border-b border-brand-border/40">
-                      <div className="space-y-0.5">
-                        <p className="data-label !text-[9px] uppercase font-mono tracking-widest text-brand-primary/40">Dynamic Temporal Activity Trend</p>
-                        <p className="text-xs font-sans font-bold text-brand-primary">Incremental Cash Run Rate</p>
-                      </div>
-                      <div className="w-8 h-8 rounded-lg bg-brand-accent/5 flex items-center justify-center text-brand-accent/40 border border-brand-accent/10">
-                        <Activity className="w-4 h-4" />
-                      </div>
-                    </div>
-                    
-                    <div className="h-44 w-full">
-                      {filteredTrendData.length > 0 ? (
-                        <ResponsiveContainer width="100%" height="100%">
-                          <AreaChart data={filteredTrendData}>
-                            <defs>
-                              <linearGradient id="colorAmount" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="var(--color-brand-accent)" stopOpacity={0.2}/>
-                                <stop offset="95%" stopColor="var(--color-brand-accent)" stopOpacity={0}/>
-                              </linearGradient>
-                            </defs>
-                            <XAxis 
-                              dataKey="date" 
-                              axisLine={false}
-                              tickLine={false}
-                              tick={{ fontSize: 8, fill: 'var(--color-brand-primary)', opacity: 0.3, fontFamily: 'JetBrains Mono' }}
-                            />
-                            <Tooltip 
-                              contentStyle={{ 
-                                backgroundColor: '#161616', 
-                                border: '1px solid #2B2B2B', 
-                                borderRadius: '8px',
-                                fontSize: '10px',
-                                fontFamily: 'JetBrains Mono',
-                                color: '#FFFFFF'
-                              }}
-                              itemStyle={{
-                                color: '#FFFFFF',
-                                fontWeight: 'bold',
-                                fontSize: '10px'
-                              }}
-                              labelStyle={{
-                                color: 'rgba(255, 255, 255, 0.5)',
-                                fontSize: '10px',
-                                marginBottom: '2px'
-                              }}
-                              formatter={(value: any) => [formatCurrency(Number(value)), "Spending"]}
-                            />
-                            <Area 
-                              type="monotone" 
-                              dataKey="amount" 
-                              stroke="var(--color-brand-accent)" 
-                              fillOpacity={1} 
-                              fill="url(#colorAmount)" 
-                              strokeWidth={2}
-                            />
-                          </AreaChart>
-                        </ResponsiveContainer>
-                      ) : (
-                        <div className="h-full flex items-center justify-center text-center text-brand-primary/30 text-[10px] font-mono">
-                          No matching entries in this temporal slice to graph.
-                        </div>
-                      )}
-                    </div>
-                    
-                    <div className="flex items-center justify-between pt-2 border-t border-brand-border/40">
-                       <div className="space-y-0.5">
-                         <p className="data-label !text-[8.5px] uppercase font-mono tracking-wider text-brand-primary/30 font-bold">Velocity Estimation</p>
-                         <p className="text-xs font-mono font-bold text-brand-primary">
-                           {formatCurrency(filteredTrendData[filteredTrendData.length - 1]?.amount || 0)}/day
-                         </p>
-                       </div>
-                       <div className="text-right space-y-0.5">
-                         <p className="data-label !text-[8.5px] uppercase font-mono tracking-wider text-brand-primary/30">CFO Status Flag</p>
-                         <span className="inline-flex items-center gap-1 text-[8.5px] font-mono font-bold text-brand-accent uppercase tracking-widest bg-brand-accent/5 border border-brand-accent/10 px-2 py-0.5 rounded">
-                           ⚡ Active Runrate
-                         </span>
-                       </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* ARTHA INTERACTIVE QUERY ENGINE & ADVANCED FILTERS PANEL */}
-              <div className="bg-brand-surface border border-brand-border rounded-xl p-5 space-y-5 shadow-[0_1px_3px_rgba(0,0,0,0.01)]">
-                
-                {/* Visual Section Header */}
-                <div className="flex items-center justify-between pb-3 border-b border-brand-border/40">
-                  <div className="flex items-center gap-2">
-                    <SlidersHorizontal className="w-4 h-4 text-brand-accent" />
-                    <span className="text-xs font-mono font-bold text-brand-primary uppercase tracking-widest">Interactive Ledger Filters</span>
-                  </div>
-                  {(searchQuery || filter !== 'All' || historyTimeframe !== 'all' || historySelectedCategory !== 'All' || historySelectedTag !== 'all') && (
-                    <button 
-                      onClick={() => {
-                        setSearchQuery('');
-                        setFilter('All');
-                        setHistoryTimeframe('all');
-                        setHistorySelectedCategory('All');
-                        setHistorySelectedTag('all');
-                      }}
-                      className="text-[9px] font-mono font-bold text-rose-500 hover:text-rose-400 uppercase tracking-widest bg-rose-500/5 hover:bg-rose-500/10 border border-rose-500/10 px-2 py-1 rounded transition-all"
-                      title="Reset all dynamic filter parameters"
-                    >
-                      Clear All Filters
-                    </button>
-                  )}
-                </div>
-
-                {/* Subgrid 1: Text Search & Type Toggle */}
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
-                  {/* Search Bar input */}
-                  <div className="md:col-span-6 relative group/search">
-                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-brand-primary/40 group-focus-within/search:text-brand-accent transition-colors" />
-                    <input 
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Search description, categories, tags..."
-                      className="w-full bg-brand-bg border border-brand-border rounded-xl py-2 pl-9 pr-8 text-[10px] font-mono font-bold text-brand-primary outline-none focus:border-brand-accent/40 transition-all placeholder:text-brand-primary/25"
-                    />
-                    {searchQuery && (
-                      <button 
-                        onClick={() => setSearchQuery('')}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-brand-primary/30 hover:text-brand-primary text-xs"
-                      >
-                        ×
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Cashflow Type Filters Segment pills */}
-                  <div className="md:col-span-6 flex bg-brand-bg p-1 rounded-xl border border-brand-border shadow-inner justify-between">
-                    {(['All', 'Expenses', 'Income'] as const).map(f => (
-                      <button 
-                        key={f} 
-                        onClick={() => setFilter(f)} 
+                {/* Subview Toggle deck */}
+                <div className="flex flex-wrap items-center bg-brand-bg p-1 rounded-xl border border-brand-border gap-0.5 shadow-sm">
+                  {(['all', 'analytics', 'optimizer', 'allocator'] as const).map((tabId) => {
+                    const labels: Record<string, string> = {
+                      all: "📜 Ledger Feed",
+                      analytics: "📊 Velocity",
+                      optimizer: "🛡️ Cost Optimizer",
+                      allocator: "💰 Cushion Allocator",
+                    };
+                    return (
+                      <button
+                        key={tabId}
+                        onClick={() => {
+                          setLedgerActiveTabMenu(tabId);
+                          // Sync standard filters for better visual experience
+                          if (tabId === 'optimizer') {
+                            setHistorySelectedTag('avoidable');
+                          } else if (tabId === 'all') {
+                            setHistorySelectedTag('all');
+                          }
+                        }}
                         className={cn(
-                          "flex-1 text-center py-1.5 rounded-lg text-[9px] font-mono font-black uppercase tracking-widest transition-all",
-                          filter === f 
-                            ? "bg-brand-primary text-brand-surface shadow-md font-bold" 
-                            : "text-brand-primary/40 hover:text-brand-primary/70"
+                          "px-3 py-2 rounded-lg text-[9.5px] font-mono font-bold uppercase tracking-wider transition-all duration-250 whitespace-nowrap",
+                          ledgerActiveTabMenu === tabId
+                            ? "bg-brand-primary text-brand-surface font-black"
+                            : "text-brand-primary/45 hover:text-brand-primary hover:bg-brand-surface/30"
                         )}
                       >
-                        {f}
+                        {labels[tabId]}
                       </button>
-                    ))}
-                  </div>
+                    );
+                  })}
                 </div>
-
-                {/* Subgrid 2: Date Timeframe & Strategic Dimension Categorization */}
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-4 pt-3 border-t border-brand-border/45">
-                  
-                  {/* Timeframe selector column */}
-                  <div className="md:col-span-4 space-y-1.5">
-                    <label className="text-[8px] font-mono font-bold text-brand-primary/40 uppercase tracking-widest block">Timeframe Interval</label>
-                    <div className="grid grid-cols-5 gap-1 bg-brand-bg p-0.5 rounded-lg border border-brand-border">
-                      {([
-                        { id: 'all', label: 'All' },
-                        { id: '7days', label: '7D' },
-                        { id: '30days', label: '30D' },
-                        { id: 'this-month', label: '1M' },
-                        { id: 'last-month', label: 'Prev' }
-                      ] as const).map(tf => (
-                        <button
-                          key={tf.id}
-                          onClick={() => setHistoryTimeframe(tf.id)}
-                          className={cn(
-                            "py-1.5 text-[8.5px] font-mono font-bold uppercase rounded text-center transition-all",
-                            historyTimeframe === tf.id 
-                              ? "bg-brand-primary text-brand-surface font-black" 
-                              : "text-brand-primary/40 hover:text-brand-primary/70"
-                          )}
-                          title={`Filter to ${tf.label}`}
-                        >
-                          {tf.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Strategic Tag Dimension classification filter */}
-                  <div className="md:col-span-4 space-y-1.5">
-                    <label className="text-[8px] font-mono font-bold text-brand-primary/40 uppercase tracking-widest block">Strategic Category Segment</label>
-                    <div className="grid grid-cols-4 gap-1 bg-brand-bg p-0.5 rounded-lg border border-brand-border">
-                      {([
-                        { id: 'all', label: 'All' },
-                        { id: 'avoidable', label: 'Avoid' },
-                        { id: 'fixed', label: 'Fixed' },
-                        { id: 'recurring', label: 'Recur' }
-                      ] as const).map(tag => (
-                        <button
-                          key={tag.id}
-                          onClick={() => setHistorySelectedTag(tag.id)}
-                          className={cn(
-                            "py-1.5 text-[8.5px] font-mono font-bold uppercase rounded text-center transition-all truncate px-1",
-                            historySelectedTag === tag.id 
-                              ? "bg-brand-primary text-brand-surface font-black" 
-                              : "text-brand-primary/40 hover:text-brand-primary/70"
-                          )}
-                          title={`Segment to ${tag.label}`}
-                        >
-                          {tag.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Sorting dropdown controls */}
-                  <div className="md:col-span-4 space-y-1.5">
-                    <label className="text-[8px] font-mono font-bold text-brand-primary/40 uppercase tracking-widest block flex items-center gap-1">
-                      <ArrowUpDown className="w-2.5 h-2.5 text-brand-accent" />
-                      <span>Ledger Sorting Method</span>
-                    </label>
-                    <div className="relative">
-                      <select 
-                        value={historySortBy}
-                        onChange={(e) => setHistorySortBy(e.target.value as any)}
-                        className="w-full bg-brand-bg border border-brand-border rounded-lg py-1.5 px-3 text-[9px] font-mono font-bold text-brand-primary outline-none focus:border-brand-primary/30 cursor-pointer appearance-none"
-                      >
-                        <option value="date-desc">📆 Date: Newer First</option>
-                        <option value="date-asc">📆 Date: Older First</option>
-                        <option value="amount-desc">🚀 Amount: Highest First</option>
-                        <option value="amount-asc">📉 Amount: Lowest First</option>
-                      </select>
-                      <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-brand-primary/40 text-[8px] font-mono font-bold">
-                        ▼
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Horizontal dynamic scroll list of Categories present */}
-                {uniqueHistoryCategories.length > 2 && (
-                  <div className="space-y-1.5 pt-3 border-t border-brand-border/45">
-                    <span className="text-[8px] font-mono font-bold text-brand-primary/40 uppercase tracking-widest block flex items-center gap-1">
-                      <Tag className="w-2.5 h-2.5 text-brand-secondary" />
-                      <span>Categorical Fast Filters</span>
-                    </span>
-                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 scrollbar-thin scrollbar-thumb-brand-border select-none no-scrollbar">
-                      {uniqueHistoryCategories.map(cat => (
-                        <button
-                          key={cat}
-                          onClick={() => setHistorySelectedCategory(cat)}
-                          className={cn(
-                            "px-3 py-1 flex items-center justify-center rounded-lg text-[8.5px] font-mono font-bold whitespace-nowrap transition-all border shrink-0",
-                            historySelectedCategory === cat
-                              ? "bg-brand-primary text-brand-surface border-brand-primary shadow-sm font-black"
-                              : "bg-brand-bg text-brand-primary/50 border-brand-border hover:text-brand-primary hover:border-brand-primary/20"
-                          )}
-                        >
-                          {cat}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
 
-              {/* LEDGER RENDER LIST */}
-              <div className="space-y-6">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-[10px] font-mono font-bold text-brand-primary/40 uppercase tracking-widest">
-                    Ledger Log Entries ({filteredTransactions.length})
-                  </h3>
-                  {historySelectedCategory !== 'All' && (
-                    <span className="text-[8px] font-mono font-medium text-brand-accent bg-brand-accent/5 px-2 py-0.5 rounded border border-brand-accent/10 whitespace-nowrap">
-                      filtering category: {historySelectedCategory}
-                    </span>
-                  )}
+              {/* McKinsey Executive Metrics Corridor */}
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-2.5">
+                {/* 1. Net reserve */}
+                <div className="bg-brand-surface border border-brand-border p-2.5 px-3.5 rounded-xl flex items-center justify-between hover:border-brand-primary/20 transition-all duration-200 shadow-sm">
+                  <div className="space-y-0.5">
+                    <span className="text-[7.5px] font-mono font-bold text-brand-primary/45 uppercase tracking-wider block">Strategic Cushion</span>
+                    <h3 className={cn(
+                      "text-sm sm:text-base font-mono font-black tracking-tight",
+                      filteredHistorySummary.net >= 0 ? "text-brand-primary" : "text-rose-500"
+                    )}>
+                      {filteredHistorySummary.net >= 0 ? '+' : ''}{formatCurrency(filteredHistorySummary.net)}
+                    </h3>
+                  </div>
+                  <Wallet className="w-4 h-4 text-brand-primary/20 shrink-0" />
                 </div>
 
-                <div className="space-y-8">
-                  {filteredTransactions.length === 0 ? (
-                    <div className="bg-brand-surface border border-brand-border border-dashed rounded-[1.5rem] p-12 text-center space-y-6">
-                      <div className="w-14 h-14 bg-brand-bg rounded-xl flex items-center justify-center mx-auto text-brand-primary/10 border border-brand-border/40">
-                        <HistoryIcon className="w-7 h-7" />
-                      </div>
-                      <div className="space-y-2">
-                        <p className="text-base font-medium font-sans text-brand-primary">No transaction assets discovered</p>
-                        <p className="text-[9px] text-brand-primary/40 font-bold uppercase tracking-widest max-w-sm mx-auto leading-relaxed">
-                          Your active filter constraints or search keywords produced no results. Refine inputs or add a record.
-                        </p>
-                      </div>
-                      <button 
-                        onClick={() => {
-                          setSearchQuery('');
-                          setFilter('All');
-                          setHistoryTimeframe('all');
-                          setHistorySelectedCategory('All');
-                          setHistorySelectedTag('all');
-                        }}
-                        className="px-5 py-2.5 bg-brand-surface hover:bg-brand-bg text-brand-primary border border-brand-border rounded-xl text-[9px] font-mono font-bold uppercase tracking-widest transition-all"
-                      >
-                        Reset All Filters
-                      </button>
-                    </div>
-                  ) : Object.entries(groupedTransactions).map(([date, items]) => (
-                <motion.div 
-                  key={date} 
-                  variants={listContainer}
-                  initial="hidden"
-                  whileInView="show"
-                  viewport={{ once: true }}
-                  className="space-y-4"
-                >
-                  <motion.div variants={listItem} className="flex items-center gap-4">
-                    <div className="h-px flex-1 bg-brand-border/60" />
-                    <h4 className="data-label !text-brand-primary/60">{date}</h4>
-                    <div className="h-px flex-1 bg-brand-border/60" />
-                  </motion.div>
-                  <div className="space-y-2.5">
-                    {items.map(t => {
-                      const isIncomeFlow = t.type === 'income' || t.type === 'refund';
+                {/* 2. Direct burn */}
+                <div className="bg-brand-surface border border-brand-border p-2.5 px-3.5 rounded-xl flex items-center justify-between hover:border-brand-primary/20 transition-all duration-200 shadow-sm">
+                  <div className="space-y-0.5">
+                    <span className="text-[7.5px] font-mono font-bold text-brand-primary/45 uppercase tracking-wider block">Direct Burn</span>
+                    <h3 className="text-sm sm:text-base font-mono font-black tracking-tight text-brand-primary">
+                      {formatCurrency(filteredHistorySummary.spent)}
+                    </h3>
+                  </div>
+                  <TrendingDown className="w-4 h-4 text-rose-500/40 shrink-0" />
+                </div>
 
-                      return (
-                        <motion.div 
-                          key={t.id} 
-                          variants={listItem}
-                          className="bg-brand-surface hover:bg-brand-bg/40 py-3 px-4 border border-brand-border rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.01)] transition-all duration-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 group relative overflow-hidden"
-                        >
-                          <div className={cn(
-                            "absolute top-0 left-0 w-1 sm:w-1 h-full transition-all group-hover:w-1.5",
-                            isIncomeFlow ? "bg-brand-accent" : t.isAvoidable ? "bg-rose-500 animate-pulse" : "bg-transparent"
-                          )} />
-                          
-                          {/* Left: Metadata descriptor split */}
-                          <div className="flex items-center gap-3 min-w-0 flex-1">
-                            {/* Visual categorization ring */}
-                            <div className={cn(
-                              "w-8.5 h-8.5 rounded-lg flex items-center justify-center border font-mono transition-all shrink-0 select-none",
-                              isIncomeFlow 
-                                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" 
-                                : t.isAvoidable 
-                                ? "bg-rose-500/10 text-rose-400 border-rose-500/20" 
-                                : "bg-brand-bg text-brand-primary/50 border-brand-border/60 group-hover:bg-brand-primary/5"
-                            )}>
-                              <span className="scale-[0.8]">{getCategoryIcon(t.category)}</span>
+                {/* 3. Dynamic inflows */}
+                <div className="bg-brand-surface border border-brand-border p-2.5 px-3.5 rounded-xl flex items-center justify-between hover:border-brand-primary/20 transition-all duration-200 shadow-sm">
+                  <div className="space-y-0.5">
+                    <span className="text-[7.5px] font-mono font-bold text-brand-primary/45 uppercase tracking-wider block">Total Inflows</span>
+                    <h3 className="text-sm sm:text-base font-mono font-black tracking-tight text-emerald-550">
+                      {formatCurrency(filteredHistorySummary.earned)}
+                    </h3>
+                  </div>
+                  <TrendingUp className="w-4 h-4 text-emerald-500/40 shrink-0" />
+                </div>
+
+                {/* 4. Avoidable Leakage */}
+                <div 
+                  onClick={() => {
+                    setLedgerActiveTabMenu('optimizer');
+                    setHistorySelectedTag('avoidable');
+                  }}
+                  className="bg-brand-surface border border-brand-border p-2.5 px-3.5 rounded-xl flex items-center justify-between hover:border-rose-500/35 transition-all duration-200 cursor-pointer group shadow-sm"
+                >
+                  <div className="space-y-0.5">
+                    <span className={cn(
+                      "text-[7.5px] font-mono font-bold uppercase tracking-wider block",
+                      filteredAvoidableLoss > 0 ? "text-rose-500/80 font-black" : "text-brand-primary/45"
+                    )}>Avoidable Leak</span>
+                    <h3 className={cn(
+                      "text-sm sm:text-base font-mono font-black tracking-tight",
+                      filteredAvoidableLoss > 0 ? "text-rose-500 animate-pulse" : "text-brand-primary/30"
+                    )}>
+                      {formatCurrency(filteredAvoidableLoss)}
+                    </h3>
+                  </div>
+                  <AlertTriangle className={cn("w-4 h-4 group-hover:scale-110 transition-transform shrink-0", filteredAvoidableLoss > 0 ? "text-rose-500" : "text-brand-primary/20")} />
+                </div>
+
+                {/* 5. Metrics Index / F-Index Retention Rate */}
+                <div className="bg-brand-surface border border-brand-border p-2.5 px-3.5 rounded-xl flex items-center justify-between hover:border-brand-primary/20 transition-all duration-200 col-span-2 lg:col-span-1 shadow-sm">
+                  {(() => {
+                    const retentionRate = filteredHistorySummary.earned > 0 
+                      ? ((1 - (filteredHistorySummary.spent / filteredHistorySummary.earned)) * 100)
+                      : 0;
+                    const captureGrade = retentionRate > 40 ? "Elite" : retentionRate > 15 ? "Healthy" : "Bleed";
+                    const scoreColor = retentionRate > 40 ? "text-emerald-500" : retentionRate > 15 ? "text-brand-primary" : "text-rose-500";
+                    return (
+                      <>
+                        <div className="space-y-0.5 flex-1 min-w-0">
+                          <span className="text-[7.5px] font-mono font-bold text-brand-primary/45 uppercase tracking-wider block">F-Index Retention</span>
+                          <div className="flex items-center gap-1">
+                            <h3 className={cn("text-sm sm:text-base font-mono font-black tracking-tight", scoreColor)}>
+                              {retentionRate.toFixed(0)}%
+                            </h3>
+                            <span className="text-[6px] font-mono font-extrabold uppercase px-1 text-brand-primary/45 border border-brand-border bg-brand-bg rounded truncate">
+                              {captureGrade}
+                            </span>
+                          </div>
+                        </div>
+                        <ShieldCheck className="w-4 h-4 text-emerald-500/40 shrink-0 ml-1" />
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* Dynamic Sub-tab Render Logic */}
+              <AnimatePresence mode="wait">
+                {ledgerActiveTabMenu === 'all' && (
+                  <motion.div
+                    key="all_feed"
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -15 }}
+                    transition={{ duration: 0.3 }}
+                    className="space-y-6"
+                  >
+                    {/* SEARCH, SORT, AND MULTI-FILTERING DECK */}
+                    <div className="bg-brand-surface border border-brand-border rounded-xl p-4 space-y-4 shadow-sm">
+                      {/* Top Bar: Search, Quick Tabs, and Toggle */}
+                      <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center">
+                        {/* Search Input Box */}
+                        <div className="relative flex-1 group/search">
+                          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-brand-primary/30 group-focus-within/search:text-brand-accent transition-colors" />
+                          <input 
+                            type="text"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            placeholder="Search registers, accounts, tags..."
+                            className="w-full bg-brand-bg border border-brand-border rounded-xl py-2 pl-9 pr-8 text-xs font-mono font-bold text-brand-primary outline-none focus:border-brand-primary/30 transition-all placeholder:text-brand-primary/20"
+                          />
+                          {searchQuery && (
+                            <button 
+                              onClick={() => setSearchQuery('')}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-brand-primary/30 hover:text-brand-primary text-xs"
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Quick filter tabs & Toggle Deck */}
+                        <div className="flex items-center gap-2">
+                          {/* Flow type tabs */}
+                          <div className="flex bg-brand-bg p-1 rounded-xl border border-brand-border h-[38px] min-w-[180px]">
+                            {(['All', 'Expenses', 'Income'] as const).map(f => (
+                              <button 
+                                key={f} 
+                                onClick={() => setFilter(f)} 
+                                className={cn(
+                                  "flex-1 text-center py-1 px-1.5 rounded-lg text-[8.5px] font-mono font-bold uppercase tracking-wider transition-all whitespace-nowrap",
+                                  filter === f 
+                                    ? "bg-brand-primary text-brand-surface font-black shadow-sm" 
+                                    : "text-brand-primary/40 hover:text-brand-primary"
+                                )}
+                              >
+                                {f}
+                              </button>
+                            ))}
+                          </div>
+
+                          {/* Toggle Advanced Button */}
+                          {(() => {
+                            const activeAdvCount = (historyTimeframe !== 'all' ? 1 : 0) + 
+                                                   (historySelectedCategory !== 'All' ? 1 : 0) + 
+                                                   (historySelectedTag !== 'all' ? 1 : 0);
+                            return (
+                              <button
+                                onClick={() => setShowHistoryFilters(!showHistoryFilters)}
+                                className={cn(
+                                  "h-[38px] px-3 border rounded-xl flex items-center justify-center gap-1.5 text-[9px] font-mono font-bold uppercase transition-all whitespace-nowrap active:scale-95 cursor-pointer shadow-sm relative",
+                                  showHistoryFilters 
+                                    ? "bg-brand-primary text-brand-surface border-brand-primary" 
+                                    : "bg-brand-surface border-brand-border text-brand-primary/60 hover:text-brand-primary hover:border-brand-primary/20"
+                                )}
+                              >
+                                <SlidersHorizontal className="w-3 h-3 shrink-0" />
+                                <span className="hidden sm:inline">Advanced</span>
+                                {activeAdvCount > 0 && (
+                                  <span className="w-4 h-4 rounded-full bg-brand-accent text-brand-surface text-[8px] font-bold font-mono flex items-center justify-center animate-pulse line-none">
+                                    {activeAdvCount}
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })()}
+
+                          {/* Reset Filters button if active */}
+                          {(searchQuery || filter !== 'All' || historyTimeframe !== 'all' || historySelectedCategory !== 'All' || historySelectedTag !== 'all') && (
+                            <button 
+                              onClick={() => {
+                                setSearchQuery('');
+                                setFilter('All');
+                                setHistoryTimeframe('all');
+                                setHistorySelectedCategory('All');
+                                setHistorySelectedTag('all');
+                              }}
+                              className="h-[38px] px-2.5 bg-rose-500/5 hover:bg-rose-500/10 border border-rose-500/10 text-[8.5px] font-mono font-bold text-rose-500 rounded-xl uppercase transition-all hover:border-rose-500/30 active:scale-95 whitespace-nowrap"
+                              title="Clear all active ledger queries"
+                            >
+                              Reset
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Advanced Filters Drawer (Collapsible) */}
+                      {showHistoryFilters && (
+                        <div className="pt-3 border-t border-brand-border/40 space-y-4">
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            {/* Timeframe intervals */}
+                            <div className="space-y-1">
+                              <span className="text-[7.5px] font-mono font-bold text-brand-primary/45 uppercase tracking-wider block">Timeframe Interval</span>
+                              <div className="grid grid-cols-5 gap-0.5 bg-brand-bg p-0.5 rounded-lg border border-brand-border">
+                                {[
+                                  { id: 'all', label: 'All' },
+                                  { id: '7days', label: '7D' },
+                                  { id: '30days', label: '30D' },
+                                  { id: 'this-month', label: '1M' },
+                                  { id: 'last-month', label: 'Prev' }
+                                ].map(tf => (
+                                  <button
+                                    key={tf.id}
+                                    onClick={() => setHistoryTimeframe(tf.id as any)}
+                                    className={cn(
+                                      "py-1 text-[7.5px] font-mono font-bold uppercase rounded text-center transition-all",
+                                      historyTimeframe === tf.id 
+                                        ? "bg-brand-primary text-brand-surface font-black" 
+                                        : "text-brand-primary/40 hover:text-brand-primary"
+                                    )}
+                                  >
+                                    {tf.label}
+                                  </button>
+                                ))}
+                              </div>
                             </div>
 
-                            {/* Core descriptor tags */}
-                            <div className="space-y-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <p className="text-xs font-sans font-extrabold text-brand-primary uppercase tracking-normal leading-tight truncate max-w-[200px] sm:max-w-lg">
-                                  {t.description}
-                                </p>
-                                {t.subcategory && (
-                                  <span className="px-1.5 py-0.5 bg-brand-bg border border-brand-border text-[8px] font-mono font-bold text-brand-primary/40 rounded uppercase tracking-wider truncate max-w-[120px]">
-                                    {t.subcategory}
-                                  </span>
-                                )}
+                            {/* CFO Structural Strategy tag */}
+                            <div className="space-y-1">
+                              <span className="text-[7.5px] font-mono font-bold text-brand-primary/45 uppercase tracking-wider block">CFO Structural Filter</span>
+                              <div className="grid grid-cols-4 gap-0.5 bg-brand-bg p-0.5 rounded-lg border border-brand-border">
+                                {[
+                                  { id: 'all', label: 'All' },
+                                  { id: 'fixed', label: 'Fixed' },
+                                  { id: 'avoidable', label: 'Leak' },
+                                  { id: 'recurring', label: 'Recur' }
+                                ].map(tag => (
+                                  <button
+                                    key={tag.id}
+                                    onClick={() => setHistorySelectedTag(tag.id as any)}
+                                    className={cn(
+                                      "py-1 text-[7.5px] font-mono font-bold uppercase rounded text-center transition-all truncate px-0.5",
+                                      historySelectedTag === tag.id 
+                                        ? "bg-brand-primary text-brand-surface font-black" 
+                                        : "text-brand-primary/40 hover:text-brand-primary"
+                                    )}
+                                  >
+                                    {tag.label}
+                                  </button>
+                                ))}
                               </div>
+                            </div>
 
-                              {/* Dimensions labels */}
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                <span className="text-[8px] font-mono font-black text-brand-primary/45 uppercase tracking-wide bg-brand-bg px-1.5 py-0.5 rounded border border-brand-border/40">
-                                  📂 {t.category}
-                                </span>
-
-                                {/* Human tags */}
-                                {t.isMandatory && (
-                                  <span className="px-1.5 py-0.5 bg-brand-primary/5 border border-brand-border text-brand-primary text-[8px] font-bold uppercase tracking-wide rounded font-mono flex items-center gap-1 select-none">
-                                    <span>🔒</span> Fixed Need
-                                  </span>
-                                )}
-                                {t.isAvoidable && (
-                                  <span className="px-1.5 py-0.5 bg-rose-500/10 border border-rose-500/20 text-rose-400 text-[8px] font-bold uppercase tracking-wide rounded font-mono flex items-center gap-0.5 select-none font-extrabold">
-                                    <span>⚠️</span> Avoid Leak
-                                  </span>
-                                )}
-                                {t.isRecurring && (
-                                  <span className="px-1.5 py-0.5 bg-brand-accent/10 border border-brand-accent/20 text-brand-accent text-[8px] font-bold uppercase tracking-wide rounded font-mono flex items-center gap-1 select-none">
-                                    <span>🔄</span> Recurring
-                                  </span>
-                                )}
-                                {t.type === 'refund' && (
-                                  <span className="px-1.5 py-0.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[8px] font-bold uppercase tracking-wide rounded font-mono flex items-center gap-1 select-none">
-                                    <span>💰</span> Refund Offset
-                                  </span>
-                                )}
-                                {t.type === 'income' && (
-                                  <span className="px-1.5 py-0.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[8px] font-bold uppercase tracking-wide rounded font-mono flex items-center gap-1 select-none">
-                                    <span>📈</span> Inflow
-                                  </span>
-                                )}
+                            {/* Sort mechanisms */}
+                            <div className="space-y-1">
+                              <span className="text-[7.5px] font-mono font-bold text-brand-primary/45 uppercase tracking-wider block">Slick Ordering Method</span>
+                              <div className="relative">
+                                <select 
+                                  value={historySortBy}
+                                  onChange={(e) => setHistorySortBy(e.target.value as any)}
+                                  className="w-full bg-brand-bg border border-brand-border rounded-lg py-1 px-3 text-[8.5px] font-mono font-bold text-brand-primary outline-none focus:border-brand-primary/30 cursor-pointer appearance-none"
+                                >
+                                  <option value="date-desc">📆 Date: Newer First</option>
+                                  <option value="date-asc">📆 Date: Older First</option>
+                                  <option value="amount-desc">🚀 Amount: Highest First</option>
+                                  <option value="amount-asc">📉 Amount: Lowest First</option>
+                                </select>
+                                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-brand-primary/40 text-[7px] font-mono font-bold">
+                                  ▼
+                                </div>
                               </div>
                             </div>
                           </div>
 
-                          {/* Right: Cash Movement + Controls */}
-                          <div className="flex items-center justify-between sm:justify-end gap-4 border-t sm:border-t-0 border-brand-border/40 pt-2.5 sm:pt-0 shrink-0">
-                            {/* Direction metrics */}
-                            <div className="text-left sm:text-right flex flex-col sm:items-end justify-center">
-                              <p className={cn(
-                                "text-sm sm:text-base font-mono font-extrabold tabular-nums leading-none flex items-center gap-1",
-                                isIncomeFlow ? "text-brand-accent" : "text-brand-primary"
-                              )}>
-                                {isIncomeFlow ? (
-                                  <ArrowUpRight className="w-3.5 h-3.5 text-brand-accent shrink-0" />
-                                ) : (
-                                  <ArrowDownRight className="w-3.5 h-3.5 text-brand-primary/40 shrink-0" />
-                                )}
-                                {isIncomeFlow ? '+' : '-'}{formatCurrency(t.amount)}
-                              </p>
-                              <p className="text-[8px] font-mono font-bold text-brand-primary/25 uppercase tracking-wider mt-1 leading-none">
-                                {new Date(t.date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-                              </p>
+                          {/* Fast Category filter rail */}
+                          {uniqueHistoryCategories.length > 2 && (
+                            <div className="space-y-1.5 pt-2 border-t border-brand-border/40">
+                              <span className="text-[7.5px] font-mono font-bold text-brand-primary/45 uppercase tracking-wider block flex items-center gap-1">
+                                <Tag className="w-2.5 h-2.5 text-brand-accent/70" />
+                                <span>Categorical Fast Filters</span>
+                              </span>
+                              <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-brand-border select-none no-scrollbar">
+                                {uniqueHistoryCategories.map(cat => {
+                                  const amt = transactions.filter(t => t.category === cat).length;
+                                  return (
+                                    <button
+                                      key={cat}
+                                      onClick={() => setHistorySelectedCategory(cat)}
+                                      className={cn(
+                                        "px-2.5 py-0.5 flex items-center gap-1 rounded-md text-[8px] font-mono font-bold whitespace-nowrap transition-all border shrink-0",
+                                        historySelectedCategory === cat
+                                          ? "bg-brand-primary text-brand-surface border-brand-primary font-black scale-95"
+                                          : "bg-brand-bg text-brand-primary/50 border-brand-border hover:text-brand-primary hover:border-brand-primary/20"
+                                      )}
+                                    >
+                                      <span>{cat}</span>
+                                      {cat !== 'All' && (
+                                        <span className="text-[7px] opacity-70 font-black">({amt})</span>
+                                      )}
+                                    </button>
+                                  );
+                                })}
+                              </div>
                             </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
 
-                            {/* Options action buttons */}
-                            <div className="flex gap-1.5 border-l border-brand-border/40 pl-3">
-                              <button 
-                                onClick={() => {
-                                  setEditingTransaction(t);
-                                  setCommandTab('transaction');
-                                  setShowCommandCenter(true);
-                                }}
-                                className="p-1 px-1.5 bg-brand-bg hover:bg-brand-primary hover:text-brand-surface rounded-lg transition-all border border-brand-border group/edit"
-                                title="Edit Transaction Detail"
-                              >
-                                <Settings2 className="w-3.5 h-3.5 opacity-40 group-hover/edit:opacity-100 transition-opacity" />
-                              </button>
-                              <button 
-                                type="button"
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  handleDeleteTransaction(t);
-                                }}
+                    {/* Category Budget Progress Ribbon */}
+                    {filteredTotalExpense > 0 && filteredCategoryData.length > 0 && (
+                      <div className="bg-brand-surface border border-brand-border rounded-xl p-3.5 space-y-2.5 shadow-sm">
+                        <div className="flex items-center justify-between pb-1.5 border-b border-brand-border/40 select-none">
+                          <span className="text-[8px] font-mono font-bold text-brand-primary/45 uppercase tracking-wider block">
+                            Top Strategic Cost Centroids
+                          </span>
+                          <span className="text-[7.5px] font-mono font-bold text-brand-primary/30">
+                            (Tap centroid capsule to set categorized filter)
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                          {filteredCategoryData.slice(0, 6).map(catData => {
+                            const pct = filteredTotalExpense > 0 ? (catData.value / filteredTotalExpense) * 100 : 0;
+                            const isSelected = historySelectedCategory === catData.name;
+                            return (
+                              <button
+                                key={catData.name}
+                                onClick={() => setHistorySelectedCategory(isSelected ? 'All' : catData.name)}
                                 className={cn(
-                                  "p-1 px-1.5 transition-all rounded-lg active:scale-90 border h-6 flex items-center justify-center",
-                                  transactionIdToConfirmDelete === t.id 
-                                    ? "bg-rose-500 text-white border-rose-600 shadow-md scale-105" 
-                                    : "text-rose-500/10 hover:text-rose-600 hover:bg-rose-500/10 border-transparent hover:border-rose-500/10"
+                                  "text-left p-2 rounded-lg border transition-all relative overflow-hidden group select-none cursor-pointer",
+                                  isSelected 
+                                    ? "bg-brand-primary/5 border-brand-primary" 
+                                    : "bg-brand-bg/50 border-brand-border hover:border-brand-primary/20"
                                 )}
-                                title="Purge Entry"
                               >
-                                {transactionIdToConfirmDelete === t.id ? (
-                                  <span className="text-[7.5px] font-black uppercase tracking-widest px-0.5 whitespace-nowrap animate-pulse">Purge</span>
-                                ) : (
-                                  <Trash2 className="w-3.5 h-3.5 opacity-40 group-hover:opacity-100 transition-opacity" />
-                                )}
+                                <div className="absolute bottom-0 left-0 h-0.5 bg-brand-primary/20 transition-all group-hover:bg-brand-primary/40" style={{ width: `${pct}%` }} />
+                                <div className="space-y-0.5 relative z-10">
+                                  <div className="flex items-center justify-between text-[8px] font-mono font-bold gap-1">
+                                    <span className="text-brand-primary/75 truncate uppercase tracking-tight">{catData.name}</span>
+                                    <span className={cn(isSelected ? "text-brand-accent animate-pulse font-black" : "text-brand-primary/45")}>
+                                      {pct.toFixed(0)}%
+                                    </span>
+                                  </div>
+                                  <span className="text-[10px] font-mono font-black text-brand-primary block leading-none">
+                                    {formatCurrency(catData.value)}
+                                  </span>
+                                </div>
                               </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Bulk Action Sticky Deck */}
+                    <AnimatePresence>
+                      {selectedTransactionIds.length > 0 && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -10 }}
+                          className="bg-brand-primary text-brand-surface p-3 sm:p-4 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg select-none relative overflow-hidden"
+                        >
+                          <div className="absolute top-0 right-0 w-32 h-32 bg-brand-accent/10 rounded-full blur-xl pointer-events-none -mr-8 -mt-8" />
+                          <div className="flex items-center gap-2.5 z-10">
+                            <button
+                              onClick={() => setSelectedTransactionIds([])}
+                              className="w-5 h-5 bg-brand-surface/10 hover:bg-brand-surface/20 border border-brand-surface/10 text-brand-surface rounded flex items-center justify-center transition-all cursor-pointer"
+                              title="Deselect all"
+                            >
+                              <X className="w-3 h-3 text-brand-surface" />
+                            </button>
+                            <div className="space-y-0.5">
+                              <h5 className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-brand-surface">
+                                Bulk Operations Console
+                              </h5>
+                              <p className="text-[8px] font-mono font-bold opacity-75">
+                                {selectedTransactionIds.length} transaction{selectedTransactionIds.length > 1 ? 's' : ''} selected inside active log
+                              </p>
                             </div>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-1.5 z-10 w-full sm:w-auto">
+                            <button
+                              disabled={isBulkProcessing}
+                              onClick={() => handleBulkUpdate({ isAvoidable: true, isMandatory: false })}
+                              className="flex-1 sm:flex-initial px-2.5 py-1.5 bg-rose-500 hover:bg-rose-400 disabled:opacity-50 text-white rounded-lg text-[8px] font-mono font-black uppercase tracking-wider transition-all active:scale-95 cursor-pointer"
+                            >
+                              Flag Bleed
+                            </button>
+
+                            <button
+                              disabled={isBulkProcessing}
+                              onClick={() => handleBulkUpdate({ isMandatory: true, isAvoidable: false })}
+                              className="flex-1 sm:flex-initial px-2.5 py-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-white rounded-lg text-[8px] font-mono font-black uppercase tracking-wider transition-all active:scale-95 cursor-pointer"
+                            >
+                              Flag Necessary
+                            </button>
+
+                            <button
+                              disabled={isBulkProcessing}
+                              onClick={() => handleBulkUpdate({ isRecurring: true })}
+                              className="flex-1 sm:flex-initial px-2.5 py-1.5 bg-sky-500 hover:bg-sky-455 disabled:opacity-50 text-white rounded-lg text-[8px] font-mono font-black uppercase tracking-wider transition-all active:scale-95 cursor-pointer"
+                            >
+                              Flag Recurring
+                            </button>
+
+                            <div className="h-6 w-px bg-brand-surface/25 hidden sm:block mx-1" />
+
+                            <button
+                              disabled={isBulkProcessing}
+                              onClick={handleBulkDelete}
+                              className="flex-1 sm:flex-initial px-3 py-1.5 bg-brand-surface text-rose-500 hover:bg-brand-surface/90 disabled:opacity-50 border border-brand-surface/10 rounded-lg text-[8px] font-mono font-black uppercase tracking-wider transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1"
+                            >
+                              <Trash2 className="w-2.5 h-2.5 shrink-0" />
+                              <span>Purge</span>
+                            </button>
                           </div>
                         </motion.div>
-                      );
-                    })}
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          </div>
-        </motion.div>
-      )}
+                      )}
+                    </AnimatePresence>
+
+                    {/* ACTIONS ROW & RESULTS METRIC COUNTER */}
+                    <div className="flex items-center justify-between px-1">
+                      <div className="flex items-center gap-2 select-none">
+                        {filteredTransactions.length > 0 && (
+                          <button
+                            onClick={() => {
+                              const allFilteredIds = filteredTransactions.map(t => t.id).filter(Boolean) as string[];
+                              const allSelected = allFilteredIds.every(id => selectedTransactionIds.includes(id));
+                              if (allSelected) {
+                                setSelectedTransactionIds(prev => prev.filter(id => !allFilteredIds.includes(id)));
+                              } else {
+                                setSelectedTransactionIds(prev => {
+                                  const union = new Set([...prev, ...allFilteredIds]);
+                                  return Array.from(union);
+                                });
+                              }
+                            }}
+                            className={cn(
+                              "w-4 h-4 rounded-full border flex items-center justify-center transition-all cursor-pointer scale-95",
+                              filteredTransactions.map(t => t.id).filter(Boolean).every(id => selectedTransactionIds.includes(id as string))
+                                ? "bg-brand-primary border-brand-primary text-brand-surface"
+                                : "border-brand-border hover:border-brand-primary/40 text-transparent"
+                            )}
+                            title="Toggle select all shown records"
+                          >
+                            <Check className="w-2.5 h-2.5 stroke-[3] text-brand-surface" />
+                          </button>
+                        )}
+                        <h4 className="text-[10px] font-mono font-bold text-brand-primary/30 uppercase tracking-widest flex items-center gap-1.5">
+                          <span>Audited Log Database ({filteredTransactions.length} records)</span>
+                          {selectedTransactionIds.length > 0 && (
+                            <span className="text-[9px] text-brand-accent font-black">
+                              ({selectedTransactionIds.length} selected)
+                            </span>
+                          )}
+                        </h4>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button 
+                          onClick={handleExportCSV}
+                          disabled={filteredTransactions.length === 0}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-surface hover:bg-brand-bg disabled:opacity-40 border border-brand-border text-brand-primary rounded-lg text-[9px] font-mono font-bold uppercase transition-all active:scale-95"
+                        >
+                          <Download className="w-3.5 h-3.5 text-brand-accent shrink-0" />
+                          <span>Export CSV</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* DIRECT LEDGER ROW RENDER ENGINE */}
+                    <div className="space-y-6">
+                      {filteredTransactions.length === 0 ? (
+                        <div className="bg-brand-surface border border-brand-border border-dashed rounded-[1rem] p-12 text-center space-y-4">
+                          <div className="w-12 h-12 bg-brand-bg rounded-xl flex items-center justify-center mx-auto text-brand-primary/10 border border-brand-border/30">
+                            <HistoryIcon className="w-6 h-6 animate-spin" />
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-sm font-bold text-brand-primary">No database matches resolved</p>
+                            <p className="text-[9px] text-brand-primary/45 font-mono max-w-sm mx-auto leading-normal">
+                              The active strategist found no logs within matching queries. Expand filters or record a new transaction.
+                            </p>
+                          </div>
+                          <button 
+                            onClick={() => {
+                              setSearchQuery('');
+                              setFilter('All');
+                              setHistoryTimeframe('all');
+                              setHistorySelectedCategory('All');
+                              setHistorySelectedTag('all');
+                            }}
+                            className="px-4 py-2 bg-brand-surface hover:bg-brand-bg text-brand-primary border border-brand-border rounded-xl text-[9px] font-mono font-bold uppercase tracking-wider transition-all active:scale-95"
+                          >
+                            Reset System Filters
+                          </button>
+                        </div>
+                      ) : Object.entries(groupedTransactions).map(([date, items]) => (
+                        <motion.div 
+                          key={date} 
+                          variants={listContainer}
+                          initial="hidden"
+                          whileInView="show"
+                          viewport={{ once: true }}
+                          className="space-y-3"
+                        >
+                          {/* Segment separator sticky bar */}
+                          <motion.div variants={listItem} className="flex items-center gap-3">
+                            <span className="text-[9px] font-mono font-bold text-brand-primary/45 bg-brand-surface border border-brand-border px-2.5 py-0.5 rounded select-none shadow-[0_1px_2px_rgba(0,0,0,0.01)]">
+                              {date}
+                            </span>
+                            <div className="h-px flex-1 bg-brand-border/30" />
+                          </motion.div>
+
+                          {/* Actionable item stack */}
+                          <div className="bg-brand-surface border border-brand-border/60 rounded-xl overflow-hidden divide-y divide-brand-border/30 shadow-sm">
+                            {items.map(t => {
+                              const isIncomeFlow = t.type === 'income' || t.type === 'refund';
+                              const isSelected = t.id ? selectedTransactionIds.includes(t.id) : false;
+                              const isExpanded = t.id ? expandedTransactionId === t.id : false;
+                              return (
+                                <div key={t.id} className="flex flex-col">
+                                  <motion.div 
+                                    variants={listItem}
+                                    layoutId={t.id}
+                                    onClick={() => {
+                                      if (t.id) {
+                                        setExpandedTransactionId(isExpanded ? null : t.id);
+                                      }
+                                    }}
+                                    className={cn(
+                                      "hover:bg-brand-bg/45 py-2 px-3 sm:px-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 group relative transition-colors cursor-pointer select-none",
+                                      isExpanded && "bg-brand-bg/20"
+                                    )}
+                                  >
+                                    {/* Left context stripe indicator */}
+                                    <div className={cn(
+                                      "absolute top-0 left-0 w-0.5 h-full transition-all group-hover:w-1",
+                                      isIncomeFlow 
+                                        ? "bg-emerald-500" 
+                                        : t.isAvoidable 
+                                          ? "bg-rose-500" 
+                                          : "bg-brand-accent/30"
+                                    )} />
+
+                                    {/* Content card columns */}
+                                    <div className="flex items-center gap-2.5 min-w-0 flex-1 pl-1">
+                                      {/* Row Checkbox & Icon */}
+                                      <div className="flex items-center gap-2 shrink-0 z-10">
+                                        {t.id && (
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setSelectedTransactionIds(prev => 
+                                                prev.includes(t.id!) ? prev.filter(id => id !== t.id) : [...prev, t.id!]
+                                              );
+                                            }}
+                                            className={cn(
+                                              "w-4.5 h-4.5 rounded-full border flex items-center justify-center transition-all cursor-pointer",
+                                              isSelected 
+                                                ? "bg-brand-primary border-brand-primary text-brand-surface" 
+                                                : "border-brand-border bg-brand-bg/40 text-transparent hover:border-brand-primary/45"
+                                            )}
+                                          >
+                                            <Check className="w-2.5 h-2.5 text-brand-surface stroke-[3]" />
+                                          </button>
+                                        )}
+                                        <div className={cn(
+                                          "w-7.5 h-7.5 rounded-lg flex items-center justify-center border font-mono transition-all shrink-0 select-none bg-brand-bg/40 text-[10px]",
+                                          isIncomeFlow 
+                                            ? "text-emerald-400 border-emerald-500/10" 
+                                            : t.isAvoidable 
+                                              ? "text-rose-450 border-rose-500/10" 
+                                              : "text-brand-accent/70 border-brand-border"
+                                        )}>
+                                          {getCategoryIcon(t.category)}
+                                        </div>
+                                      </div>
+
+                                      <div className="space-y-0.5 min-w-0">
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          <p className="text-[11.5px] font-sans font-extrabold text-brand-primary leading-tight truncate max-w-sm uppercase tracking-tight flex items-center gap-1.5">
+                                            <span>{t.description}</span>
+                                            <ChevronDown className={cn("w-3 h-3 text-brand-primary/30 transition-transform duration-200 shrink-0", isExpanded && "rotate-180 text-brand-accent")} />
+                                          </p>
+                                          {t.subcategory && (
+                                            <span className="px-1 py-0.2 bg-brand-bg border border-brand-border/60 text-[7px] font-mono font-bold text-brand-primary/35 rounded uppercase tracking-wider">
+                                              {t.subcategory}
+                                            </span>
+                                          )}
+                                        </div>
+
+                                        <div className="flex flex-wrap items-center gap-1">
+                                          <span className="text-[7.5px] font-mono font-bold text-brand-primary/45 bg-brand-bg/60 px-1 py-0.2 rounded border border-brand-border/40 uppercase">
+                                            📂 {t.category}
+                                          </span>
+                                          {t.isMandatory && (
+                                            <span className="px-1 py-0.2 bg-amber-500/5 text-amber-500/90 border border-amber-500/15 text-[7px] font-bold uppercase rounded font-mono select-none">
+                                              Necessary Base
+                                            </span>
+                                          )}
+                                          {t.isAvoidable && (
+                                            <span className="px-1 py-0.2 bg-rose-500/5 text-rose-500 border border-rose-500/15 text-[7px] font-bold uppercase rounded font-mono select-none animate-pulse">
+                                              Bleed Target
+                                            </span>
+                                          )}
+                                          {t.isRecurring && (
+                                            <span className="px-1 py-0.2 bg-brand-primary/5 text-brand-primary border border-brand-border/50 text-[7px] font-bold uppercase rounded font-mono select-none">
+                                              Fixed Cycle
+                                            </span>
+                                          )}
+                                          {t.linkedGoalId && (
+                                            <span className="px-1 py-0.2 bg-emerald-500/5 text-emerald-500 border border-emerald-500/15 text-[7px] font-bold uppercase rounded font-mono select-none">
+                                              🎯 Linked Goal
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Cash Volume & Dynamic Actions */}
+                                    <div className="flex items-center justify-between sm:justify-end gap-3.5 border-t sm:border-t-0 border-brand-border/20 pt-1.5 sm:pt-0 shrink-0 select-none">
+                                      <div className="text-left sm:text-right">
+                                        <p className={cn(
+                                          "text-xs font-mono font-black tabular-nums leading-none flex items-center sm:justify-end gap-0.5",
+                                          isIncomeFlow ? "text-emerald-500" : t.isAvoidable ? "text-rose-450" : "text-brand-primary"
+                                        )}>
+                                          {isIncomeFlow ? '+' : '-'}{formatCurrency(t.amount)}
+                                        </p>
+                                        <p className="text-[7px] font-mono text-brand-primary/30 uppercase tracking-widest mt-0.5">
+                                          ⏱️ {new Date(t.date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                                        </p>
+                                      </div>
+
+                                      {/* Simple, prominent, labeled Edit & Delete buttons */}
+                                      <div className="flex items-center gap-1.5 pl-3 border-l border-brand-border/30 shrink-0">
+                                        <button 
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setEditingTransaction(t);
+                                            setCommandTab('transaction');
+                                            setShowCommandCenter(true);
+                                          }}
+                                          className="px-2 py-1 bg-brand-bg text-brand-primary hover:bg-brand-primary/10 border border-brand-border hover:border-brand-primary/20 rounded-md transition-all cursor-pointer shadow-sm flex items-center gap-1 text-[8.5px] font-mono font-bold uppercase tracking-wider"
+                                          title="Modify transaction"
+                                        >
+                                          <Edit2 className="w-3 h-3 text-brand-accent shrink-0" />
+                                          <span>Edit</span>
+                                        </button>
+                                        <button 
+                                          onClick={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            handleDeleteTransaction(t);
+                                          }}
+                                          className={cn(
+                                            "px-2 py-1 border rounded-md transition-all flex items-center justify-center gap-1 cursor-pointer shadow-sm text-[8.5px] font-mono uppercase tracking-wider font-bold",
+                                            transactionIdToConfirmDelete === t.id 
+                                              ? "bg-rose-500 text-white border-rose-600 animate-pulse px-3.5" 
+                                              : "bg-rose-500/5 hover:bg-rose-505 hover:text-white border-rose-500/10 hover:border-rose-500 text-rose-500"
+                                          )}
+                                          title="Purge transaction asset"
+                                        >
+                                          <Trash2 className="w-3 h-3 shrink-0" />
+                                          <span>{transactionIdToConfirmDelete === t.id ? "Confirm" : "Delete"}</span>
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </motion.div>
+
+                                  {/* Expandable Strategic Details panel */}
+                                  <AnimatePresence initial={false}>
+                                    {isExpanded && (
+                                      <motion.div
+                                        initial={{ opacity: 0, height: 0 }}
+                                        animate={{ opacity: 1, height: 'auto' }}
+                                        exit={{ opacity: 0, height: 0 }}
+                                        transition={{ duration: 0.2 }}
+                                        className="border-t border-brand-border/40 bg-brand-bg/15 px-4 py-3 space-y-3"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                          {/* Diagnostic Metadata */}
+                                          <div className="space-y-1.5 text-left">
+                                            <span className="text-[7.5px] font-mono font-bold text-brand-primary/45 uppercase tracking-wider block">Strategic Classification Specs</span>
+                                            <div className="text-[9.5px] text-brand-primary/80 leading-relaxed font-mono">
+                                              <p>• <b className="text-brand-primary uppercase">Flow Direction:</b> {t.type === 'income' ? 'Cash Input Stream' : t.type === 'refund' ? 'Asymmetrical Offset (Refund)' : 'Reserve Outflow Burn'}</p>
+                                              <p>• <b className="text-brand-primary uppercase">Audit Value:</b> {formatCurrency(t.amount)}</p>
+                                              <p>• <b className="text-brand-primary uppercase">Timestamp Ref:</b> {new Date(t.date).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}</p>
+                                              {t.linkedGoalId && <p>• <b className="text-emerald-500 uppercase">Linked Strategy Goal:</b> Target asset matched destination.</p>}
+                                            </div>
+                                          </div>
+
+                                          {/* Advisory projection metrics */}
+                                          <div className="space-y-1.5 text-left md:text-right flex flex-col justify-between">
+                                            <div>
+                                              <span className="text-[7.5px] font-mono font-bold text-brand-primary/45 uppercase tracking-wider block">Expected Buffer Lifespam Shift</span>
+                                              <p className="text-[9.5px] text-brand-primary/70 leading-relaxed max-w-sm md:ml-auto">
+                                                {isIncomeFlow ? (
+                                                  <span>This dynamic income inflow strengthens the operating buffer velocity positively.</span>
+                                                ) : t.isAvoidable ? (
+                                                  <span>Pruning this variable bleed immediately frees up <b className="text-rose-455 font-mono">{formatCurrency(t.amount)}</b>/month, extending the runway buffer index.</span>
+                                                ) : (
+                                                  <span>This is recognized as a fixed operating baseline expense critical to essential maintenance.</span>
+                                                )}
+                                              </p>
+                                            </div>
+
+                                            {/* Micro-inline Classification Shifter */}
+                                            {!isIncomeFlow && (
+                                              <div className="pt-2 md:pt-0">
+                                                <span className="text-[7px] font-mono font-bold text-brand-primary/35 uppercase tracking-wider block mb-1">CFO Quick Classification Re-alignment</span>
+                                                <div className="flex flex-wrap items-center gap-1 md:justify-end">
+                                                  <button
+                                                    onClick={async (e) => {
+                                                      e.stopPropagation();
+                                                      if (!t.id) return;
+                                                      await updateDoc(doc(db, 'transactions', t.id), { isMandatory: true, isAvoidable: false, isRecurring: false });
+                                                    }}
+                                                    className={cn(
+                                                      "px-2 py-1 rounded text-[7.5px] font-mono font-bold uppercase transition-all cursor-pointer border",
+                                                      t.isMandatory && !t.isRecurring
+                                                        ? "bg-amber-500/10 text-amber-500 border-amber-500/30 font-black"
+                                                        : "bg-brand-bg text-brand-primary/45 border-brand-border hover:border-brand-primary/20"
+                                                    )}
+                                                  >
+                                                    Required
+                                                  </button>
+                                                  <button
+                                                    onClick={async (e) => {
+                                                      e.stopPropagation();
+                                                      if (!t.id) return;
+                                                      await updateDoc(doc(db, 'transactions', t.id), { isMandatory: false, isAvoidable: true, isRecurring: false });
+                                                    }}
+                                                    className={cn(
+                                                      "px-2 py-1 rounded text-[7.5px] font-mono font-bold uppercase transition-all cursor-pointer border",
+                                                      t.isAvoidable
+                                                        ? "bg-rose-500/10 text-rose-500 border-rose-500/30 font-black"
+                                                        : "bg-brand-bg text-brand-primary/45 border-brand-border hover:border-brand-primary/20"
+                                                    )}
+                                                  >
+                                                    Avoidable
+                                                  </button>
+                                                  <button
+                                                    onClick={async (e) => {
+                                                      e.stopPropagation();
+                                                      if (!t.id) return;
+                                                      await updateDoc(doc(db, 'transactions', t.id), { isMandatory: true, isAvoidable: false, isRecurring: true });
+                                                    }}
+                                                    className={cn(
+                                                      "px-2 py-1 rounded text-[7.5px] font-mono font-bold uppercase transition-all cursor-pointer border",
+                                                      t.isRecurring
+                                                        ? "bg-brand-primary/10 text-brand-primary border-brand-primary/30 font-black"
+                                                        : "bg-brand-bg text-brand-primary/45 border-brand-border hover:border-brand-primary/20"
+                                                    )}
+                                                  >
+                                                    Fixed Cycle
+                                                  </button>
+                                                </div>
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </motion.div>
+                                    )}
+                                  </AnimatePresence>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </motion.div>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* TAB 2: ANALYTICS & DEEP VELOCITY SCAN */}
+                {ledgerActiveTabMenu === 'analytics' && (
+                  <motion.div
+                    key="analytics_section"
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -15 }}
+                    transition={{ duration: 0.3 }}
+                    className="grid grid-cols-1 md:grid-cols-2 gap-6"
+                  >
+                    {/* Sector weight map */}
+                    <div className="bg-brand-surface border border-brand-border p-5 rounded-xl space-y-5 shadow-sm">
+                      <div className="border-b border-brand-border/40 pb-3 flex justify-between items-center">
+                        <div className="space-y-0.5">
+                          <p className="text-[9px] font-mono font-bold text-brand-primary/30 uppercase tracking-widest">Outflow Concentration</p>
+                          <h3 className="text-xs font-black uppercase tracking-wider text-brand-primary">Outflow Sector Weight Channels</h3>
+                        </div>
+                        <PieChartIcon className="w-4 h-4 text-brand-accent/50" />
+                      </div>
+
+                      {filteredCategoryData.length > 0 ? (
+                        <div className="space-y-4 max-h-[280px] overflow-y-auto no-scrollbar pr-1">
+                          {filteredCategoryData.map((cat) => {
+                            const pct = filteredTotalExpense > 0 ? (cat.value / filteredTotalExpense) * 100 : 0;
+                            return (
+                              <div key={cat.name} className="space-y-1">
+                                <div className="flex justify-between items-center text-xs">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-6.5 h-6.5 rounded-md bg-brand-primary/5 border border-brand-border/60 flex items-center justify-center shrink-0">
+                                      {getCategoryIcon(cat.name)}
+                                    </div>
+                                    <span className="font-bold text-brand-primary text-[11px] truncate uppercase tracking-tight">{cat.name}</span>
+                                  </div>
+                                  <div className="flex items-baseline gap-1.5 font-mono text-[10.5px]">
+                                    <span className="font-bold text-brand-primary">{formatCurrency(cat.value)}</span>
+                                    <span className="text-[8.5px] text-brand-primary/45">({pct.toFixed(0)}%)</span>
+                                  </div>
+                                </div>
+                                <div className="h-1 w-full bg-brand-bg rounded-full overflow-hidden p-[1px] border border-brand-border/40">
+                                  <motion.div 
+                                    initial={{ width: 0 }}
+                                    animate={{ width: `${pct}%` }}
+                                    transition={{ duration: 0.6, ease: "easeOut" }}
+                                    className="h-full bg-brand-accent rounded-full"
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="h-44 flex items-center justify-center text-center text-brand-primary/25 text-[10px] font-mono">
+                          No category metrics recorded in active filters.
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Temporal density map */}
+                    <div className="bg-brand-surface border border-brand-border p-5 rounded-xl space-y-5 shadow-sm flex flex-col justify-between">
+                      <div className="space-y-4">
+                        <div className="border-b border-brand-border/40 pb-3 flex justify-between items-center">
+                          <div className="space-y-0.5">
+                            <p className="text-[9px] font-mono font-bold text-brand-primary/30 uppercase tracking-widest">Direct Burn Intensity</p>
+                            <h3 className="text-xs font-black uppercase tracking-wider text-brand-primary">Incremental Spending Velocity</h3>
+                          </div>
+                          <Activity className="w-4 h-4 text-brand-primary/30" />
+                        </div>
+
+                        <div className="h-44 w-full pt-1">
+                          {filteredTrendData.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                              <AreaChart data={filteredTrendData}>
+                                <defs>
+                                  <linearGradient id="colorAmountAnalytics" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="var(--color-brand-accent)" stopOpacity={0.2}/>
+                                    <stop offset="95%" stopColor="var(--color-brand-accent)" stopOpacity={0}/>
+                                  </linearGradient>
+                                </defs>
+                                <XAxis 
+                                  dataKey="date" 
+                                  axisLine={false}
+                                  tickLine={false}
+                                  tick={{ fontSize: 8, fill: 'var(--color-brand-primary)', opacity: 0.3, fontFamily: 'JetBrains Mono' }}
+                                />
+                                <Tooltip 
+                                  contentStyle={{ 
+                                    backgroundColor: '#161616', 
+                                    border: '1px solid #2B2B2B', 
+                                    borderRadius: '8px',
+                                    fontSize: '10px',
+                                    fontFamily: 'JetBrains Mono',
+                                    color: '#FFFFFF'
+                                  }}
+                                  itemStyle={{
+                                    color: '#FFFFFF',
+                                    fontWeight: 'bold',
+                                    fontSize: '10px'
+                                  }}
+                                  labelStyle={{
+                                    color: 'rgba(255, 255, 255, 0.5)',
+                                    fontSize: '10px',
+                                    marginBottom: '2px'
+                                  }}
+                                  formatter={(value: any) => [formatCurrency(Number(value)), "Velocity Outflow"]}
+                                />
+                                <Area 
+                                  type="monotone" 
+                                  dataKey="amount" 
+                                  stroke="var(--color-brand-accent)" 
+                                  fillOpacity={1} 
+                                  fill="url(#colorAmountAnalytics)" 
+                                  strokeWidth={1.5}
+                                />
+                              </AreaChart>
+                            </ResponsiveContainer>
+                          ) : (
+                            <div className="h-full flex items-center justify-center text-center text-brand-primary/20 text-[10px] font-mono">
+                              No chronological activity trend compiled.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4 mt-4 pt-3 border-t border-brand-border/40">
+                        <div className="space-y-0.5 text-left">
+                          <span className="text-[8px] font-mono text-brand-primary/45 uppercase tracking-wide block">Daily Burn Power</span>
+                          <p className="text-sm font-mono font-bold text-brand-primary">
+                            {formatCurrency(filteredTrendData.length > 0 ? (filteredHistorySummary.spent / Math.max(1, filteredTrendData.length)) : 0)}
+                          </p>
+                        </div>
+                        <div className="space-y-0.5 text-right">
+                          <span className="text-[8px] font-mono text-brand-primary/45 uppercase tracking-wide block">Leverage Ratio</span>
+                          <p className="text-sm font-mono font-bold text-emerald-500">
+                            {(filteredHistorySummary.spent > 0 ? (filteredHistorySummary.earned / filteredHistorySummary.spent) : 1).toFixed(1)}x
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* TAB 3: MCKINSEY COST OPTIMIZER */}
+                {ledgerActiveTabMenu === 'optimizer' && (
+                  <motion.div
+                    key="optimizer_section"
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -15 }}
+                    transition={{ duration: 0.3 }}
+                    className="space-y-6"
+                  >
+                    {/* Alert Hub Card */}
+                    <div className="bg-brand-surface border border-brand-border rounded-xl p-5 shadow-sm relative overflow-hidden">
+                      <div className="absolute top-0 right-0 w-48 h-48 bg-rose-500/5 rounded-full blur-2xl pointer-events-none -mr-16 -mt-16" />
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <Sparkles className="w-4 h-4 text-rose-500 animate-pulse" />
+                            <h3 className="text-xs font-sans font-black uppercase tracking-wider text-rose-500">McKinsey Variable Leakage Scanner</h3>
+                          </div>
+                          <p className="text-[11px] font-sans text-brand-primary/75 max-w-2xl leading-relaxed">
+                            The analytical scanner found <b className="text-rose-450">{filteredTransactions.filter(t => t.isAvoidable).length} variable leakage entries</b> draining a cumulative velocity of <b className="text-rose-450 font-mono">{formatCurrency(filteredAvoidableLoss)}</b> of active capital buffers. Pruning these targets boosts dynamic F-Index efficiency immediately.
+                          </p>
+                        </div>
+
+                        {/* Reclassify tool button info */}
+                        <div className="px-3.5 py-2 bg-rose-500/5 border border-rose-500/10 rounded-lg text-center shrink-0">
+                          <span className="text-[8px] font-mono font-bold block text-rose-500/60 uppercase">Aggreagate Leaked Base</span>
+                          <span className="text-base font-mono font-black text-rose-500">{formatCurrency(filteredAvoidableLoss)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Scan result list */}
+                    <div className="space-y-4">
+                      {filteredTransactions.filter(t => t.isAvoidable).length === 0 ? (
+                        <div className="bg-brand-surface border border-brand-border border-dashed rounded-xl p-12 text-center space-y-3">
+                          <ShieldCheck className="w-10 h-10 text-emerald-500 mx-auto opacity-70" />
+                          <div className="space-y-1">
+                            <p className="text-sm font-bold text-brand-primary uppercase tracking-tight">Cushion Optimized & Fully Pruned</p>
+                            <p className="text-[9px] text-brand-primary/40 font-mono max-w-xs mx-auto">
+                              No variable leakages exist within matching filters. Frictional operating loss is at 0.
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {filteredTransactions.filter(t => t.isAvoidable).map((t) => {
+                            // contextual advisory directives matching McKinsey guidelines
+                            let diagnosticTactic = "Discretionary variable bleed. Strategist suggests cutting immediate cost payload to protect reserves.";
+                            const desc = t.description.toLowerCase();
+                            const cat = t.category.toLowerCase();
+                            if (desc.includes('swiggy') || desc.includes('zomato') || cat.includes('dining')) {
+                              diagnosticTactic = "Frictional Lifestyle Bleeding. Limit orders to prime milestones; pre-commit a micro-budget layout of 1.5% of income to restrain impulse.";
+                            } else if (desc.includes('amazon') || desc.includes('flipkart') || cat.includes('shopping')) {
+                              diagnosticTactic = "Impulse Checkout Leak. Inject an operational delay of 48 hours before finalized purchase. Establish strict waiting queues.";
+                            } else if (desc.includes('uber') || desc.includes('ola') || cat.includes('transport') || desc.includes('cab')) {
+                              diagnosticTactic = "Frictional Commuter Overhead. Compare dynamic surge premium cost vs structured transport modes. Optimize micro-trip density.";
+                            } else if (cat.includes('subscriptions') || desc.includes('netflix')) {
+                              diagnosticTactic = "Digital Shelf Leakage. Prune subscriptions under 3 active monthly hours. Rotate cycles seasonally instead of overlapping feeds.";
+                            }
+
+                            return (
+                              <div 
+                                key={t.id}
+                                className="bg-brand-surface border border-brand-border p-4 rounded-xl space-y-3 relative hover:border-rose-500/30 transition-all duration-200"
+                              >
+                                <div className="absolute top-4 right-4 text-xs font-mono font-black text-rose-400">
+                                  -{formatCurrency(t.amount)}
+                                </div>
+
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[7.5px] font-mono font-bold bg-brand-bg px-2 py-0.5 border border-brand-border rounded uppercase text-brand-primary/50">
+                                      {t.category}
+                                    </span>
+                                    {t.subcategory && (
+                                      <span className="text-[7.5px] font-mono font-bold text-brand-primary/25">
+                                        / {t.subcategory}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <h4 className="text-xs font-black uppercase tracking-tight text-brand-primary leading-tight">
+                                    {t.description}
+                                  </h4>
+                                </div>
+
+                                {/* Advisory Directive Box styled like McKinsey presentation */}
+                                <div className="bg-brand-bg/60 p-2.5 rounded border border-brand-border/60 text-[9px] font-sans text-brand-primary/80 leading-relaxed italic border-l-2 border-l-rose-500">
+                                  <span className="font-mono text-[7px] font-bold text-rose-500 block uppercase tracking-wider not-italic mb-0.5">Tactical Pruning Directive:</span>
+                                  "{diagnosticTactic}"
+                                </div>
+
+                                {/* PERSISTENCE ACTIONS */}
+                                <div className="flex items-center justify-between pt-2 border-t border-brand-border/40 text-[9.5px] gap-2">
+                                  {/* Action items stack */}
+                                  <div className="flex items-center gap-1.5">
+                                    <button
+                                      onClick={async () => {
+                                        if (!t.id) return;
+                                        try {
+                                          // set mandatory = true and avoidable = false inside database directly!
+                                          await updateDoc(doc(db, 'transactions', t.id), {
+                                            isMandatory: true,
+                                            isAvoidable: false
+                                          });
+                                        } catch (error) {
+                                          console.error("Reclassification failed", error);
+                                        }
+                                      }}
+                                      className="text-[8px] font-mono font-bold uppercase text-brand-primary/45 hover:text-brand-primary bg-brand-bg px-2.5 py-1.5 rounded border border-brand-border cursor-pointer active:scale-95"
+                                    >
+                                      Required Core
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        setEditingTransaction(t);
+                                        setCommandTab('transaction');
+                                        setShowCommandCenter(true);
+                                      }}
+                                      className="px-2 py-1 bg-brand-bg hover:bg-brand-primary/10 text-brand-primary border border-brand-border hover:border-brand-primary/20 rounded transition-all cursor-pointer shadow-sm flex items-center gap-1 text-[8.5px] font-mono font-bold uppercase tracking-wider"
+                                      title="Modify transaction"
+                                    >
+                                      <Edit2 className="w-3 h-3 text-brand-accent shrink-0" />
+                                      <span>Edit</span>
+                                    </button>
+                                  </div>
+
+                                  {/* Direct delete action */}
+                                  <button
+                                    onClick={() => {
+                                      setTransactionIdToConfirmDelete(t.id || null);
+                                      handleDeleteTransaction(t);
+                                    }}
+                                    className={cn(
+                                      "px-2.5 py-1 font-mono text-[8px] uppercase font-black rounded border cursor-pointer transition-all flex items-center gap-1 shadow-sm",
+                                      transactionIdToConfirmDelete === t.id 
+                                        ? "bg-rose-500 text-white border-rose-600 animate-pulse px-3.5" 
+                                        : "bg-rose-500/5 hover:bg-rose-500 hover:text-white border-rose-500/10 hover:border-rose-500 text-rose-500"
+                                    )}
+                                  >
+                                    <Trash2 className="w-3 h-3 shrink-0" />
+                                    <span>{transactionIdToConfirmDelete === t.id ? "Confirm" : "Prune Cost"}</span>
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* TAB 4: CAPITAL CUSHION ALLOCATOR & RUNWAY MODEL */}
+                {ledgerActiveTabMenu === 'allocator' && (
+                  <motion.div
+                    key="allocator_section"
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -15 }}
+                    transition={{ duration: 0.3 }}
+                    className="grid grid-cols-1 lg:grid-cols-12 gap-6"
+                  >
+                    {/* Simulator and preset selector */}
+                    <div className="lg:col-span-7 bg-brand-surface border border-brand-border p-5 rounded-xl space-y-6 shadow-sm">
+                      <div className="border-b border-brand-border/40 pb-3">
+                        <span className="text-[9px] font-mono font-bold text-brand-primary/30 uppercase tracking-widest block">Unallocated Allocation</span>
+                        <h3 className="text-xs font-black uppercase tracking-wider text-brand-primary">Dynamic Capital Surplus Allocator</h3>
+                      </div>
+
+                      {/* Warning or cockpit */}
+                      {filteredHistorySummary.net <= 0 ? (
+                        <div className="bg-rose-500/5 border border-rose-500/10 p-4 rounded-xl text-center space-y-2">
+                          <AlertTriangle className="w-6 h-6 text-rose-500 mx-auto" />
+                          <p className="text-xs font-bold text-brand-primary uppercase">Reserve Deficit</p>
+                          <p className="text-[9px] font-mono text-brand-primary/40 max-w-sm mx-auto leading-normal">
+                            Aggregate unallocated dynamic buffer is negative ({formatCurrency(filteredHistorySummary.net)}). Prune leakages under the Optimizer tab to build dynamic capital.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-6">
+                          {/* Choose Strategy */}
+                          <div className="space-y-3">
+                            <span className="text-[8px] font-mono font-bold text-brand-primary/45 uppercase tracking-wide block">Strategic Asset Preset</span>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 bg-brand-bg p-1 rounded-xl border border-brand-border">
+                              {[
+                                { id: 'conservative', label: '🛡️ Conservative (Shield)' },
+                                { id: 'balanced', label: '📈 Balanced (McKinsey)' },
+                                { id: 'aggressive', label: '⚡ Aggressive (Velocity)' }
+                              ].map((preset) => (
+                                <button
+                                  key={preset.id}
+                                  onClick={() => setLedgerAllocationPreset(preset.id as any)}
+                                  className={cn(
+                                    "py-2 px-1 rounded-lg text-[8px] font-mono font-bold uppercase transition-all select-none truncate text-center",
+                                    ledgerAllocationPreset === preset.id
+                                      ? "bg-brand-primary text-brand-surface font-black shadow-sm"
+                                      : "text-brand-primary/40 hover:text-brand-primary hover:bg-brand-surface/20"
+                                  )}
+                                >
+                                  {preset.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Live Math Bar Distribution based on selected Preset */}
+                          {(() => {
+                            const cushion = filteredHistorySummary.net;
+                            // Distribution metrics
+                            let emPct = 80;
+                            let sipPct = 0;
+                            let debtPct = 20;
+                            if (ledgerAllocationPreset === 'balanced') {
+                              emPct = 30; sipPct = 40; debtPct = 30;
+                            } else if (ledgerAllocationPreset === 'aggressive') {
+                              emPct = 25; sipPct = 75; debtPct = 0;
+                            }
+
+                            const emVal = cushion * (emPct / 100);
+                            const sipVal = cushion * (sipPct / 100);
+                            const debtVal = cushion * (debtPct / 100);
+
+                            return (
+                              <div className="space-y-5 bg-brand-bg/50 p-4 rounded-xl border border-brand-border/40">
+                                <div className="space-y-1">
+                                  <span className="text-[8.5px] font-mono text-brand-primary/45 uppercase block">Simulated Allocation map:</span>
+                                  <div className="h-3 w-full bg-brand-bg rounded-md overflow-hidden border border-brand-border/40 p-[1.5px] flex">
+                                    <div className="h-full bg-emerald-500 transition-all duration-300" style={{ width: `${emPct}%` }} title={`Emergency Fund: ${emPct}%`} />
+                                    <div className="h-full bg-brand-accent transition-all duration-300" style={{ width: `${sipPct}%` }} title={`SIP Channels: ${sipPct}%`} />
+                                    <div className="h-full bg-indigo-500 transition-all duration-300" style={{ width: `${debtPct}%` }} title={`Debt acceleration: ${debtPct}%`} />
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-left">
+                                  <div className="space-y-0.5 border-l-2 border-emerald-500 pl-2">
+                                    <span className="text-[7.5px] font-mono font-bold text-brand-primary/40 uppercase">Emergency Fund ({emPct}%)</span>
+                                    <p className="text-xs font-mono font-black text-brand-primary">{formatCurrency(emVal)}</p>
+                                  </div>
+                                  <div className="space-y-0.5 border-l-2 border-brand-accent/70 pl-2">
+                                    <span className="text-[7.5px] font-mono font-bold text-brand-primary/40 uppercase">SIP Compounding ({sipPct}%)</span>
+                                    <p className="text-xs font-mono font-black text-brand-primary">{formatCurrency(sipVal)}</p>
+                                  </div>
+                                  <div className="space-y-0.5 border-l-2 border-indigo-500 pl-2">
+                                    <span className="text-[7.5px] font-mono font-bold text-brand-primary/40 uppercase">Debt Liquidation ({debtPct}%)</span>
+                                    <p className="text-xs font-mono font-black text-brand-primary">{formatCurrency(debtVal)}</p>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Runway Model Dial Column */}
+                    <div className="lg:col-span-5 bg-brand-surface border border-brand-border p-5 rounded-xl flex flex-col justify-between shadow-sm">
+                      <div className="space-y-5">
+                        <div className="border-b border-brand-border/40 pb-3 flex justify-between items-center">
+                          <div className="space-y-0.5">
+                            <p className="text-[9px] font-mono font-bold text-brand-primary/30 uppercase tracking-widest">Surplus Survival Runway</p>
+                            <h3 className="text-xs font-black uppercase tracking-wider text-brand-primary">Survival Capital Runway Estimator</h3>
+                          </div>
+                          <ShieldCheck className="w-4 h-4 text-emerald-500/60" />
+                        </div>
+
+                        {/* Interactive runway configuration slider */}
+                        {(() => {
+                          const baseBurnMonthly = filteredFixedCommitment > 0 ? filteredFixedCommitment : 30000;
+                          const chosenSliderVal = ledgerRunwayBurnRate || baseBurnMonthly;
+
+                          // calculate dynamic runway
+                          const totalLiquidEmergencySavings = goals
+                            .filter(g => g.type === 'savings' || g.type === 'investment' || g.type === 'gold')
+                            .reduce((acc, g) => acc + g.currentAmount, 0);
+
+                          let simulatedSimAddition = 0;
+                          if (filteredHistorySummary.net > 0) {
+                            let emPct = 80;
+                            if (ledgerAllocationPreset === 'balanced') emPct = 30;
+                            else if (ledgerAllocationPreset === 'aggressive') emPct = 25;
+                            simulatedSimAddition = filteredHistorySummary.net * (emPct / 100);
+                          }
+
+                          const finalSimReserves = totalLiquidEmergencySavings + simulatedSimAddition;
+                          const survivalRunwayMonths = finalSimReserves / Math.max(100, chosenSliderVal);
+
+                          // Style parameters
+                          const metricRating = survivalRunwayMonths > 6 ? "Critical Shield (Elite)" : survivalRunwayMonths > 3 ? "Medium Buffer (Warning)" : "High Volatility Core (Critical)";
+                          const diskColor = survivalRunwayMonths > 6 ? "text-emerald-500" : survivalRunwayMonths > 3 ? "text-amber-500" : "text-rose-500";
+                          const diskBg = survivalRunwayMonths > 6 ? "bg-emerald-500/5 border-emerald-500/10" : survivalRunwayMonths > 3 ? "bg-amber-500/5 border-amber-500/10" : "bg-rose-500/5 border-rose-500/10";
+
+                          return (
+                            <div className="space-y-6">
+                              {/* Display Dial */}
+                              <div className={cn("p-5 rounded-xl border text-center space-y-2 select-none", diskBg)}>
+                                <span className="text-[8px] font-mono text-brand-primary/45 uppercase tracking-wide block">Computed Survival Runway</span>
+                                <h2 className={cn("text-4xl font-mono font-black tracking-tight leading-none", diskColor)}>
+                                  {survivalRunwayMonths.toFixed(1)} <span className="text-xs uppercase tracking-normal">Months</span>
+                                </h2>
+                                <span className="text-[7px] font-mono font-extrabold uppercase bg-brand-bg border border-brand-border text-brand-primary/50 px-2 py-0.5 rounded">
+                                  {metricRating}
+                                </span>
+                              </div>
+
+                              {/* Interactive Monthly Burn rate Slider */}
+                              <div className="space-y-2 bg-brand-bg/40 p-3.5 rounded-xl border border-brand-border/40">
+                                <div className="flex justify-between text-[8px] font-mono text-brand-primary/40 uppercase">
+                                  <span>Simulated Monthly Burn</span>
+                                  <span className="font-bold text-brand-primary font-mono">{formatCurrency(chosenSliderVal)}</span>
+                                </div>
+                                <input 
+                                  type="range"
+                                  min="10000"
+                                  max="150000"
+                                  step="5000"
+                                  value={chosenSliderVal}
+                                  onChange={(e) => setLedgerRunwayBurnRate(Number(e.target.value))}
+                                  className="w-full h-1.5 bg-brand-border rounded-lg appearance-none cursor-pointer accent-brand-accent focus:outline-none"
+                                />
+                                <div className="flex justify-between text-[6.5px] font-mono text-brand-primary/25">
+                                  <span>₹10K/mo (Austerity)</span>
+                                  <span>₹150K/mo (Leveraged)</span>
+                                </div>
+                              </div>
+
+                              {/* Math breakdwon indicator */}
+                              <div className="space-y-1.5 text-[8.5px] font-mono text-brand-primary/40 mt-2">
+                                <div className="flex justify-between">
+                                  <span>Total Savings Assets:</span>
+                                  <span className="font-bold text-brand-primary">{formatCurrency(totalLiquidEmergencySavings)}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span>Allocated Cushion Portion:</span>
+                                  <span className="font-bold text-brand-primary text-emerald-450">+{formatCurrency(simulatedSimAddition)}</span>
+                                </div>
+                                <div className="h-px bg-brand-border/30" />
+                                <div className="flex justify-between font-bold text-brand-primary">
+                                  <span>Simulated Reserve Deck:</span>
+                                  <span>{formatCurrency(finalSimReserves)}</span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+
+                      {/* Reset slide button */}
+                      <div className="pt-4 border-t border-brand-border/40 text-center">
+                        <button
+                          onClick={() => {
+                            setLedgerRunwayBurnRate(0);
+                            setLedgerAllocationPreset('balanced');
+                          }}
+                          className="text-[8px] font-mono uppercase bg-brand-bg hover:bg-brand-surface/80 border border-brand-border px-3 py-1.5 rounded transition-all active:scale-95"
+                        >
+                          Reset Estimator Values
+                        </button>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
+          )}
 
           {activeTab === 'goals' && (
             <motion.div 
@@ -2079,26 +2682,104 @@ function MainApp() {
               transition={{ duration: 0.2, ease: "easeOut" }}
               className="space-y-6 md:space-y-8"
             >
-            <div className="flex gap-2 flex-wrap justify-center no-scrollbar pb-1">
-              <button 
-                onClick={() => setGoalsSubTab('strategy')}
-                className={cn(
-                  "px-4 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all",
-                  goalsSubTab === 'strategy' ? "bg-brand-primary text-brand-surface shadow-md" : "text-brand-primary/40 hover:text-brand-primary"
-                )}
-              >
-                Strategy
-              </button>
-              <button 
-                onClick={() => setGoalsSubTab('mandates')}
-                className={cn(
-                  "px-4 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all",
-                  goalsSubTab === 'mandates' ? "bg-brand-primary text-brand-surface shadow-md" : "text-brand-primary/40 hover:text-brand-primary"
-                )}
-              >
-                Auto-Save
-              </button>
-            </div>
+              {/* McKinsey Executive CFO Guidance Panel */}
+              <div className="bg-gradient-to-br from-brand-primary/[0.02] to-brand-primary/[0.04] border border-brand-border/60 rounded-2xl p-6 shadow-sm space-y-4">
+                <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[8px] font-black uppercase tracking-widest bg-brand-primary/10 text-brand-primary border border-brand-primary/20 px-2 py-0.5 rounded leading-none">
+                        SYSTEM ARCHITECTURE
+                      </span>
+                      <span className="text-[10px] font-mono font-bold text-brand-primary/30 uppercase tracking-wider">• Dynamic Trilateral Allocation</span>
+                    </div>
+                    <h2 className="text-xl font-black text-brand-primary tracking-tight font-sans">THE THREE PILLARS OF CAPITAL ALLOCATION</h2>
+                    <p className="text-xs text-brand-primary/60 max-w-2xl leading-relaxed">
+                      To successfully reach wealth targets, you need a cohesive system that links your ultimate objective with your physical capital flows. Artha CFO implements a structured Trilateral Model:
+                    </p>
+                  </div>
+                  <div className="hidden md:flex flex-col items-end gap-1 text-[11px] text-right font-sans font-medium text-brand-primary/40">
+                    <p className="uppercase font-bold text-brand-accent">Cash Flow Realism</p>
+                    <p className="text-[10px] tracking-tight">Sequence Over Parallel Execution</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                  <div className="bg-brand-surface border border-brand-border/40 p-4 rounded-xl space-y-1.5 relative overflow-hidden group hover:border-brand-primary/20 transition-all">
+                    <div className="flex items-center gap-2 text-brand-primary">
+                      <div className="h-6 w-6 rounded-full bg-brand-primary/5 border border-brand-primary/15 flex items-center justify-center text-[10px] font-mono font-bold">1</div>
+                      <span className="text-xs font-bold uppercase tracking-wider font-sans">Pillar 1: What</span>
+                    </div>
+                    <h4 className="text-[11px] font-bold text-brand-primary uppercase tracking-tight">Target Goals & Balances</h4>
+                    <p className="text-[10px] text-brand-primary/50 leading-relaxed uppercase">
+                      Define the hard numbers of your destination: savings accumulation, liability payoffs, and gold holdings.
+                    </p>
+                  </div>
+
+                  <div className="bg-brand-surface border border-brand-border/40 p-4 rounded-xl space-y-1.5 relative overflow-hidden group hover:border-indigo-500/20 transition-all">
+                    <div className="flex items-center gap-2 text-indigo-600">
+                      <div className="h-6 w-6 rounded-full bg-indigo-50 border border-indigo-150 flex items-center justify-center text-[10px] font-mono font-bold">2</div>
+                      <span className="text-xs font-bold uppercase tracking-wider font-sans">Pillar 2: When</span>
+                    </div>
+                    <h4 className="text-[11px] font-bold text-brand-primary uppercase tracking-tight">Timeline Roadmap</h4>
+                    <p className="text-[10px] text-brand-primary/50 leading-relaxed uppercase">
+                      Track schedule realism. See precise completion dates and run real-time CFO cash flow surplus simulations.
+                    </p>
+                  </div>
+
+                  <div className="bg-brand-surface border border-brand-border/40 p-4 rounded-xl space-y-1.5 relative overflow-hidden group hover:border-emerald-500/20 transition-all">
+                    <div className="flex items-center gap-2 text-emerald-600">
+                      <div className="h-6 w-6 rounded-full bg-emerald-50 border border-emerald-150 flex items-center justify-center text-[10px] font-mono font-bold">3</div>
+                      <span className="text-xs font-bold uppercase tracking-wider font-sans">Pillar 3: How</span>
+                    </div>
+                    <h4 className="text-[11px] font-bold text-brand-primary uppercase tracking-tight">Funding Engines</h4>
+                    <p className="text-[10px] text-brand-primary/50 leading-relaxed uppercase">
+                      Map the monthly cash inflow (recurring salary/incomes) and systematic wealth auto-save mandates (SIPs) that power Pillars 1 & 2.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Improved High-UX Sub-tab Switcher with explicit step labeling */}
+              <div className="grid grid-cols-3 gap-2 bg-brand-bg/50 p-1 rounded-2xl border border-brand-border max-w-2xl mx-auto">
+                <button 
+                  onClick={() => setGoalsSubTab('strategy')}
+                  className={cn(
+                    "flex flex-col items-center justify-center py-2.5 px-3 rounded-xl transition-all font-sans",
+                    goalsSubTab === 'strategy' 
+                      ? "bg-brand-primary text-brand-surface shadow-md border border-brand-primary" 
+                      : "text-brand-primary/40 hover:text-brand-primary border border-transparent hover:bg-brand-primary/5"
+                  )}
+                >
+                  <span className="text-[8px] font-mono font-black uppercase tracking-widest opacity-60">Pillar 1: WHAT</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider mt-0.5">TARGET BALANCES</span>
+                </button>
+
+                <button 
+                  onClick={() => setGoalsSubTab('timeline')}
+                  className={cn(
+                    "flex flex-col items-center justify-center py-2.5 px-3 rounded-xl transition-all font-sans",
+                    goalsSubTab === 'timeline' 
+                      ? "bg-brand-primary text-brand-surface shadow-md border border-brand-primary" 
+                      : "text-brand-primary/40 hover:text-brand-primary border border-transparent hover:bg-brand-primary/5"
+                  )}
+                >
+                  <span className="text-[8px] font-mono font-black uppercase tracking-widest opacity-60">Pillar 2: WHEN</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider mt-0.5">TIMELINE ROADMAP</span>
+                </button>
+
+                <button 
+                  onClick={() => setGoalsSubTab('mandates')}
+                  className={cn(
+                    "flex flex-col items-center justify-center py-2.5 px-3 rounded-xl transition-all font-sans",
+                    goalsSubTab === 'mandates' 
+                      ? "bg-brand-primary text-brand-surface shadow-md border border-brand-primary" 
+                      : "text-brand-primary/40 hover:text-brand-primary border border-transparent hover:bg-brand-primary/5"
+                  )}
+                >
+                  <span className="text-[8px] font-mono font-black uppercase tracking-widest opacity-60">Pillar 3: HOW</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider mt-0.5">FUNDING ENGINES</span>
+                </button>
+              </div>
 
             {goalsSubTab === 'strategy' ? (
               <div className="space-y-8 animate-in fade-in slide-in-from-left-4 duration-500">
@@ -2213,6 +2894,17 @@ function MainApp() {
                   </div>
                 )}
               </div>
+            ) : goalsSubTab === 'timeline' ? (
+              <div className="animate-in fade-in duration-500">
+                <GoalTimeline 
+                  goals={goals} 
+                  onEditGoal={(goal) => {
+                    setEditingGoal(goal);
+                    setCommandTab('goal');
+                    setShowCommandCenter(true);
+                  }}
+                />
+              </div>
             ) : (
               <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
                 {/* Income Streams Section */}
@@ -2256,11 +2948,12 @@ function MainApp() {
                   </div>
                 </div>
 
-                {/* SIP Portfolio Section */}
-                <div className="space-y-4 pt-6 border-t border-brand-border/30">
+                {/* SIP Portfolio Section - Conformed with absolute precision to uploaded screenshots */}
+                <div className="space-y-6 pt-6 border-t border-brand-border/30">
+                  {/* Executive Header */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between px-1 gap-3 border-b border-brand-border/40 pb-2">
                     <div className="space-y-0.5">
-                      <h2 className="text-sm font-sans font-black uppercase tracking-wider text-emerald-650 leading-none">Auto-Save Plan</h2>
+                      <h2 className="text-sm font-sans font-black uppercase tracking-wider text-emerald-600 leading-none">Auto-Save Plan</h2>
                       <p className="text-[8px] text-brand-primary/40 font-bold uppercase tracking-widest">Systematic wealth accumulation mandates</p>
                     </div>
                     <button 
@@ -2276,32 +2969,230 @@ function MainApp() {
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {sips.map(sip => (
-                      <SIPItem 
-                        key={sip.id} 
-                        sip={sip} 
-                        transactions={transactions}
-                        onLogPayment={(s) => {
-                          setEditingSip(s);
-                          setEditingTransaction(null);
-                          setCommandTab('transaction');
-                          setShowCommandCenter(true);
-                        }}
-                        onEdit={() => { 
-                          setEditingSip(sip); 
-                          setCommandTab('sip');
-                          setShowCommandCenter(true); 
-                        }} 
-                        onDelete={() => handleDeleteSIP(sip.id!)}
-                      />
-                    ))}
-                    {sips.length === 0 && (
-                      <div className="col-span-full py-12 text-center border border-dashed border-brand-border rounded-xl bg-brand-surface/30">
-                        <p className="data-label text-brand-primary/25">No automated plans configured</p>
+                  {/* Dynamic Screenshot-inspired SIP Portfolio Dashboard Overview Box */}
+                  {(() => {
+                    const activeSips = sips.filter(s => s.status === 'active');
+                    
+                    let dailySum = 0;
+                    let weeklySum = 0;
+                    let fortnightlySum = 0;
+                    let monthlySum = 0;
+                    let quarterlySum = 0;
+                    let totalMonthlyEquivalent = 0;
+
+                    activeSips.forEach(s => {
+                      const amt = s.amount;
+                      const freq = (s.frequency || 'monthly') as string;
+                      
+                      if (freq === 'daily') {
+                        dailySum += amt;
+                        totalMonthlyEquivalent += amt * 30;
+                      } else if (freq === 'weekly') {
+                        weeklySum += amt;
+                        totalMonthlyEquivalent += amt * 4.33;
+                      } else if (freq === 'fortnightly' || freq === '15-days') {
+                        fortnightlySum += amt;
+                        totalMonthlyEquivalent += amt * 2;
+                      } else if (freq === 'quarterly') {
+                        quarterlySum += amt;
+                        totalMonthlyEquivalent += amt / 3;
+                      } else {
+                        monthlySum += amt;
+                        totalMonthlyEquivalent += amt;
+                      }
+                    });
+
+                    const formatSipAmountCompactList = (val: number) => {
+                      if (val === 0) return '₹0';
+                      if (val >= 1000) {
+                        const kValue = val / 1000;
+                        return `₹${kValue.toFixed(1).replace(/\.0$/, '')}k`;
+                      }
+                      return `₹${val}`;
+                    };
+
+                    const formatMainApproxAmount = (val: number) => {
+                      return new Intl.NumberFormat('en-IN', {
+                        style: 'currency',
+                        currency: 'INR',
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2
+                      }).format(val);
+                    };
+
+                    return (
+                      <div className="bg-gradient-to-br from-brand-primary/[0.01] to-brand-primary/[0.03] border border-brand-border/60 rounded-2xl p-6 shadow-sm space-y-5">
+                        <div className="space-y-1">
+                          <p className="text-[9px] font-mono font-bold text-brand-primary/40 uppercase tracking-widest">Contributions this month</p>
+                          <div className="flex items-baseline gap-2">
+                            <h3 className="text-3xl font-sans font-black text-brand-primary tracking-tight">
+                              {formatMainApproxAmount(totalMonthlyEquivalent)}
+                            </h3>
+                            <span className="text-xs font-semibold text-brand-primary/40 uppercase">approx.</span>
+                          </div>
+                        </div>
+
+                        {/* Responsive 3x2 Matrix matching Screenshot */}
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-y-4 gap-x-6 pt-3 border-t border-brand-border/30">
+                          <div className="space-y-0.5">
+                            <span className="block text-[8px] font-mono font-bold text-brand-primary/30 uppercase tracking-widest">Active Plans</span>
+                            <span className="text-base font-sans font-black text-brand-primary leading-tight select-all">
+                              {activeSips.length}
+                            </span>
+                          </div>
+                          
+                          <div className="space-y-0.5 md:border-l md:border-brand-border/30 md:pl-6">
+                            <span className="block text-[8px] font-mono font-bold text-brand-primary/30 uppercase tracking-widest">Daily Cycle</span>
+                            <span className="text-base font-sans font-black text-brand-primary leading-tight">
+                              {formatSipAmountCompactList(dailySum)}
+                            </span>
+                          </div>
+
+                          <div className="space-y-0.5 border-l border-brand-border/30 pl-6 md:border-l md:border-brand-border/30 md:pl-6">
+                            <span className="block text-[8px] font-mono font-bold text-brand-primary/30 uppercase tracking-widest">Weekly Cycle</span>
+                            <span className="text-base font-sans font-black text-brand-primary leading-tight">
+                              {formatSipAmountCompactList(weeklySum)}
+                            </span>
+                          </div>
+
+                          <div className="space-y-0.5 border-t border-brand-border/30 pt-4">
+                            <span className="block text-[8px] font-mono font-bold text-brand-primary/30 uppercase tracking-widest font-sans">Fortnightly (15-days)</span>
+                            <span className="text-base font-sans font-black text-brand-primary leading-tight">
+                              {formatSipAmountCompactList(fortnightlySum)}
+                            </span>
+                          </div>
+
+                          <div className="space-y-0.5 border-t border-brand-border/30 pt-4 md:border-l md:border-brand-border/30 md:pl-6">
+                            <span className="block text-[8px] font-mono font-bold text-brand-primary/30 uppercase tracking-widest">Monthly Cycle</span>
+                            <span className="text-base font-sans font-black text-brand-primary leading-tight">
+                              {formatSipAmountCompactList(monthlySum)}
+                            </span>
+                          </div>
+
+                          <div className="space-y-0.5 border-t border-brand-border/30 pt-4 border-l border-brand-border/30 pl-6 md:border-l md:border-brand-border/30 md:pl-6">
+                            <span className="block text-[8px] font-mono font-bold text-brand-primary/30 uppercase tracking-widest font-sans">Quarterly Cycle</span>
+                            <span className="text-base font-sans font-black text-brand-primary leading-tight">
+                              {formatSipAmountCompactList(quarterlySum)}
+                            </span>
+                          </div>
+                        </div>
                       </div>
-                    )}
+                    );
+                  })()}
+
+                  {/* Filter Toolbar Section with Full Grouping Capabilities */}
+                  <div className="bg-brand-bg/40 p-3 rounded-2xl border border-brand-border/60 space-y-3">
+                    <div className="flex flex-col md:flex-row gap-3">
+                      {/* Search Bar */}
+                      <div className="flex-1 relative">
+                        <input 
+                          type="text" 
+                          value={sipSearchQuery}
+                          onChange={(e) => setSipSearchQuery(e.target.value)}
+                          placeholder="SEARCH MANDATES..." 
+                          className="w-full bg-brand-surface border border-brand-border/60 rounded-xl py-1.5 pl-4 pr-10 text-[10px] uppercase font-mono font-extrabold text-brand-primary outline-none focus:border-brand-primary/40 transition-all placeholder:text-brand-primary/20"
+                        />
+                        {sipSearchQuery && (
+                          <button 
+                            onClick={() => setSipSearchQuery('')}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] font-bold text-rose-500 font-mono uppercase"
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Status Pills Filter */}
+                      <div className="flex gap-1 bg-brand-surface p-1 rounded-xl border border-brand-border/60">
+                        {(['all', 'active', 'paused'] as const).map(p => (
+                          <button 
+                            key={p} 
+                            onClick={() => setSipFilterStatus(p)}
+                            className={cn(
+                              "px-3 py-1 rounded-lg text-[8px] font-mono font-extrabold uppercase tracking-widest transition-all leading-none",
+                              sipFilterStatus === p 
+                                ? "bg-brand-primary text-brand-surface shadow-sm font-black" 
+                                : "text-brand-primary/40 hover:text-brand-primary hover:bg-brand-primary/5"
+                            )}
+                          >
+                            {p}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Frequency Pills Filtering Bar */}
+                    <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+                      <span className="text-[7.5px] font-mono font-bold text-brand-primary/30 uppercase tracking-widest whitespace-nowrap">Frequency:</span>
+                      <div className="flex gap-1">
+                        {(['all', 'daily', 'weekly', 'fortnightly', 'monthly', 'quarterly'] as const).map(f => (
+                          <button 
+                            key={f} 
+                            onClick={() => setSipFilterFrequency(f)}
+                            className={cn(
+                              "px-2.5 py-1 rounded-md text-[8px] font-sans font-bold uppercase transition-all whitespace-nowrap leading-none border",
+                              sipFilterFrequency === f 
+                                ? "bg-brand-primary text-brand-surface border-brand-primary shadow-sm" 
+                                : "bg-brand-surface text-brand-primary/40 border-brand-border/40 hover:text-brand-primary hover:border-brand-border"
+                            )}
+                          >
+                            {f === 'fortnightly' ? '15-days' : f}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
+
+                  {/* Render Core Grid List */}
+                  {(() => {
+                    const filteredSips = sips.filter(sip => {
+                      const matchesSearch = sip.name.toLowerCase().includes(sipSearchQuery.toLowerCase()) || 
+                        (sip.schemeSubcategory && sip.schemeSubcategory.toLowerCase().includes(sipSearchQuery.toLowerCase()));
+                      
+                      const matchesStatus = sipFilterStatus === 'all' 
+                        ? true 
+                        : sipFilterStatus === 'active' 
+                          ? sip.status === 'active' 
+                          : sip.status === 'paused';
+                      
+                      const matchesFrequency = sipFilterFrequency === 'all'
+                        ? true
+                        : sipFilterFrequency === 'fortnightly'
+                          ? ((sip.frequency as string) === 'fortnightly' || (sip.frequency as string) === '15-days')
+                          : sip.frequency === sipFilterFrequency;
+                          
+                      return matchesSearch && matchesStatus && matchesFrequency;
+                    });
+
+                    return (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {filteredSips.map(sip => (
+                          <SIPItem 
+                            key={sip.id} 
+                            sip={sip} 
+                            transactions={transactions}
+                            onLogPayment={(s) => {
+                              setEditingSip(s);
+                              setEditingTransaction(null);
+                              setCommandTab('transaction');
+                              setShowCommandCenter(true);
+                            }}
+                            onEdit={() => { 
+                              setEditingSip(sip); 
+                              setCommandTab('sip');
+                              setShowCommandCenter(true); 
+                            }} 
+                            onDelete={() => handleDeleteSIP(sip.id!)}
+                          />
+                        ))}
+                        {filteredSips.length === 0 && (
+                          <div className="col-span-full py-12 text-center border border-dashed border-brand-border rounded-xl bg-brand-surface/30">
+                            <p className="data-label text-brand-primary/25">No automated plans match your filters</p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             )}
@@ -3233,6 +4124,7 @@ function GoalModalContent({ onClose, userId, goal, onDeleteGoal }: { onClose: ()
   const templates = [
     { name: 'Home Loan', target: 5000000, type: 'debt' as GoalType, interestRate: 8.5, tenureMonths: 240, emi: 45000 },
     { name: 'Emergency Fund', target: 500000, type: 'savings' as GoalType },
+    { name: 'Gold Reserve (SGB)', target: 200000, type: 'gold' as GoalType, isScheme: true, maturityValue: 240000 },
     { name: 'Growth Seed', target: 1000000, type: 'investment' as GoalType },
     { name: 'Global Travel', target: 400000, type: 'lifestyle' as GoalType }
   ];
@@ -3308,6 +4200,8 @@ function GoalModalContent({ onClose, userId, goal, onDeleteGoal }: { onClose: ()
                   setName(tmp.name);
                   setTargetAmount(tmp.target.toString());
                   setType(tmp.type);
+                  setIsScheme(tmp.isScheme || false);
+                  if (tmp.maturityValue) setMaturityValue(tmp.maturityValue.toString());
                   if (tmp.interestRate) setInterestRate(tmp.interestRate.toString());
                   if (tmp.tenureMonths) setTenureMonths(tmp.tenureMonths.toString());
                   if (tmp.emi) setEmi(tmp.emi.toString());
@@ -3428,6 +4322,7 @@ function GoalModalContent({ onClose, userId, goal, onDeleteGoal }: { onClose: ()
               >
                 <option value="savings">SAVINGS</option>
                 <option value="investment">INVESTMENT</option>
+                <option value="gold">GOLD ACCUMULATION</option>
                 <option value="debt">LOAN PAYOFF</option>
                 <option value="lifestyle">LIFESTYLE</option>
               </select>
@@ -3454,6 +4349,37 @@ function GoalModalContent({ onClose, userId, goal, onDeleteGoal }: { onClose: ()
             </div>
           </div>
         </div>
+
+        {type !== 'debt' && (
+          <div className="grid grid-cols-2 gap-3 animate-in fade-in slide-in-from-top-2">
+            <div className="space-y-2">
+              <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Target Deadline</label>
+              <div className="relative">
+                <input 
+                  type="date"
+                  value={deadline}
+                  onChange={(e) => setDeadline(e.target.value)}
+                  className="w-full bg-brand-surface border border-brand-border rounded-lg py-2 px-3 font-mono font-bold text-xs text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none"
+                />
+              </div>
+              <p className="px-1 text-[7px] font-medium text-brand-primary/40 leading-tight">Expected completion date</p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Monthly Savings Target</label>
+              <div className="relative group">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-mono font-bold text-brand-primary/10 group-focus-within/input:text-brand-accent transition-colors text-xs">₹</span>
+                <input 
+                  type="number"
+                  value={monthlyContribution}
+                  onChange={(e) => setMonthlyContribution(e.target.value)}
+                  className="w-full bg-brand-surface border border-brand-border rounded-lg py-2 pl-7 pr-3 font-mono font-bold text-sm text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none"
+                  placeholder="0"
+                />
+              </div>
+              <p className="px-1 text-[7px] font-medium text-brand-primary/40 leading-tight">Amount allocated monthly</p>
+            </div>
+          </div>
+        )}
 
         <div className="pt-2">
           <div className="flex items-center justify-between p-4 bg-brand-bg/30 border border-brand-border rounded-2xl group transition-all">
@@ -3547,6 +4473,9 @@ function SIPModalContent({ onClose, userId, sip, onDeleteSIP, goals }: { onClose
   const [totalInstallments, setTotalInstallments] = useState(sip?.totalInstallments?.toString() || '12');
   const [schemeType, setSchemeType] = useState<'standard' | 'gold_scheme'>(sip?.schemeType || 'standard');
   const [firstInstallmentAmount, setFirstInstallmentAmount] = useState(sip?.firstInstallmentAmount?.toString() || '');
+  const [frequency, setFrequency] = useState<'daily' | 'weekly' | 'fortnightly' | 'monthly' | 'quarterly'>(sip?.frequency || 'monthly');
+  const [schemeSubcategory, setSchemeSubcategory] = useState(sip?.schemeSubcategory || '');
+  const [mandateType, setMandateType] = useState<'standard' | 'step-up' | 'amc-sip'>(sip?.mandateType || 'standard');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -3565,7 +4494,10 @@ function SIPModalContent({ onClose, userId, sip, onDeleteSIP, goals }: { onClose
         linkedGoalId: linkedGoalId || null,
         totalInstallments: parseInt(totalInstallments),
         firstInstallmentAmount: firstInstallmentAmount ? parseFloat(firstInstallmentAmount) : null,
-        schemeType
+        schemeType,
+        frequency,
+        schemeSubcategory,
+        mandateType
       };
 
       if (sip?.id) {
@@ -3613,6 +4545,23 @@ function SIPModalContent({ onClose, userId, sip, onDeleteSIP, goals }: { onClose
             </div>
           </div>
           <div className="group/input space-y-2">
+            <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Frequency</label>
+            <select 
+              value={frequency}
+              onChange={(e) => setFrequency(e.target.value as any)}
+              className="w-full h-10 bg-brand-surface border border-brand-border rounded-lg px-4 text-[9px] font-mono font-bold text-brand-primary outline-none appearance-none cursor-pointer focus:border-brand-accent/30 transition-all uppercase"
+            >
+              <option value="daily">DAILY</option>
+              <option value="weekly">WEEKLY</option>
+              <option value="fortnightly">FORTNIGHTLY (15-DAYS)</option>
+              <option value="monthly">MONTHLY</option>
+              <option value="quarterly">QUARTERLY</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="group/input space-y-2">
             <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Cycle Date</label>
             <input 
               type="number" 
@@ -3620,9 +4569,51 @@ function SIPModalContent({ onClose, userId, sip, onDeleteSIP, goals }: { onClose
               max="31"
               value={dayOfMonth}
               onChange={(e) => setDayOfMonth(e.target.value)}
+              placeholder="e.g. 5"
               className="w-full bg-brand-surface border border-brand-border rounded-lg py-2.5 px-4 font-mono font-bold text-sm text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none"
               required
+              disabled={frequency === 'daily' || frequency === 'weekly'}
             />
+          </div>
+          <div className="group/input space-y-2">
+            <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Mandate Type</label>
+            <select 
+              value={mandateType}
+              onChange={(e) => setMandateType(e.target.value as any)}
+              className="w-full h-10 bg-brand-surface border border-brand-border rounded-lg px-4 text-[9px] font-mono font-bold text-brand-primary outline-none appearance-none cursor-pointer focus:border-brand-accent/30 transition-all uppercase"
+            >
+              <option value="standard">Standard SIP</option>
+              <option value="step-up">Step-up (+10% p.a.)</option>
+              <option value="amc-sip">Direct AMC SIP</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="group/input space-y-2">
+          <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Scheme Asset Subclass (Subcategory)</label>
+          <input 
+            type="text" 
+            value={schemeSubcategory}
+            onChange={(e) => setSchemeSubcategory(e.target.value)}
+            placeholder="e.g. ELSS, Flexi Cap, Small Cap, Liquid, Focused"
+            className="w-full bg-brand-surface border border-brand-border rounded-lg py-2.5 px-4 font-sans font-bold text-sm text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none uppercase tracking-tight"
+          />
+          <div className="flex gap-1.5 flex-wrap pt-1.5 pl-1 select-none">
+            {['ELSS Tax Saver', 'Small Cap', 'Liquid Debt', 'Flexi Cap', 'Large Cap', 'Contra Fund'].map(pill => (
+              <button 
+                type="button" 
+                key={pill}
+                onClick={() => setSchemeSubcategory(pill)}
+                className={cn(
+                  "px-2.5 py-1 rounded-lg text-[8px] font-mono font-bold tracking-wider border uppercase transition-all duration-150 leading-none",
+                  schemeSubcategory.toUpperCase() === pill.toUpperCase()
+                    ? "bg-brand-primary text-brand-surface border-brand-primary"
+                    : "bg-brand-bg/50 text-brand-primary/40 border-brand-border/60 hover:text-brand-primary hover:border-brand-border"
+                )}
+              >
+                {pill}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -3700,7 +4691,7 @@ function SIPModalContent({ onClose, userId, sip, onDeleteSIP, goals }: { onClose
             className="w-full h-10 bg-brand-bg/30 border border-brand-border rounded-lg px-4 text-[9px] font-mono font-bold text-brand-primary outline-none appearance-none cursor-pointer focus:bg-brand-surface transition-all uppercase"
           >
             <option value="">NO LINKED GOAL</option>
-            {goals.filter(g => g.type === 'investment' || g.type === 'savings').map(g => (
+            {goals.filter(g => g.type === 'investment' || g.type === 'savings' || g.type === 'gold').map(g => (
               <option key={g.id} value={g.id}>{g.name.toUpperCase()}</option>
             ))}
           </select>

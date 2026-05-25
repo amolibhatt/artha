@@ -76,9 +76,11 @@ export function GoalItem({ goal, onEdit, onDelete }: GoalItemProps) {
               "text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border",
               goal.type === 'debt' 
                 ? "bg-rose-50 border-rose-100 text-rose-600 dark:bg-rose-950/20 dark:border-rose-900/30 dark:text-rose-400" 
-                : "bg-emerald-50 border-emerald-100 text-emerald-600 dark:bg-emerald-950/20 dark:border-emerald-900/30 dark:text-emerald-400"
+                : goal.type === 'gold'
+                  ? "bg-amber-50 border-amber-200 text-amber-600 dark:bg-amber-950/20 dark:border-amber-900/30 dark:text-amber-500"
+                  : "bg-emerald-50 border-emerald-100 text-emerald-600 dark:bg-emerald-950/20 dark:border-emerald-900/30 dark:text-emerald-400"
             )}>
-              {goal.type === 'debt' ? 'Debt Payoff' : goal.type === 'investment' ? 'Investment Goal' : 'Savings Goal'}
+              {goal.type === 'debt' ? 'Debt Payoff' : goal.type === 'gold' ? 'Gold Goal' : goal.type === 'investment' ? 'Investment Goal' : 'Savings Goal'}
             </span>
             <h4 className="text-base font-bold text-brand-primary tracking-tight pt-1">
               {goal.name}
@@ -146,7 +148,9 @@ export function GoalItem({ goal, onEdit, onDelete }: GoalItemProps) {
                   ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.2)]" 
                   : goal.type === 'debt' 
                     ? "bg-brand-accent shadow-[0_0_8px_rgba(235,94,40,0.15)]" 
-                    : "bg-brand-primary"
+                    : goal.type === 'gold'
+                      ? "bg-amber-550 bg-gradient-to-r from-amber-400 to-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.25)] animate-pulse"
+                      : "bg-brand-primary"
               )}
             />
           </div>

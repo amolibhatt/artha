@@ -1,5 +1,5 @@
 export type TransactionType = 'income' | 'expense' | 'refund';
-export type GoalType = 'savings' | 'debt' | 'investment' | 'lifestyle';
+export type GoalType = 'savings' | 'debt' | 'investment' | 'lifestyle' | 'gold';
 
 export interface Transaction {
   id?: string;
@@ -49,6 +49,9 @@ export interface SIP {
   totalInstallments?: number;
   firstInstallmentAmount?: number;
   schemeType?: 'standard' | 'gold_scheme';
+  frequency?: 'daily' | 'weekly' | 'fortnightly' | 'monthly' | 'quarterly';
+  schemeSubcategory?: string;
+  mandateType?: 'standard' | 'step-up' | 'amc-sip';
 }
 
 export interface IncomeStream {
