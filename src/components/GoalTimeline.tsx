@@ -29,6 +29,7 @@ interface GoalTimelineProps {
 export function GoalTimeline({ goals, onEditGoal, isLoading }: GoalTimelineProps) {
   const [simulationSurplus, setSimulationSurplus] = useState<number>(0);
   const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null);
+  const [sequencingStrategy, setSequencingStrategy] = useState<'cascade' | 'dilution'>('cascade');
 
   // Parse today's date for distance calculations
   const today = new Date();
@@ -191,25 +192,25 @@ export function GoalTimeline({ goals, onEditGoal, isLoading }: GoalTimelineProps
   return (
     <div className="space-y-6 md:space-y-8">
       {/* McKinsey CFO Snapshot Header */}
-      <div className="bg-brand-surface p-6 border border-brand-border rounded-2xl shadow-[0_1px_3px_rgba(0,0,0,0.01)] relative overflow-hidden">
+      <div className="bg-brand-surface p-5 border border-brand-border rounded-2xl shadow-[0_1px_3px_rgba(0,0,0,0.01)] relative overflow-hidden">
         <div className="absolute right-0 top-0 h-24 w-24 bg-brand-primary/[0.01] rounded-bl-full pointer-events-none" />
         
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-brand-border/40">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-brand-border/45">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
-              <span className={cn("text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded border leading-none", statusBadge.style)}>
+              <span className={cn("text-[8px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded border leading-none", statusBadge.style)}>
                 {statusBadge.label}
               </span>
-              <span className="text-[10px] font-mono font-bold text-brand-primary/30 uppercase tracking-wider">• Timeline Diagnosis</span>
+              <span className="text-[10px] font-mono font-bold text-brand-primary/30 uppercase tracking-wider">• Timeline Feasibility Diagnosis</span>
             </div>
-            <h3 className="text-lg font-bold text-brand-primary tracking-tight">Timeline Allocation Realism Mode</h3>
-            <p className="text-xs text-brand-primary/50 max-w-2xl">{statusBadge.desc}</p>
+            <h3 className="text-base font-black text-brand-primary tracking-tight uppercase mt-1">Timeline Health check</h3>
+            <p className="text-xs text-brand-primary/55 max-w-2xl">{statusBadge.desc}</p>
           </div>
 
           <div className="flex items-center gap-1.5 md:self-start">
-            <span className="text-[10px] font-mono font-bold text-brand-primary/40 uppercase">Sync Status:</span>
-            <span className="flex items-center gap-1 text-[9px] font-bold text-emerald-500 bg-emerald-500/5 px-2 py-0.5 rounded-full border border-emerald-500/10">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" /> LIVE CALC
+            <span className="text-[10px] font-mono font-bold text-brand-primary/40 uppercase">Calculus engine:</span>
+            <span className="flex items-center gap-1 text-[9px] font-bold text-emerald-500 bg-emerald-500/5 px-2.5 py-0.5 rounded-full border border-emerald-500/15">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" /> LIVE CFO SOLVER
             </span>
           </div>
         </div>
@@ -217,25 +218,25 @@ export function GoalTimeline({ goals, onEditGoal, isLoading }: GoalTimelineProps
         {/* Allocation Metrics */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-5">
           <div className="space-y-1">
-            <span className="text-[10px] font-mono font-bold text-brand-primary/40 uppercase tracking-wider block">Currently Planned Monthly Auto-Save</span>
+            <span className="text-[10px] font-mono font-bold text-brand-primary/40 uppercase tracking-wider block">Planned Savings Outflow</span>
             <div className="flex items-baseline gap-1.5">
               <span className="text-xl font-bold text-brand-primary font-sans">{formatCurrency(totalPlannedInflow)}</span>
               <span className="text-xs font-mono text-brand-primary/30">/mo</span>
             </div>
-            <p className="text-[9px] text-brand-primary/40 leading-none">Sum of all planned goal allocations</p>
+            <p className="text-[9px] text-brand-primary/40">Total current systematic saving rate committed</p>
           </div>
 
           <div className="space-y-1 border-t sm:border-t-0 sm:border-l border-brand-border/40 pt-4 sm:pt-0 sm:pl-6">
-            <span className="text-[10px] font-mono font-bold text-brand-primary/40 uppercase tracking-wider block">Target Required Monthly Flow</span>
+            <span className="text-[10px] font-mono font-bold text-brand-primary/40 uppercase tracking-wider block">Required Savings to Hit Deadlines</span>
             <div className="flex items-baseline gap-1.5">
               <span className="text-xl font-bold text-brand-primary font-sans">{formatCurrency(totalRequiredInflow)}</span>
-              <span className="text-xs font-mono text-brand-primary/30 font-bold">/mo</span>
+              <span className="text-xs font-mono text-brand-primary/30">/mo</span>
             </div>
-            <p className="text-[9px] text-brand-primary/40 leading-none">Flow required to fulfill active deadlines</p>
+            <p className="text-[9px] text-brand-primary/40 flex items-center gap-1">Needed to fulfill target dates on time</p>
           </div>
 
-          <div className="space-y-1 border-t sm:border-t-0 sm:border-l border-brand-border/40 pt-4 sm:pt-0 sm:pl-6">
-            <span className="text-[10px] font-mono font-bold text-brand-accent uppercase tracking-wider block font-sans">Monthly Allocation Shortfall</span>
+          <div className="space-y-1 border-t sm:border-t-0 sm:border-l border-brand-border/45 pt-4 sm:pt-0 sm:pl-6">
+            <span className="text-[10px] font-mono font-bold text-brand-accent uppercase tracking-wider block font-sans">Monthly Savings Deficit Gap</span>
             <div className="flex items-baseline gap-1.5">
               <span className={cn(
                 "text-xl font-bold font-sans",
@@ -245,7 +246,11 @@ export function GoalTimeline({ goals, onEditGoal, isLoading }: GoalTimelineProps
               </span>
               <span className="text-xs font-mono text-brand-primary/30">/mo</span>
             </div>
-            <p className="text-[9px] text-brand-primary/40 leading-none">Extra budget needed to maintain all deadlines</p>
+            <p className="text-[9px] text-brand-primary/40">
+              {timelineDeficit > 0 
+                ? "Shortfall to resolve on tab 3 (Surplus Allocator)" 
+                : "Roadmap is fully funded and operating safely!"}
+            </p>
           </div>
         </div>
       </div>
@@ -549,10 +554,78 @@ export function GoalTimeline({ goals, onEditGoal, isLoading }: GoalTimelineProps
               )}
 
               {/* Dynamic sequence recommendations */}
-              <div className="space-y-3">
-                <span className="text-[10px] font-mono font-bold text-brand-primary/40 uppercase tracking-wider block">Strategic Priority Ordering</span>
-                
-                <div className="space-y-2 text-[11px] leading-relaxed text-brand-primary/70">
+              <div className="space-y-4 pt-3 border-t border-brand-border/40">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-mono font-bold text-brand-primary/40 uppercase tracking-wider block">Priority Sequencing Strategy</span>
+                  <div className="flex bg-brand-bg p-0.5 rounded-lg border border-brand-border h-[26px]">
+                    <button 
+                      onClick={() => setSequencingStrategy('cascade')}
+                      className={cn(
+                        "px-2 rounded-md text-[8px] font-bold uppercase tracking-wider transition-all",
+                        sequencingStrategy === 'cascade' 
+                          ? "bg-brand-primary text-brand-surface" 
+                          : "text-brand-primary/40 hover:text-brand-primary/70"
+                      )}
+                    >
+                      Waterfall
+                    </button>
+                    <button 
+                      onClick={() => setSequencingStrategy('dilution')}
+                      className={cn(
+                        "px-2 rounded-md text-[8px] font-bold uppercase tracking-wider transition-all",
+                        sequencingStrategy === 'dilution' 
+                          ? "bg-brand-primary text-brand-surface" 
+                          : "text-brand-primary/40 hover:text-brand-primary/70"
+                      )}
+                    >
+                      Pro-Rata
+                    </button>
+                  </div>
+                </div>
+
+                {sequencingStrategy === 'cascade' ? (
+                  <div className="space-y-3 p-3 bg-brand-bg border border-brand-border/60 rounded-xl animate-in fade-in duration-300">
+                    <p className="text-[9.5px] font-bold text-emerald-600 uppercase tracking-wider flex items-center gap-1 leading-none">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
+                      Waterfall Priority Sequence (CFO Preferred)
+                    </p>
+                    <p className="text-[9px] leading-relaxed text-brand-primary/50 uppercase">
+                      Channel cash flows sequentially down your priority stack. High priority targets achieve absolute 100% security first.
+                    </p>
+                    <div className="space-y-2 text-[10px] uppercase">
+                      <div className="flex items-start gap-2 text-brand-primary/80">
+                        <span className="text-emerald-500 font-bold shrink-0">[1]</span>
+                        <span>High-cost liabilities prepaid at maximum velocity.</span>
+                      </div>
+                      <div className="flex items-start gap-2 text-brand-primary/80">
+                        <span className="text-emerald-500 font-bold shrink-0">[2]</span>
+                        <span>First milestone (e.g., emergency reserve) achieved months faster.</span>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3 p-3 bg-rose-500/[0.01] border border-rose-500/20 rounded-xl animate-in fade-in duration-300">
+                    <p className="text-[9.5px] font-bold text-rose-500 uppercase tracking-wider flex items-center gap-1 leading-none">
+                      <span className="h-1.5 w-1.5 rounded-full bg-rose-500 shrink-0 animate-pulse" />
+                      Pro-Rata Dilution Vector (Low Resilience)
+                    </p>
+                    <p className="text-[9px] leading-relaxed text-brand-primary/50 uppercase">
+                      Splitting available monthly saves equally across all timelines stretches high priority milestones out, exposing them to liquidity crunches.
+                    </p>
+                    <div className="space-y-2 text-[10px] uppercase text-rose-500/70">
+                      <div className="flex items-start gap-2">
+                        <span className="font-bold shrink-0">[!]</span>
+                        <span>Critical milestones delayed by up to 50% compared to sequential saving.</span>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <span className="font-bold shrink-0">[!]</span>
+                        <span>Capital dilution of short-term goals leaves you vulnerable to emergency shocks.</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-2 text-[11px] leading-relaxed text-brand-primary/70 pt-2 border-t border-brand-border/40">
                   <div className="flex gap-2.5 items-start">
                     <div className="h-5 w-5 rounded-full bg-brand-bg text-brand-primary font-mono font-bold text-[10px] flex items-center justify-center border border-brand-border flex-shrink-0 select-none">
                       1
@@ -572,7 +645,7 @@ export function GoalTimeline({ goals, onEditGoal, isLoading }: GoalTimelineProps
                   </div>
                   
                   {unscheduledGoals.length > 0 && (
-                    <div className="p-3 bg-brand-bg border border-brand-border rounded-xl space-y-1.5 mt-2">
+                    <div className="p-3 bg-brand-bg border border-brand-border rounded-xl space-y-1.5 mt-2 animate-in fade-in duration-300">
                       <div className="flex items-center gap-1.5 text-brand-primary/60 text-[10px] font-bold uppercase tracking-wider">
                         <Clock className="w-3.5 h-3.5 text-brand-primary/40" />
                         <span>Unscheduled Milestones ({unscheduledGoals.length})</span>

@@ -7,7 +7,6 @@ interface StressTestConsoleProps {
   monthlyIncome: number;
   monthlyFixedExpenses: number;
   monthlyGoalCommitments: number;
-  sipMandates: number;
   liquidAssets: number;
   incomeShock: number;
   expenseShock: number;
@@ -18,7 +17,6 @@ export function StressTestConsole({
   monthlyIncome, 
   monthlyFixedExpenses, 
   monthlyGoalCommitments, 
-  sipMandates,
   liquidAssets,
   incomeShock,
   expenseShock,
@@ -27,7 +25,7 @@ export function StressTestConsole({
   
   const shockedIncome = monthlyIncome * incomeShock;
   const shockedExpenses = monthlyFixedExpenses * expenseShock;
-  const totalCommitments = monthlyGoalCommitments + sipMandates;
+  const totalCommitments = monthlyGoalCommitments;
   const shockedCommitments = totalCommitments;
   
   const netCFOFlow = shockedIncome - (shockedExpenses + shockedCommitments);
@@ -145,14 +143,10 @@ export function StressTestConsole({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 py-2 border-y border-white/10 text-[9px] font-mono leading-none">
+            <div className="grid grid-cols-1 gap-2 py-2 border-y border-white/10 text-[9px] font-mono leading-none">
               <div className="space-y-0.5">
-                 <p className="text-[7px] font-bold text-white/30 uppercase tracking-widest">Goal Commit.</p>
+                 <p className="text-[7px] font-bold text-white/30 uppercase tracking-widest">Goal Commitments</p>
                  <p className="text-white/60">{formatCurrency(monthlyGoalCommitments)}</p>
-              </div>
-              <div className="space-y-0.5 text-right">
-                 <p className="text-[7px] font-bold text-white/30 uppercase tracking-widest">SIP Mandate</p>
-                 <p className="text-emerald-400">{formatCurrency(sipMandates)}</p>
               </div>
             </div>
 

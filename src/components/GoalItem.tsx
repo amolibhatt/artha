@@ -8,9 +8,10 @@ interface GoalItemProps {
   goal: Goal;
   onEdit?: () => void;
   onDelete?: () => void;
+  stressFactor?: number;
 }
 
-export function GoalItem({ goal, onEdit, onDelete }: GoalItemProps) {
+export function GoalItem({ goal, onEdit, onDelete, stressFactor = 1 }: GoalItemProps) {
   const [isDeleting, setIsDeleting] = useState(false);
   const progress = goal.targetAmount > 0 ? Math.min((goal.currentAmount / goal.targetAmount) * 100, 100) : 0;
   const isCompleted = progress >= 100;
@@ -45,6 +46,21 @@ export function GoalItem({ goal, onEdit, onDelete }: GoalItemProps) {
   
   const remainingValue = Math.max(0, goal.targetAmount - goal.currentAmount);
 
+  const getMonthsBetween = (d1: Date, d2: Date) => {
+    const diffMonths = (d2.getFullYear() - d1.getFullYear()) * 12 + (d2.getMonth() - d1.getMonth());
+    return Math.max(1, diffMonths);
+  };
+  const todayForStress = new Date();
+  const monthsRemaining = goal.deadline ? getMonthsBetween(todayForStress, new Date(goal.deadline)) : 0;
+  const isLoanPayoff = goal.type === 'debt';
+  const requiredMonthly = monthsRemaining > 0 && !isLoanPayoff && !isCompleted
+    ? Math.ceil(remainingValue / monthsRemaining)
+    : 0;
+
+  const currentContribution = goal.monthlyContribution || 0;
+  const stressedContribution = currentContribution * stressFactor;
+  const isVulnerable = !isCompleted && !isLoanPayoff && stressFactor < 1 && currentContribution > 0 && stressedContribution < requiredMonthly;
+
   // Format deadline for normal humans
   const formattedDeadline = goal.deadline 
     ? new Date(goal.deadline).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
@@ -57,9 +73,20 @@ export function GoalItem({ goal, onEdit, onDelete }: GoalItemProps) {
         "bg-brand-surface p-5 border rounded-2xl transition-all flex flex-col justify-between relative overflow-hidden",
         isCompleted 
           ? "border-emerald-500/30 shadow-[0_4px_12px_rgba(16,185,129,0.03)]" 
-          : "border-brand-border shadow-sm hover:shadow-md"
+          : isVulnerable
+            ? "border-brand-accent/50 shadow-[0_4px_12px_rgba(235,94,40,0.04)] ring-1 ring-brand-accent/15"
+            : "border-brand-border shadow-sm hover:shadow-md"
       )}
     >
+      {isVulnerable && (
+        <div className="absolute top-0 left-0 right-0 bg-brand-accent/[0.04] py-1 border-b border-brand-accent/25 flex items-center gap-1 text-brand-accent px-4 animate-pulse">
+          <ShieldAlert className="w-3 h-3 shrink-0" />
+          <span className="text-[7.5px] font-black uppercase tracking-wider">
+            STRESS SHOCK RISK (STRESSED SAVE: {formatCurrency(stressedContribution)}/MO vs REQUIRED {formatCurrency(requiredMonthly)}/MO)
+          </span>
+        </div>
+      )}
+
       {isCompleted && (
         <div className="absolute top-0 right-0 h-16 w-16 overflow-hidden">
           <div className="absolute top-2 right-[-24px] rotate-45 bg-emerald-500 text-white text-[8px] font-bold py-1 px-8 text-center uppercase tracking-wider">
@@ -68,7 +95,7 @@ export function GoalItem({ goal, onEdit, onDelete }: GoalItemProps) {
         </div>
       )}
 
-      <div className="space-y-4">
+      <div className={cn("space-y-4", isVulnerable && "pt-4")}>
         {/* Header containing name, type badge, priority badge */}
         <div className="flex justify-between items-start">
           <div className="space-y-1">

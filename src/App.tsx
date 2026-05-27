@@ -3,11 +3,12 @@ import { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { collection, query, where, onSnapshot, addDoc, orderBy, limit, getDocFromServer, doc, updateDoc, increment, getDocs, deleteDoc, writeBatch } from 'firebase/firestore';
 import { auth, db, signIn, logout, handleFirestoreError, OperationType } from './lib/firebase';
-import { Transaction, Goal, GoalType, StressTestState, SIP, IncomeStream, TransactionType } from './types';
+import { Transaction, Goal, GoalType, StressTestState, IncomeStream, TransactionType } from './types';
 import { formatCurrency, cn } from './lib/utils';
 import { 
   Plus, 
   ShieldCheck,
+  ShieldAlert,
   Plane,
   TrendingUp, 
   TrendingDown, 
@@ -80,7 +81,6 @@ import { motion, AnimatePresence } from 'motion/react';
 import { generateQuickInsights } from './services/aiService';
 import { useFinancialEngine } from './hooks/useFinancialEngine';
 import { IncomeStreamItem } from './components/IncomeStreamItem';
-import { SIPItem } from './components/SIPItem';
 import { GoalItem } from './components/GoalItem';
 import { GoalTimeline } from './components/GoalTimeline';
 
@@ -202,7 +202,11 @@ export default function App() {
 
 function MainApp() {
   const [activeTab, setActiveTab] = useState<'home' | 'history' | 'insights' | 'goals'>('home');
-  const [goalsSubTab, setGoalsSubTab] = useState<'strategy' | 'timeline' | 'mandates'>('strategy');
+  const [goalsSubTab, setGoalsSubTab] = useState<'strategy' | 'timeline' | 'mandates' | 'surplus'>('strategy');
+  const [allocatorStrategy, setAllocatorStrategy] = useState<'cascade' | 'prorata'>('cascade');
+  const [customSurplusInput, setCustomSurplusInput] = useState<string>('');
+  const [isApplyingAllocations, setIsApplyingAllocations] = useState(false);
+  const [allocationMessage, setAllocationMessage] = useState<string | null>(null);
   const [showBudgetAlert, setShowBudgetAlert] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -210,20 +214,15 @@ function MainApp() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
-  const [sips, setSips] = useState<SIP[]>([]);
   const [incomeStreams, setIncomeStreams] = useState<IncomeStream[]>([]);
   const [showCommandCenter, setShowCommandCenter] = useState(false);
-  const [commandTab, setCommandTab] = useState<'transaction' | 'goal' | 'sip' | 'income'>('transaction');
+  const [commandTab, setCommandTab] = useState<'transaction' | 'goal' | 'income'>('transaction');
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
-  const [editingSip, setEditingSip] = useState<SIP | null>(null);
   const [editingIncomeStream, setEditingIncomeStream] = useState<IncomeStream | null>(null);
   const [showMobileTip, setShowMobileTip] = useState(false);
   const [filter, setFilter] = useState<'All' | 'Expenses' | 'Income'>('All');
   const [searchQuery, setSearchQuery] = useState('');
-  const [sipFilterStatus, setSipFilterStatus] = useState<'all' | 'active' | 'paused'>('all');
-  const [sipFilterFrequency, setSipFilterFrequency] = useState<'all' | 'daily' | 'weekly' | 'fortnightly' | 'monthly' | 'quarterly'>('all');
-  const [sipSearchQuery, setSipSearchQuery] = useState('');
   const [historySortBy, setHistorySortBy] = useState<'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc'>('date-desc');
   const [historyTimeframe, setHistoryTimeframe] = useState<'all' | '7days' | '30days' | 'this-month' | 'last-month'>('all');
   const [historySelectedCategory, setHistorySelectedCategory] = useState<string>('All');
@@ -236,6 +235,7 @@ function MainApp() {
     const saved = localStorage.getItem('stressTest');
     return saved ? JSON.parse(saved) : { incomeShock: 1, expenseShock: 1 };
   });
+  const [goalsStressFactor, setGoalsStressFactor] = useState<number>(1.0);
   const [transactionIdToConfirmDelete, setTransactionIdToConfirmDelete] = useState<string | null>(null);
   const [selectedTransactionIds, setSelectedTransactionIds] = useState<string[]>([]);
   const [expandedTransactionId, setExpandedTransactionId] = useState<string | null>(null);
@@ -288,15 +288,6 @@ function MainApp() {
       await deleteDoc(doc(db, 'goals', goalId));
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `goals/${goalId}`);
-      throw error;
-    }
-  };
-
-  const handleDeleteSIP = async (sipId: string) => {
-    try {
-      await deleteDoc(doc(db, 'sips', sipId));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `sips/${sipId}`);
       throw error;
     }
   };
@@ -407,16 +398,6 @@ function MainApp() {
       setGoals(data);
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'goals'));
 
-    const sQuery = query(
-      collection(db, 'sips'),
-      where('userId', '==', user.uid)
-    );
-
-    const unsubscribeS = onSnapshot(sQuery, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SIP));
-      setSips(data);
-    }, (error) => handleFirestoreError(error, OperationType.LIST, 'sips'));
-
     const iQuery = query(
       collection(db, 'incomeStreams'),
       where('userId', '==', user.uid)
@@ -430,7 +411,6 @@ function MainApp() {
     return () => {
       unsubscribeT();
       unsubscribeG();
-      unsubscribeS();
       unsubscribeI();
     };
   }, [user]);
@@ -466,7 +446,7 @@ function MainApp() {
     estimatedMonthlyIncome,
     savingsRate,
     incomeCoverage
-  } = useFinancialEngine(transactions, goals, 0, stressTest, sips, incomeStreams);
+  } = useFinancialEngine(transactions, goals, 0, stressTest, [], incomeStreams);
 
   // Allocation Hierarchy - Phase-wise sequence (Stabilization -> Acceleration -> Optimization)
   const stabilizationAllocValue = estimatedFixedCosts + goals.filter(g => g.type === 'debt' || g.name.toLowerCase().includes('emergency')).reduce((acc, g) => {
@@ -476,6 +456,215 @@ function MainApp() {
 
   const accelerationAllocValue = Math.max(0, (monthlyGoalCommitments + sipMandates) - (stabilizationAllocValue - estimatedFixedCosts));
   const optimizationAllocValue = strategicSpendingCeiling;
+
+  // Dynamic Surplus Goal Allocator Logic (Requested by user)
+  const computedAllocations = React.useMemo(() => {
+    const activeSurplus = customSurplusInput !== '' ? Number(customSurplusInput) : Math.max(0, balance);
+    if (activeSurplus <= 0 || goals.length === 0) return [];
+
+    // Filter out goals that are already completed
+    const activeGoals = goals.filter(g => (g.targetAmount - g.currentAmount) > 0);
+    if (activeGoals.length === 0) return [];
+
+    if (allocatorStrategy === 'cascade') {
+      // McKinsey Cascade (Sequential priority-first allocation)
+      const sortedGoals = [...activeGoals].sort((a, b) => {
+        const aIsDebt = a.type === 'debt' ? 1 : 0;
+        const bIsDebt = b.type === 'debt' ? 1 : 0;
+        if (aIsDebt !== bIsDebt) return bIsDebt - aIsDebt;
+
+        const aIsEmergency = a.name.toLowerCase().includes('emergency') || a.name.toLowerCase().includes('reserve') ? 1 : 0;
+        const bIsEmergency = b.name.toLowerCase().includes('emergency') || b.name.toLowerCase().includes('reserve') ? 1 : 0;
+        if (aIsEmergency !== bIsEmergency) return bIsEmergency - aIsEmergency;
+
+        const priorityWeights: Record<string, number> = { high: 3, medium: 2, low: 1 };
+        const aWeight = priorityWeights[a.priority || 'medium'] || 2;
+        const bWeight = priorityWeights[b.priority || 'medium'] || 2;
+        if (aWeight !== bWeight) return bWeight - aWeight;
+
+        const aGap = a.targetAmount - a.currentAmount;
+        const bGap = b.targetAmount - b.currentAmount;
+        return bGap - aGap; // Larger gap gets priority
+      });
+
+      let remainingSurplus = activeSurplus;
+      return sortedGoals.map(g => {
+        const gap = g.targetAmount - g.currentAmount;
+        const allocation = Math.min(remainingSurplus, gap);
+        remainingSurplus -= allocation;
+        return {
+          goal: g,
+          suggestedAmount: allocation,
+          newAmount: g.currentAmount + allocation,
+          newProgress: ((g.currentAmount + allocation) / g.targetAmount) * 100,
+        };
+      });
+    } else {
+      // Pro-rata Weighted Allocation
+      const goalWeightedGaps = activeGoals.map(g => {
+        const gap = g.targetAmount - g.currentAmount;
+        let multiplier = 2;
+        if (g.type === 'debt') {
+          multiplier = 4;
+        } else if (g.name.toLowerCase().includes('emergency') || g.name.toLowerCase().includes('reserve') || g.priority === 'high') {
+          multiplier = 3;
+        } else if (g.priority === 'low') {
+          multiplier = 1;
+        }
+        return {
+          goal: g,
+          gap,
+          weight: gap * multiplier
+        };
+      });
+
+      const totalWeight = goalWeightedGaps.reduce((acc, current) => acc + current.weight, 0);
+      if (totalWeight <= 0) return [];
+
+      let remainingSurplus = activeSurplus;
+      const allocations = goalWeightedGaps.map(item => {
+        const share = (item.weight / totalWeight) * activeSurplus;
+        const proposedAmt = Math.min(item.gap, Math.floor(share));
+        return {
+          goal: item.goal,
+          proposedAmount: proposedAmt,
+          gap: item.gap
+        };
+      });
+
+      let totalProposed = allocations.reduce((acc, curr) => acc + curr.proposedAmount, 0);
+      let leftToAllocate = activeSurplus - totalProposed;
+
+      if (leftToAllocate > 0) {
+        const sortedByPriority = [...allocations].sort((a, b) => {
+          const aPriority = a.goal.priority === 'high' ? 3 : a.goal.priority === 'low' ? 1 : 2;
+          const bPriority = b.goal.priority === 'high' ? 3 : b.goal.priority === 'low' ? 1 : 2;
+          return bPriority - aPriority;
+        });
+
+        for (const item of sortedByPriority) {
+          if (leftToAllocate <= 0) break;
+          const currentAllocResult = item.proposedAmount;
+          const remainingGoalGap = item.gap - currentAllocResult;
+          if (remainingGoalGap > 0) {
+            const addition = Math.min(leftToAllocate, remainingGoalGap);
+            item.proposedAmount += addition;
+            leftToAllocate -= addition;
+          }
+        }
+      }
+
+      return allocations.map(item => ({
+        goal: item.goal,
+        suggestedAmount: item.proposedAmount,
+        newAmount: item.goal.currentAmount + item.proposedAmount,
+        newProgress: ((item.goal.currentAmount + item.proposedAmount) / item.goal.targetAmount) * 100
+      }));
+    }
+  }, [customSurplusInput, balance, goals, allocatorStrategy]);
+
+  const vulnerableGoalsCount = React.useMemo(() => {
+    if (goalsStressFactor === 1.0) return 0;
+    const getMonthsBetween = (d1: Date, d2: Date) => {
+      const diffMonths = (d2.getFullYear() - d1.getFullYear()) * 12 + (d2.getMonth() - d1.getMonth());
+      return Math.max(1, diffMonths);
+    };
+    const today = new Date();
+    return goals.filter(g => g.type !== 'debt' && (g.targetAmount - g.currentAmount) > 0).filter(goal => {
+      const remainingValue = Math.max(0, goal.targetAmount - goal.currentAmount);
+      const monthsRemaining = goal.deadline ? getMonthsBetween(today, new Date(goal.deadline)) : 0;
+      const requiredMonthly = monthsRemaining > 0 ? Math.ceil(remainingValue / monthsRemaining) : 0;
+      const currentContribution = goal.monthlyContribution || 0;
+      const stressedContribution = currentContribution * goalsStressFactor;
+      return currentContribution > 0 && stressedContribution < requiredMonthly;
+    }).length;
+  }, [goals, goalsStressFactor]);
+
+  const goalsHealthSummary = React.useMemo(() => {
+    const today = new Date();
+    let completed = 0;
+    let onTrack = 0;
+    let deficit = 0;
+    let unscheduled = 0;
+
+    const getMonthsBetween = (d1: Date, d2: Date) => {
+      const diffMonths = (d2.getFullYear() - d1.getFullYear()) * 12 + (d2.getMonth() - d1.getMonth());
+      return Math.max(1, diffMonths);
+    };
+
+    goals.forEach(goal => {
+      if (goal.currentAmount >= goal.targetAmount) {
+        completed++;
+      } else if (goal.type === 'debt') {
+        onTrack++;
+      } else if (!goal.deadline) {
+        unscheduled++;
+      } else {
+        const remaining = goal.targetAmount - goal.currentAmount;
+        const months = getMonthsBetween(today, new Date(goal.deadline));
+        const required = months > 0 ? Math.ceil(remaining / months) : 0;
+        const planned = goal.monthlyContribution || 0;
+        
+        if (planned >= required - 1) {
+          onTrack++;
+        } else {
+          deficit++;
+        }
+      }
+    });
+
+    return { completed, onTrack, deficit, unscheduled, total: goals.length };
+  }, [goals]);
+
+  const handleExecuteAllocations = async () => {
+    if (computedAllocations.length === 0 || !user) return;
+    setIsApplyingAllocations(true);
+    setAllocationMessage(null);
+    
+    try {
+      const activeAllocations = computedAllocations.filter(item => item.suggestedAmount > 0);
+      if (activeAllocations.length === 0) {
+        setAllocationMessage("No active allocations to perform (values must be greater than zero).");
+        setIsApplyingAllocations(false);
+        return;
+      }
+
+      // Update goal amounts in Firestore
+      const goalUpdates = activeAllocations.map(item => {
+        const goalRef = doc(db, 'goals', item.goal.id!);
+        return updateDoc(goalRef, {
+          currentAmount: item.newAmount
+        });
+      });
+      await Promise.all(goalUpdates);
+      
+      // Log matching physical transaction entries so that cash flow history is transparent & complete
+      const todayStr = new Date().toISOString();
+      const txnLoggers = activeAllocations.map(item => {
+        return addDoc(collection(db, 'transactions'), {
+          amount: item.suggestedAmount,
+          category: item.goal.type === 'debt' ? 'Debt Payoff' : 'Investment Contribution',
+          subcategory: item.goal.name,
+          date: todayStr,
+          description: `Strategic CFO Surplus Allocation to ${item.goal.name}`,
+          type: item.goal.type === 'debt' ? 'expense' : 'expense',
+          isMandatory: item.goal.type === 'debt',
+          isAvoidable: false,
+          linkedGoalId: item.goal.id!,
+          userId: user.uid
+        });
+      });
+      await Promise.all(txnLoggers);
+
+      setAllocationMessage(`Surplus Savings Allocation Successfully Applied! Distributed cash contributions across ${activeAllocations.length} goals.`);
+      setCustomSurplusInput('');
+    } catch (error: any) {
+      console.error("Savings Allocation Failure:", error);
+      setAllocationMessage(`Failed to allocate surplus savings: ${error.message || error}`);
+    } finally {
+      setIsApplyingAllocations(false);
+    }
+  };
 
   const [insights, setInsights] = useState<string[]>([]);
   useEffect(() => {
@@ -1088,7 +1277,7 @@ function MainApp() {
             >
               {/* Core Financial KPI View */}
               <div className="w-full">
-                {/* 1. Amount Remaining (Net Surplus) */}
+                {/* 1. Net Cash Surplus Dashboard Card */}
                 <div className="bg-brand-surface border border-brand-border rounded-xl p-5 flex flex-col justify-between shadow-[0_2px_8px_rgba(0,0,0,0.02)] hover:border-brand-primary/20 transition-all duration-300">
                   <div className="space-y-4">
                     <div className="flex justify-between items-center">
@@ -1098,7 +1287,7 @@ function MainApp() {
                         ) : (
                           <TrendingDown className="w-3.5 h-3.5 text-rose-500" />
                         )}
-                        <span>Amount Remaining</span>
+                        <span>Net Cash Flow</span>
                       </div>
                       
                       {/* Strategic Badges for CFO Mode */}
@@ -1109,12 +1298,12 @@ function MainApp() {
                             ? "bg-emerald-500/5 text-emerald-500 border-emerald-500/10" 
                             : "bg-rose-500/5 text-rose-500 border-rose-500/10"
                         )}>
-                          {savingsEfficiency.toFixed(0)}% Savings Rate
+                          Savings Rate: {savingsEfficiency.toFixed(0)}%
                         </span>
                         {runwayMonths > 0 && (
                           <span className="text-[8px] font-bold text-brand-accent uppercase tracking-wider bg-brand-accent/5 px-2 py-0.5 rounded border border-brand-accent/10 flex items-center gap-1">
                             <ShieldCheck className="w-2.5 h-2.5" />
-                            {runwayMonths.toFixed(1)}m Runway
+                            Runway: {runwayMonths.toFixed(1)} Months
                           </span>
                         )}
                       </div>
@@ -1127,7 +1316,7 @@ function MainApp() {
                       )}>
                         {formatCurrency(balance)}
                       </h3>
-                      <p className="text-[9px] font-mono text-brand-primary/30 uppercase tracking-widest font-bold">Unallocated Net War Chest</p>
+                      <p className="text-[9px] font-mono text-brand-primary/30 uppercase tracking-widest font-bold">Unallocated Cash Cushion</p>
                     </div>
 
                     {/* Miniature Cash Flow Gauge */}
@@ -1150,8 +1339,8 @@ function MainApp() {
                   </div>
 
                   <div className="pt-3 mt-4 border-t border-brand-border/40 flex items-center justify-between text-[9.5px]">
-                    <span className="text-brand-primary/40 font-medium">Net position surplus cushion</span>
-                    <span className="font-mono text-brand-primary/35">Total Income - All Expenses</span>
+                    <span className="text-brand-primary/40 font-medium">Net Monthly Surplus</span>
+                    <span className="font-mono text-brand-primary/35">Total Income - Total Expenses</span>
                   </div>
                 </div>
               </div>
@@ -1316,15 +1505,15 @@ function MainApp() {
                 )}
               </div>
 
-              {/* AI CFO Strategic Pulse Briefing Only */}
+              {/* AI CFO Pulse Briefing Only */}
               <div className="bg-brand-surface border border-brand-border p-5 rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.01)] flex flex-col justify-between space-y-4">
                 <div className="space-y-3">
                   <div className="flex items-center gap-1.5 text-[9px] font-mono font-bold text-brand-primary/40 uppercase tracking-widest">
                     <Sparkles className="w-3.5 h-3.5 text-brand-accent" />
-                    <span>AI CFO Strategic Pulse Briefing</span>
+                    <span>AI CFO Pulse Briefing</span>
                   </div>
                   <p className="text-sm font-sans font-medium text-brand-primary/80 leading-relaxed">
-                    {insights[0] || "Your active strategist is compiling raw cash flows. Your McKinsey-style roadmap will auto-synthesize here as transactions are fed."}
+                    {insights[0] || "Your active strategist is compiling raw cash flows. Your strategic savings roadmap will automatically form here as transactions are added."}
                   </p>
                 </div>
                 <div className="pt-2">
@@ -1349,26 +1538,21 @@ function MainApp() {
               transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
               className="space-y-6 md:space-y-8 px-1"
             >
-              {/* McKinsey-Grade Ledger Tab & Control Deck */}
+              {/* Elegant Ledger Tab & Control Deck */}
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-brand-border pb-6">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] uppercase font-mono tracking-widest px-2 py-0.5 bg-brand-accent/5 border border-brand-accent/15 text-brand-accent rounded font-bold">
-                      Corporate CFO Engine
-                    </span>
-                    <h2 className="section-header !mb-0 !text-xl tracking-tight">Financial Ledger Workspace</h2>
-                  </div>
-                  <p className="data-label">Comprehensive audited cash flow registers, multi-dimensional query index, and dynamic allocation overlays</p>
+                <div className="space-y-0.5">
+                  <h2 className="text-sm font-sans font-black uppercase tracking-wider text-brand-primary leading-none">Transactions & Ledger</h2>
+                  <p className="text-[8px] text-brand-primary/40 font-bold uppercase tracking-widest">Review cash flow logs and adjust savings strategies</p>
                 </div>
 
                 {/* Subview Toggle deck */}
-                <div className="flex flex-wrap items-center bg-brand-bg p-1 rounded-xl border border-brand-border gap-0.5 shadow-sm">
+                <div className="flex items-center bg-brand-bg p-1 rounded-xl border border-brand-border gap-1 shadow-sm overflow-x-auto no-scrollbar max-w-full whitespace-nowrap scroll-smooth">
                   {(['all', 'analytics', 'optimizer', 'allocator'] as const).map((tabId) => {
                     const labels: Record<string, string> = {
-                      all: "📜 Ledger Feed",
-                      analytics: "📊 Velocity",
-                      optimizer: "🛡️ Cost Optimizer",
-                      allocator: "💰 Cushion Allocator",
+                      all: "All Logs",
+                      analytics: "Analytics",
+                      optimizer: "Optimizer",
+                      allocator: "Allocator",
                     };
                     return (
                       <button
@@ -1383,7 +1567,7 @@ function MainApp() {
                           }
                         }}
                         className={cn(
-                          "px-3 py-2 rounded-lg text-[9.5px] font-mono font-bold uppercase tracking-wider transition-all duration-250 whitespace-nowrap",
+                          "px-3 py-1.5 rounded-lg text-[9.5px] font-mono font-bold uppercase tracking-wider transition-all duration-250 shrink-0",
                           ledgerActiveTabMenu === tabId
                             ? "bg-brand-primary text-brand-surface font-black"
                             : "text-brand-primary/45 hover:text-brand-primary hover:bg-brand-surface/30"
@@ -1397,13 +1581,14 @@ function MainApp() {
               </div>
 
               {/* McKinsey Executive Metrics Corridor */}
-              <div className="grid grid-cols-2 lg:grid-cols-5 gap-2.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 w-full">
                 {/* 1. Net reserve */}
-                <div className="bg-brand-surface border border-brand-border p-2.5 px-3.5 rounded-xl flex items-center justify-between hover:border-brand-primary/20 transition-all duration-200 shadow-sm">
+                <div className="bg-brand-surface border border-brand-border p-2.5 px-3.5 rounded-xl flex items-center justify-between hover:border-brand-primary/20 transition-all duration-200 shadow-sm" title="Your direct net surplus (All Income minus All Expenses in current view)">
                   <div className="space-y-0.5">
                     <span className="text-[7.5px] font-mono font-bold text-brand-primary/45 uppercase tracking-wider block">Strategic Cushion</span>
+                    <span className="text-[6.5px] text-brand-primary/30 font-bold block leading-none">Net savings (Income - Spend)</span>
                     <h3 className={cn(
-                      "text-sm sm:text-base font-mono font-black tracking-tight",
+                      "text-sm sm:text-base font-mono font-black tracking-tight mt-1",
                       filteredHistorySummary.net >= 0 ? "text-brand-primary" : "text-rose-500"
                     )}>
                       {filteredHistorySummary.net >= 0 ? '+' : ''}{formatCurrency(filteredHistorySummary.net)}
@@ -1413,10 +1598,11 @@ function MainApp() {
                 </div>
 
                 {/* 2. Direct burn */}
-                <div className="bg-brand-surface border border-brand-border p-2.5 px-3.5 rounded-xl flex items-center justify-between hover:border-brand-primary/20 transition-all duration-200 shadow-sm">
+                <div className="bg-brand-surface border border-brand-border p-2.5 px-3.5 rounded-xl flex items-center justify-between hover:border-brand-primary/20 transition-all duration-200 shadow-sm" title="Total expenses occurred in the current active filters">
                   <div className="space-y-0.5">
                     <span className="text-[7.5px] font-mono font-bold text-brand-primary/45 uppercase tracking-wider block">Direct Burn</span>
-                    <h3 className="text-sm sm:text-base font-mono font-black tracking-tight text-brand-primary">
+                    <span className="text-[6.5px] text-brand-primary/30 font-bold block leading-none">Total spend / outflow money</span>
+                    <h3 className="text-sm sm:text-base font-mono font-black tracking-tight text-brand-primary mt-1">
                       {formatCurrency(filteredHistorySummary.spent)}
                     </h3>
                   </div>
@@ -1424,10 +1610,11 @@ function MainApp() {
                 </div>
 
                 {/* 3. Dynamic inflows */}
-                <div className="bg-brand-surface border border-brand-border p-2.5 px-3.5 rounded-xl flex items-center justify-between hover:border-brand-primary/20 transition-all duration-200 shadow-sm">
+                <div className="bg-brand-surface border border-brand-border p-2.5 px-3.5 rounded-xl flex items-center justify-between hover:border-brand-primary/20 transition-all duration-200 shadow-sm" title="Total income / deposits in current active filters">
                   <div className="space-y-0.5">
                     <span className="text-[7.5px] font-mono font-bold text-brand-primary/45 uppercase tracking-wider block">Total Inflows</span>
-                    <h3 className="text-sm sm:text-base font-mono font-black tracking-tight text-emerald-550">
+                    <span className="text-[6.5px] text-brand-primary/30 font-bold block leading-none">Total income / deposit money</span>
+                    <h3 className="text-sm sm:text-base font-mono font-black tracking-tight text-emerald-550 mt-1">
                       {formatCurrency(filteredHistorySummary.earned)}
                     </h3>
                   </div>
@@ -1441,14 +1628,16 @@ function MainApp() {
                     setHistorySelectedTag('avoidable');
                   }}
                   className="bg-brand-surface border border-brand-border p-2.5 px-3.5 rounded-xl flex items-center justify-between hover:border-rose-500/35 transition-all duration-200 cursor-pointer group shadow-sm"
+                  title="Total amount spent on avoidable lifestyle categories that could be optimized"
                 >
                   <div className="space-y-0.5">
                     <span className={cn(
                       "text-[7.5px] font-mono font-bold uppercase tracking-wider block",
                       filteredAvoidableLoss > 0 ? "text-rose-500/80 font-black" : "text-brand-primary/45"
                     )}>Avoidable Leak</span>
+                    <span className="text-[6.5px] text-brand-primary/30 font-bold block leading-none">Waste / avoidable subscriptions</span>
                     <h3 className={cn(
-                      "text-sm sm:text-base font-mono font-black tracking-tight",
+                      "text-sm sm:text-base font-mono font-black tracking-tight mt-1",
                       filteredAvoidableLoss > 0 ? "text-rose-500 animate-pulse" : "text-brand-primary/30"
                     )}>
                       {formatCurrency(filteredAvoidableLoss)}
@@ -1458,7 +1647,7 @@ function MainApp() {
                 </div>
 
                 {/* 5. Metrics Index / F-Index Retention Rate */}
-                <div className="bg-brand-surface border border-brand-border p-2.5 px-3.5 rounded-xl flex items-center justify-between hover:border-brand-primary/20 transition-all duration-200 col-span-2 lg:col-span-1 shadow-sm">
+                <div className="bg-brand-surface border border-brand-border p-2.5 px-3.5 rounded-xl flex items-center justify-between hover:border-brand-primary/20 transition-all duration-200 col-span-1 sm:col-span-2 lg:col-span-1 shadow-sm" title="The percentage of your total income that remains after your expenses (higher is better)">
                   {(() => {
                     const retentionRate = filteredHistorySummary.earned > 0 
                       ? ((1 - (filteredHistorySummary.spent / filteredHistorySummary.earned)) * 100)
@@ -1469,7 +1658,8 @@ function MainApp() {
                       <>
                         <div className="space-y-0.5 flex-1 min-w-0">
                           <span className="text-[7.5px] font-mono font-bold text-brand-primary/45 uppercase tracking-wider block">F-Index Retention</span>
-                          <div className="flex items-center gap-1">
+                          <span className="text-[6.5px] text-brand-primary/30 font-bold block leading-none">Percentage of income saved</span>
+                          <div className="flex items-center gap-1 mt-1">
                             <h3 className={cn("text-sm sm:text-base font-mono font-black tracking-tight", scoreColor)}>
                               {retentionRate.toFixed(0)}%
                             </h3>
@@ -1521,7 +1711,7 @@ function MainApp() {
                         </div>
 
                         {/* Quick filter tabs & Toggle Deck */}
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           {/* Flow type tabs */}
                           <div className="flex bg-brand-bg p-1 rounded-xl border border-brand-border h-[38px] min-w-[180px]">
                             {(['All', 'Expenses', 'Income'] as const).map(f => (
@@ -1618,7 +1808,7 @@ function MainApp() {
 
                             {/* CFO Structural Strategy tag */}
                             <div className="space-y-1">
-                              <span className="text-[7.5px] font-mono font-bold text-brand-primary/45 uppercase tracking-wider block">CFO Structural Filter</span>
+                              <span className="text-[7.5px] font-mono font-bold text-brand-primary/45 uppercase tracking-wider block">Expense Strategy Filter</span>
                               <div className="grid grid-cols-4 gap-0.5 bg-brand-bg p-0.5 rounded-lg border border-brand-border">
                                 {[
                                   { id: 'all', label: 'All' },
@@ -1696,6 +1886,65 @@ function MainApp() {
                           )}
                         </div>
                       )}
+
+                      {/* Active Insights & Summary Panel */}
+                      {(searchQuery || filter !== 'All' || historyTimeframe !== 'all' || historySelectedCategory !== 'All' || historySelectedTag !== 'all') && (
+                        <div className="mt-3.5 pt-3.5 border-t border-brand-border/40 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 bg-brand-primary/[0.01]">
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-pulse shrink-0"></span>
+                              <span className="text-[10px] font-sans font-black text-brand-primary uppercase tracking-tight">Active Filter Insights</span>
+                              {searchQuery && (
+                                <span className="px-1.5 py-0.2 bg-brand-accent/10 border border-brand-accent/20 text-brand-accent text-[8px] font-mono font-bold rounded">
+                                  Query: "{searchQuery}"
+                                </span>
+                              )}
+                              {filter !== 'All' && (
+                                <span className="px-1.5 py-0.2 bg-brand-primary/5 border border-brand-border text-brand-primary/60 text-[8px] font-mono font-bold rounded">
+                                  Type: {filter}
+                                </span>
+                              )}
+                              {historySelectedCategory !== 'All' && (
+                                <span className="px-1.5 py-0.2 bg-brand-primary/5 border border-brand-border text-brand-primary/60 text-[8px] font-mono font-bold rounded">
+                                  Category: {historySelectedCategory}
+                                </span>
+                              )}
+                              {historyTimeframe !== 'all' && (
+                                <span className="px-1.5 py-0.2 bg-brand-primary/5 border border-brand-border text-brand-primary/60 text-[8px] font-mono font-bold rounded">
+                                  Timeframe: {historyTimeframe}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-brand-primary/50">
+                              Displaying {filteredTransactions.length} of {transactions.length} matching entries.
+                            </p>
+                          </div>
+                          
+                          <div className="flex items-center gap-4 flex-wrap md:flex-nowrap pt-2.5 md:pt-0 border-t md:border-t-0 md:border-l border-brand-border/30 w-full md:w-auto md:pl-4">
+                            <div>
+                              <span className="text-[8px] font-mono font-bold text-brand-primary/45 uppercase tracking-widest block leading-none">Total Outflow (Spent)</span>
+                              <p className="text-[13px] font-mono font-black text-rose-500 leading-none mt-1">
+                                {formatCurrency(filteredHistorySummary.spent)}
+                              </p>
+                            </div>
+                            <div>
+                              <span className="text-[8px] font-mono font-bold text-brand-primary/45 uppercase tracking-widest block leading-none">Total Inflow (Income)</span>
+                              <p className="text-[13px] font-mono font-black text-emerald-555 leading-none mt-1">
+                                {formatCurrency(filteredHistorySummary.earned)}
+                              </p>
+                            </div>
+                            <div className="border-l border-brand-border/30 pl-4">
+                              <span className="text-[8px] font-mono font-bold text-brand-primary/45 uppercase tracking-widest block leading-none">Net savings (Surplus)</span>
+                              <p className={cn(
+                                "text-[13px] font-mono font-black leading-none mt-1",
+                                filteredHistorySummary.net >= 0 ? "text-emerald-555" : "text-rose-500"
+                              )}>
+                                {filteredHistorySummary.net >= 0 ? '+' : ''}{formatCurrency(filteredHistorySummary.net)}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     {/* Category Budget Progress Ribbon */}
@@ -1709,7 +1958,7 @@ function MainApp() {
                             (Tap centroid capsule to set categorized filter)
                           </span>
                         </div>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-6 gap-2">
                           {filteredCategoryData.slice(0, 6).map(catData => {
                             const pct = filteredTotalExpense > 0 ? (catData.value / filteredTotalExpense) * 100 : 0;
                             const isSelected = historySelectedCategory === catData.name;
@@ -1812,7 +2061,7 @@ function MainApp() {
                     </AnimatePresence>
 
                     {/* ACTIONS ROW & RESULTS METRIC COUNTER */}
-                    <div className="flex items-center justify-between px-1">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-1">
                       <div className="flex items-center gap-2 select-none">
                         {filteredTransactions.length > 0 && (
                           <button
@@ -1839,8 +2088,10 @@ function MainApp() {
                             <Check className="w-2.5 h-2.5 stroke-[3] text-brand-surface" />
                           </button>
                         )}
-                        <h4 className="text-[10px] font-mono font-bold text-brand-primary/30 uppercase tracking-widest flex items-center gap-1.5">
-                          <span>Audited Log Database ({filteredTransactions.length} records)</span>
+                        <h4 className="text-[10px] font-mono font-bold text-brand-primary/30 uppercase tracking-widest flex flex-wrap items-center gap-1.5">
+                          <span className="hidden xs:inline">Audited Log Database</span>
+                          <span className="xs:hidden">Database</span>
+                          <span>({filteredTransactions.length} records)</span>
                           {selectedTransactionIds.length > 0 && (
                             <span className="text-[9px] text-brand-accent font-black">
                               ({selectedTransactionIds.length} selected)
@@ -1849,11 +2100,11 @@ function MainApp() {
                         </h4>
                       </div>
 
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
                         <button 
                           onClick={handleExportCSV}
                           disabled={filteredTransactions.length === 0}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-surface hover:bg-brand-bg disabled:opacity-40 border border-brand-border text-brand-primary rounded-lg text-[9px] font-mono font-bold uppercase transition-all active:scale-95"
+                          className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-brand-surface hover:bg-brand-bg disabled:opacity-40 border border-brand-border text-brand-primary rounded-lg text-[9px] font-mono font-bold uppercase transition-all active:scale-95 w-full sm:w-auto"
                         >
                           <Download className="w-3.5 h-3.5 text-brand-accent shrink-0" />
                           <span>Export CSV</span>
@@ -1921,7 +2172,7 @@ function MainApp() {
                                       }
                                     }}
                                     className={cn(
-                                      "hover:bg-brand-bg/45 py-2 px-3 sm:px-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 group relative transition-colors cursor-pointer select-none",
+                                      "hover:bg-brand-bg/45 py-2 px-2.5 md:px-4 flex flex-row items-center justify-between gap-2 group relative transition-colors cursor-pointer select-none overflow-hidden flex-nowrap",
                                       isExpanded && "bg-brand-bg/20"
                                     )}
                                   >
@@ -1935,10 +2186,10 @@ function MainApp() {
                                           : "bg-brand-accent/30"
                                     )} />
 
-                                    {/* Content card columns */}
-                                    <div className="flex items-center gap-2.5 min-w-0 flex-1 pl-1">
+                                    {/* Content card columns - purely single line */}
+                                    <div className="flex items-center gap-2 min-w-0 flex-1 pl-1 flex-nowrap">
                                       {/* Row Checkbox & Icon */}
-                                      <div className="flex items-center gap-2 shrink-0 z-10">
+                                      <div className="flex items-center gap-1.5 shrink-0 z-10 flex-nowrap">
                                         {t.id && (
                                           <button
                                             onClick={(e) => {
@@ -1948,17 +2199,17 @@ function MainApp() {
                                               );
                                             }}
                                             className={cn(
-                                              "w-4.5 h-4.5 rounded-full border flex items-center justify-center transition-all cursor-pointer",
+                                              "w-3.5 h-3.5 rounded-full border flex items-center justify-center transition-all cursor-pointer",
                                               isSelected 
                                                 ? "bg-brand-primary border-brand-primary text-brand-surface" 
                                                 : "border-brand-border bg-brand-bg/40 text-transparent hover:border-brand-primary/45"
                                             )}
                                           >
-                                            <Check className="w-2.5 h-2.5 text-brand-surface stroke-[3]" />
+                                            <Check className="w-2 h-2 text-brand-surface stroke-[3]" />
                                           </button>
                                         )}
                                         <div className={cn(
-                                          "w-7.5 h-7.5 rounded-lg flex items-center justify-center border font-mono transition-all shrink-0 select-none bg-brand-bg/40 text-[10px]",
+                                          "w-5.5 h-5.5 rounded flex items-center justify-center border font-mono transition-all shrink-0 select-none bg-brand-bg/40 text-[9px]",
                                           isIncomeFlow 
                                             ? "text-emerald-400 border-emerald-500/10" 
                                             : t.isAvoidable 
@@ -1969,63 +2220,60 @@ function MainApp() {
                                         </div>
                                       </div>
 
-                                      <div className="space-y-0.5 min-w-0">
-                                        <div className="flex items-center gap-1.5 flex-wrap">
-                                          <p className="text-[11.5px] font-sans font-extrabold text-brand-primary leading-tight truncate max-w-sm uppercase tracking-tight flex items-center gap-1.5">
-                                            <span>{t.description}</span>
-                                            <ChevronDown className={cn("w-3 h-3 text-brand-primary/30 transition-transform duration-200 shrink-0", isExpanded && "rotate-180 text-brand-accent")} />
-                                          </p>
-                                          {t.subcategory && (
-                                            <span className="px-1 py-0.2 bg-brand-bg border border-brand-border/60 text-[7px] font-mono font-bold text-brand-primary/35 rounded uppercase tracking-wider">
-                                              {t.subcategory}
-                                            </span>
-                                          )}
-                                        </div>
-
-                                        <div className="flex flex-wrap items-center gap-1">
-                                          <span className="text-[7.5px] font-mono font-bold text-brand-primary/45 bg-brand-bg/60 px-1 py-0.2 rounded border border-brand-border/40 uppercase">
-                                            📂 {t.category}
+                                      {/* Primary information block (strictly no wrap) */}
+                                      <div className="flex items-center gap-2 min-w-0 flex-grow flex-nowrap">
+                                        <p className="text-[11.5px] font-sans font-black text-brand-primary leading-none truncate uppercase tracking-tight flex items-center gap-1 min-w-0 flex-1 max-w-[100px] xs:max-w-[140px] sm:max-w-[180px] md:max-w-xs">
+                                          <span className="truncate">{t.description}</span>
+                                          <ChevronDown className={cn("w-2.5 h-2.5 text-brand-primary/30 transition-transform duration-200 shrink-0", isExpanded && "rotate-180 text-brand-accent")} />
+                                        </p>
+                                        {t.subcategory && (
+                                          <span className="hidden xs:inline-block px-1 py-[0.5px] bg-brand-bg border border-brand-border/60 text-[6.5px] font-mono font-bold text-brand-primary/40 rounded uppercase tracking-wider shrink-0 max-w-[55px] xs:max-w-none truncate" title={t.subcategory}>
+                                            {t.subcategory}
                                           </span>
+                                        )}
+
+                                        {/* Strategy indicator badges (visible on desktop/tab) */}
+                                        <div className="hidden sm:flex items-center gap-1 shrink-0">
                                           {t.isMandatory && (
-                                            <span className="px-1 py-0.2 bg-amber-500/5 text-amber-500/90 border border-amber-500/15 text-[7px] font-bold uppercase rounded font-mono select-none">
-                                              Necessary Base
+                                            <span className="px-1 py-[0.5px] bg-amber-500/5 text-amber-550 border border-amber-500/15 text-[6.5px] font-bold uppercase rounded font-mono select-none" title="Necessary Base">
+                                              NECESSARY
                                             </span>
                                           )}
                                           {t.isAvoidable && (
-                                            <span className="px-1 py-0.2 bg-rose-500/5 text-rose-500 border border-rose-500/15 text-[7px] font-bold uppercase rounded font-mono select-none animate-pulse">
-                                              Bleed Target
+                                            <span className="px-1 py-[0.5px] bg-rose-500/5 text-rose-500 border border-rose-555/15 text-[6.5px] font-bold uppercase rounded font-mono select-none animate-pulse" title="Bleed Target">
+                                              BLEED
                                             </span>
                                           )}
                                           {t.isRecurring && (
-                                            <span className="px-1 py-0.2 bg-brand-primary/5 text-brand-primary border border-brand-border/50 text-[7px] font-bold uppercase rounded font-mono select-none">
-                                              Fixed Cycle
+                                            <span className="px-1 py-[0.5px] bg-brand-primary/5 text-brand-primary border border-brand-border/50 text-[6.5px] font-bold uppercase rounded font-mono select-none" title="Fixed Cycle">
+                                              CYCLE
                                             </span>
                                           )}
                                           {t.linkedGoalId && (
-                                            <span className="px-1 py-0.2 bg-emerald-500/5 text-emerald-500 border border-emerald-500/15 text-[7px] font-bold uppercase rounded font-mono select-none">
-                                              🎯 Linked Goal
+                                            <span className="px-1 py-[0.5px] bg-emerald-500/5 text-emerald-555 border border-emerald-500/15 text-[6.5px] font-bold uppercase rounded font-mono select-none" title="Linked Strategy Goal">
+                                              🎯 GOAL
                                             </span>
                                           )}
                                         </div>
                                       </div>
                                     </div>
 
-                                    {/* Cash Volume & Dynamic Actions */}
-                                    <div className="flex items-center justify-between sm:justify-end gap-3.5 border-t sm:border-t-0 border-brand-border/20 pt-1.5 sm:pt-0 shrink-0 select-none">
-                                      <div className="text-left sm:text-right">
+                                    {/* Right section: Cash volume & Micro hover inline action controls */}
+                                    <div className="flex items-center gap-1.5 md:gap-2.5 shrink-0 select-none flex-nowrap">
+                                      <div className="text-right flex items-center justify-end gap-1.5 shrink-0">
+                                        <p className="text-[7.5px] font-mono text-brand-primary/30 uppercase tracking-widest hidden md:inline-block">
+                                          ⏱️ {new Date(t.date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                                        </p>
                                         <p className={cn(
-                                          "text-xs font-mono font-black tabular-nums leading-none flex items-center sm:justify-end gap-0.5",
-                                          isIncomeFlow ? "text-emerald-500" : t.isAvoidable ? "text-rose-450" : "text-brand-primary"
+                                          "text-[11px] font-mono font-black tabular-nums leading-none flex items-center justify-end gap-0.5 w-14 sm:w-18 md:w-20 text-right shrink-0",
+                                          isIncomeFlow ? "text-emerald-500" : t.isAvoidable ? "text-rose-455" : "text-brand-primary"
                                         )}>
                                           {isIncomeFlow ? '+' : '-'}{formatCurrency(t.amount)}
                                         </p>
-                                        <p className="text-[7px] font-mono text-brand-primary/30 uppercase tracking-widest mt-0.5">
-                                          ⏱️ {new Date(t.date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-                                        </p>
                                       </div>
 
-                                      {/* Simple, prominent, labeled Edit & Delete buttons */}
-                                      <div className="flex items-center gap-1.5 pl-3 border-l border-brand-border/30 shrink-0">
+                                      {/* Minimal, high-precision circular action icon buttons */}
+                                      <div className="hidden sm:flex items-center gap-1 pl-1.5 border-l border-brand-border/30 shrink-0 flex-nowrap">
                                         <button 
                                           onClick={(e) => {
                                             e.stopPropagation();
@@ -2033,11 +2281,10 @@ function MainApp() {
                                             setCommandTab('transaction');
                                             setShowCommandCenter(true);
                                           }}
-                                          className="px-2 py-1 bg-brand-bg text-brand-primary hover:bg-brand-primary/10 border border-brand-border hover:border-brand-primary/20 rounded-md transition-all cursor-pointer shadow-sm flex items-center gap-1 text-[8.5px] font-mono font-bold uppercase tracking-wider"
+                                          className="w-5.5 h-5.5 rounded-full bg-brand-bg hover:bg-brand-primary/10 border border-brand-border hover:border-brand-primary/20 transition-all cursor-pointer flex items-center justify-center shrink-0 shadow-sm"
                                           title="Modify transaction"
                                         >
-                                          <Edit2 className="w-3 h-3 text-brand-accent shrink-0" />
-                                          <span>Edit</span>
+                                          <Edit2 className="w-2.5 h-2.5 text-brand-accent shrink-0" />
                                         </button>
                                         <button 
                                           onClick={(e) => {
@@ -2046,15 +2293,18 @@ function MainApp() {
                                             handleDeleteTransaction(t);
                                           }}
                                           className={cn(
-                                            "px-2 py-1 border rounded-md transition-all flex items-center justify-center gap-1 cursor-pointer shadow-sm text-[8.5px] font-mono uppercase tracking-wider font-bold",
+                                            "w-5.5 h-5.5 rounded-full border transition-all flex items-center justify-center shrink-0 cursor-pointer shadow-sm",
                                             transactionIdToConfirmDelete === t.id 
-                                              ? "bg-rose-500 text-white border-rose-600 animate-pulse px-3.5" 
-                                              : "bg-rose-500/5 hover:bg-rose-505 hover:text-white border-rose-500/10 hover:border-rose-500 text-rose-500"
+                                              ? "bg-rose-500 text-brand-surface border-rose-650 animate-pulse" 
+                                              : "bg-rose-500/5 hover:bg-rose-500 hover:text-brand-surface border-rose-500/10 hover:border-rose-500 text-rose-500"
                                           )}
-                                          title="Purge transaction asset"
+                                          title={transactionIdToConfirmDelete === t.id ? "Confirm asset deletion" : "Purge transaction asset"}
                                         >
-                                          <Trash2 className="w-3 h-3 shrink-0" />
-                                          <span>{transactionIdToConfirmDelete === t.id ? "Confirm" : "Delete"}</span>
+                                          {transactionIdToConfirmDelete === t.id ? (
+                                            <Check className="w-2.5 h-2.5 text-brand-surface stroke-[3.5]" />
+                                          ) : (
+                                            <Trash2 className="w-2.5 h-2.5 shrink-0" />
+                                          )}
                                         </button>
                                       </div>
                                     </div>
@@ -2101,7 +2351,7 @@ function MainApp() {
                                             {/* Micro-inline Classification Shifter */}
                                             {!isIncomeFlow && (
                                               <div className="pt-2 md:pt-0">
-                                                <span className="text-[7px] font-mono font-bold text-brand-primary/35 uppercase tracking-wider block mb-1">CFO Quick Classification Re-alignment</span>
+                                                <span className="text-[7px] font-mono font-bold text-brand-primary/35 uppercase tracking-wider block mb-1">Quick Strategy Adjustment</span>
                                                 <div className="flex flex-wrap items-center gap-1 md:justify-end">
                                                   <button
                                                     onClick={async (e) => {
@@ -2152,6 +2402,47 @@ function MainApp() {
                                               </div>
                                             )}
                                           </div>
+                                        </div>
+
+                                        {/* Mobile operations bar inside expanded card (only visible on mobile) */}
+                                        <div className="flex sm:hidden items-center justify-end gap-2 pt-2.5 border-t border-brand-border/20 mt-1">
+                                          <button 
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setEditingTransaction(t);
+                                              setCommandTab('transaction');
+                                              setShowCommandCenter(true);
+                                            }}
+                                            className="px-3 py-1.5 rounded-lg bg-brand-surface border border-brand-border text-[9px] font-mono font-bold uppercase tracking-wider text-brand-primary flex items-center gap-1.5 active:scale-95 transition-all"
+                                          >
+                                            <Edit2 className="w-3 h-3 text-brand-accent shrink-0" />
+                                            <span>Modify</span>
+                                          </button>
+                                          <button 
+                                            onClick={(e) => {
+                                              e.preventDefault();
+                                              e.stopPropagation();
+                                              handleDeleteTransaction(t);
+                                            }}
+                                            className={cn(
+                                              "px-3 py-1.5 rounded-lg border text-[9px] font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all active:scale-95",
+                                              transactionIdToConfirmDelete === t.id 
+                                                ? "bg-rose-500 text-brand-surface border-rose-650 animate-pulse" 
+                                                : "bg-rose-500/5 text-rose-500 border-rose-500/10 hover:bg-rose-500 hover:text-brand-surface"
+                                            )}
+                                          >
+                                            {transactionIdToConfirmDelete === t.id ? (
+                                              <>
+                                                <Check className="w-3 h-3 text-brand-surface stroke-[3]" />
+                                                <span>Confirm Purge</span>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <Trash2 className="w-3 h-3 shrink-0" />
+                                                <span>Purge</span>
+                                              </>
+                                            )}
+                                          </button>
                                         </div>
                                       </motion.div>
                                     )}
@@ -2289,7 +2580,7 @@ function MainApp() {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4 mt-4 pt-3 border-t border-brand-border/40">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4 pt-3 border-t border-brand-border/40">
                         <div className="space-y-0.5 text-left">
                           <span className="text-[8px] font-mono text-brand-primary/45 uppercase tracking-wide block">Daily Burn Power</span>
                           <p className="text-sm font-mono font-bold text-brand-primary">
@@ -2324,16 +2615,16 @@ function MainApp() {
                         <div className="space-y-1">
                           <div className="flex items-center gap-2">
                             <Sparkles className="w-4 h-4 text-rose-500 animate-pulse" />
-                            <h3 className="text-xs font-sans font-black uppercase tracking-wider text-rose-500">McKinsey Variable Leakage Scanner</h3>
+                            <h3 className="text-xs font-sans font-black uppercase tracking-wider text-rose-500">Unnecessary Expense Detector</h3>
                           </div>
                           <p className="text-[11px] font-sans text-brand-primary/75 max-w-2xl leading-relaxed">
-                            The analytical scanner found <b className="text-rose-450">{filteredTransactions.filter(t => t.isAvoidable).length} variable leakage entries</b> draining a cumulative velocity of <b className="text-rose-450 font-mono">{formatCurrency(filteredAvoidableLoss)}</b> of active capital buffers. Pruning these targets boosts dynamic F-Index efficiency immediately.
+                            We identified <b className="text-rose-450">{filteredTransactions.filter(t => t.isAvoidable).length} avoidable expense items</b> that draft a cumulative total of <b className="text-rose-450 font-mono">{formatCurrency(filteredAvoidableLoss)}</b> from your potential savings. Cutting or reducing these items will instantly increase your monthly cash cushion.
                           </p>
                         </div>
 
                         {/* Reclassify tool button info */}
                         <div className="px-3.5 py-2 bg-rose-500/5 border border-rose-500/10 rounded-lg text-center shrink-0">
-                          <span className="text-[8px] font-mono font-bold block text-rose-500/60 uppercase">Aggreagate Leaked Base</span>
+                          <span className="text-[8px] font-mono font-bold block text-rose-500/60 uppercase">Total Avoidable Spend</span>
                           <span className="text-base font-mono font-black text-rose-500">{formatCurrency(filteredAvoidableLoss)}</span>
                         </div>
                       </div>
@@ -2345,9 +2636,9 @@ function MainApp() {
                         <div className="bg-brand-surface border border-brand-border border-dashed rounded-xl p-12 text-center space-y-3">
                           <ShieldCheck className="w-10 h-10 text-emerald-500 mx-auto opacity-70" />
                           <div className="space-y-1">
-                            <p className="text-sm font-bold text-brand-primary uppercase tracking-tight">Cushion Optimized & Fully Pruned</p>
+                            <p className="text-sm font-bold text-brand-primary uppercase tracking-tight">Everything is Fully Optimized!</p>
                             <p className="text-[9px] text-brand-primary/40 font-mono max-w-xs mx-auto">
-                              No variable leakages exist within matching filters. Frictional operating loss is at 0.
+                              No avoidable or optional expenses found in your selected filters. Your current budget is highly efficient.
                             </p>
                           </div>
                         </div>
@@ -2490,12 +2781,12 @@ function MainApp() {
                         <div className="space-y-6">
                           {/* Choose Strategy */}
                           <div className="space-y-3">
-                            <span className="text-[8px] font-mono font-bold text-brand-primary/45 uppercase tracking-wide block">Strategic Asset Preset</span>
+                            <span className="text-[8px] font-mono font-bold text-brand-primary/45 uppercase tracking-wide block">Scenario Strategy Preset</span>
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 bg-brand-bg p-1 rounded-xl border border-brand-border">
                               {[
-                                { id: 'conservative', label: '🛡️ Conservative (Shield)' },
-                                { id: 'balanced', label: '📈 Balanced (McKinsey)' },
-                                { id: 'aggressive', label: '⚡ Aggressive (Velocity)' }
+                                { id: 'conservative', label: '🛡️ Conservative' },
+                                { id: 'balanced', label: '📈 Balanced' },
+                                { id: 'aggressive', label: '⚡ Aggressive' }
                               ].map((preset) => (
                                 <button
                                   key={preset.id}
@@ -2512,22 +2803,22 @@ function MainApp() {
                               ))}
                             </div>
                           </div>
-
+                          
                           {/* Live Math Bar Distribution based on selected Preset */}
                           {(() => {
                             const cushion = filteredHistorySummary.net;
                             // Distribution metrics
                             let emPct = 80;
-                            let sipPct = 0;
+                            let investPct = 0;
                             let debtPct = 20;
                             if (ledgerAllocationPreset === 'balanced') {
-                              emPct = 30; sipPct = 40; debtPct = 30;
+                              emPct = 30; investPct = 40; debtPct = 30;
                             } else if (ledgerAllocationPreset === 'aggressive') {
-                              emPct = 25; sipPct = 75; debtPct = 0;
+                              emPct = 25; investPct = 75; debtPct = 0;
                             }
 
                             const emVal = cushion * (emPct / 100);
-                            const sipVal = cushion * (sipPct / 100);
+                            const investVal = cushion * (investPct / 100);
                             const debtVal = cushion * (debtPct / 100);
 
                             return (
@@ -2536,7 +2827,7 @@ function MainApp() {
                                   <span className="text-[8.5px] font-mono text-brand-primary/45 uppercase block">Simulated Allocation map:</span>
                                   <div className="h-3 w-full bg-brand-bg rounded-md overflow-hidden border border-brand-border/40 p-[1.5px] flex">
                                     <div className="h-full bg-emerald-500 transition-all duration-300" style={{ width: `${emPct}%` }} title={`Emergency Fund: ${emPct}%`} />
-                                    <div className="h-full bg-brand-accent transition-all duration-300" style={{ width: `${sipPct}%` }} title={`SIP Channels: ${sipPct}%`} />
+                                    <div className="h-full bg-brand-accent transition-all duration-300" style={{ width: `${investPct}%` }} title={`Capital Growth: ${investPct}%`} />
                                     <div className="h-full bg-indigo-500 transition-all duration-300" style={{ width: `${debtPct}%` }} title={`Debt acceleration: ${debtPct}%`} />
                                   </div>
                                 </div>
@@ -2547,8 +2838,8 @@ function MainApp() {
                                     <p className="text-xs font-mono font-black text-brand-primary">{formatCurrency(emVal)}</p>
                                   </div>
                                   <div className="space-y-0.5 border-l-2 border-brand-accent/70 pl-2">
-                                    <span className="text-[7.5px] font-mono font-bold text-brand-primary/40 uppercase">SIP Compounding ({sipPct}%)</span>
-                                    <p className="text-xs font-mono font-black text-brand-primary">{formatCurrency(sipVal)}</p>
+                                    <span className="text-[7.5px] font-mono font-bold text-brand-primary/40 uppercase">Capital Growth ({investPct}%)</span>
+                                    <p className="text-xs font-mono font-black text-brand-primary">{formatCurrency(investVal)}</p>
                                   </div>
                                   <div className="space-y-0.5 border-l-2 border-indigo-500 pl-2">
                                     <span className="text-[7.5px] font-mono font-bold text-brand-primary/40 uppercase">Debt Liquidation ({debtPct}%)</span>
@@ -2682,130 +2973,270 @@ function MainApp() {
               transition={{ duration: 0.2, ease: "easeOut" }}
               className="space-y-6 md:space-y-8"
             >
-              {/* McKinsey Executive CFO Guidance Panel */}
-              <div className="bg-gradient-to-br from-brand-primary/[0.02] to-brand-primary/[0.04] border border-brand-border/60 rounded-2xl p-6 shadow-sm space-y-4">
-                <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+              {/* BRAND NEW CFO GOALS LANDING DASHBOARD SNAPSHOT */}
+              <div className="bg-gradient-to-br from-brand-primary/[0.015] to-brand-primary/[0.04] border border-brand-border/60 rounded-2xl p-6 shadow-sm space-y-6 font-sans">
+                {/* Header Row */}
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-[8px] font-black uppercase tracking-widest bg-brand-primary/10 text-brand-primary border border-brand-primary/20 px-2 py-0.5 rounded leading-none">
-                        SYSTEM ARCHITECTURE
+                      <span className="text-[8px] font-black uppercase tracking-widest bg-brand-accent/10 border border-brand-accent/20 px-2.5 py-0.5 rounded leading-none text-brand-accent">
+                        INTEGRATED CFO DIAGNOSIS
                       </span>
-                      <span className="text-[10px] font-mono font-bold text-brand-primary/30 uppercase tracking-wider">• Dynamic Trilateral Allocation</span>
+                      <span className="text-[10px] font-mono font-bold text-brand-primary/30 uppercase tracking-wider">• Roadmap & Cash Routing</span>
                     </div>
-                    <h2 className="text-xl font-black text-brand-primary tracking-tight font-sans">THE THREE PILLARS OF CAPITAL ALLOCATION</h2>
-                    <p className="text-xs text-brand-primary/60 max-w-2xl leading-relaxed">
-                      To successfully reach wealth targets, you need a cohesive system that links your ultimate objective with your physical capital flows. Artha CFO implements a structured Trilateral Model:
+                    <h2 className="text-xl font-black text-brand-primary tracking-tight uppercase leading-none">Your Savings & Goals Dashboard</h2>
+                    <p className="text-xs text-brand-primary/55 max-w-2xl leading-relaxed mt-1">
+                      Translate your net surplus into reality. Track life milestones, project precise achievement dates, and deploy monthly savings surplus elements strategically.
                     </p>
                   </div>
-                  <div className="hidden md:flex flex-col items-end gap-1 text-[11px] text-right font-sans font-medium text-brand-primary/40">
-                    <p className="uppercase font-bold text-brand-accent">Cash Flow Realism</p>
-                    <p className="text-[10px] tracking-tight">Sequence Over Parallel Execution</p>
+                  <div className="bg-brand-surface/70 border border-brand-border/60 px-4 py-2.5 rounded-xl flex items-center gap-2.5 shrink-0 shadow-sm">
+                    <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse animate-duration-1000" />
+                    <div className="space-y-0.5 text-left">
+                      <span className="text-[8px] font-mono font-bold text-brand-primary/40 uppercase block leading-none">Monthly Cash Surplus</span>
+                      <span className="text-base font-mono font-black text-brand-primary tracking-tight leading-none">
+                        {formatCurrency(Math.max(0, balance))}/mo
+                      </span>
+                    </div>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-                  <div className="bg-brand-surface border border-brand-border/40 p-4 rounded-xl space-y-1.5 relative overflow-hidden group hover:border-brand-primary/20 transition-all">
-                    <div className="flex items-center gap-2 text-brand-primary">
-                      <div className="h-6 w-6 rounded-full bg-brand-primary/5 border border-brand-primary/15 flex items-center justify-center text-[10px] font-mono font-bold">1</div>
-                      <span className="text-xs font-bold uppercase tracking-wider font-sans">Pillar 1: What</span>
+                {/* Dashboard Metrics Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Card 1: Combined Progress Indicator */}
+                  <div className="bg-brand-surface border border-brand-border/50 p-4 rounded-xl flex flex-col justify-between space-y-3 shadow-[0_1px_2px_rgba(0,0,0,0.01)] hover:border-brand-primary/15 transition-all">
+                    <div className="space-y-1">
+                      <div className="flex justify-between items-center text-[9px] font-mono font-bold text-brand-primary/40 uppercase tracking-wider">
+                        <span>Milestone Progress</span>
+                        <span className="text-emerald-600 font-black">{totalGoalProgress.toFixed(0)}% Done</span>
+                      </div>
+                      <div className="flex justify-between items-baseline pt-1">
+                        <span className="text-lg font-black text-brand-primary truncate">{formatCurrency(totalGoalCurrent)}</span>
+                        <span className="text-[10px] text-brand-primary/40">of {formatCurrency(totalGoalTarget)}</span>
+                      </div>
                     </div>
-                    <h4 className="text-[11px] font-bold text-brand-primary uppercase tracking-tight">Target Goals & Balances</h4>
-                    <p className="text-[10px] text-brand-primary/50 leading-relaxed uppercase">
-                      Define the hard numbers of your destination: savings accumulation, liability payoffs, and gold holdings.
-                    </p>
+                    
+                    {/* Modern fluid progress bar */}
+                    <div className="space-y-1.5">
+                      <div className="w-full bg-brand-bg rounded-full h-1.5 overflow-hidden border border-brand-border/40">
+                        <div 
+                          className="h-full bg-emerald-500 rounded-full transition-all duration-500" 
+                          style={{ width: `${Math.min(100, totalGoalProgress)}%` }}
+                        />
+                      </div>
+                      <p className="text-[9px] text-brand-primary/40 uppercase font-medium">
+                        {goals.filter(g => g.currentAmount >= g.targetAmount).length} of {goals.length} milestones fully achieved
+                      </p>
+                    </div>
                   </div>
 
-                  <div className="bg-brand-surface border border-brand-border/40 p-4 rounded-xl space-y-1.5 relative overflow-hidden group hover:border-indigo-500/20 transition-all">
-                    <div className="flex items-center gap-2 text-indigo-600">
-                      <div className="h-6 w-6 rounded-full bg-indigo-50 border border-indigo-150 flex items-center justify-center text-[10px] font-mono font-bold">2</div>
-                      <span className="text-xs font-bold uppercase tracking-wider font-sans">Pillar 2: When</span>
+                  {/* Card 2: Timeline Schedule Health Status */}
+                  <div className="bg-brand-surface border border-brand-border/50 p-4 rounded-xl flex flex-col justify-between space-y-3 shadow-[0_1px_2px_rgba(0,0,0,0.01)] hover:border-brand-primary/15 transition-all">
+                    <div className="space-y-1">
+                      <span className="text-[9px] font-mono font-bold text-brand-primary/40 uppercase tracking-wider block">Timeline Health Index</span>
+                      <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                        <span className="inline-flex items-center gap-1 bg-emerald-500/5 text-emerald-600 border border-emerald-500/10 px-2 py-1 rounded text-[9px] font-bold uppercase leading-none">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" /> {goalsHealthSummary.completed + goalsHealthSummary.onTrack} Safe or Done
+                        </span>
+                        {goalsHealthSummary.deficit > 0 ? (
+                          <span className="inline-flex items-center gap-1 bg-rose-500/5 text-rose-500 border border-rose-500/10 px-2 py-1 rounded text-[9px] font-bold uppercase leading-none animate-pulse">
+                            <ShieldAlert className="w-3 h-3 shrink-0 text-rose-500" /> {goalsHealthSummary.deficit} Behind Date
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 bg-brand-primary/5 text-brand-primary/40 border border-brand-border px-2 py-1 rounded text-[9px] font-semibold uppercase leading-none">
+                            <ShieldCheck className="w-3 h-3 shrink-0" /> All Roadmaps On Time
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <h4 className="text-[11px] font-bold text-brand-primary uppercase tracking-tight">Timeline Roadmap</h4>
-                    <p className="text-[10px] text-brand-primary/50 leading-relaxed uppercase">
-                      Track schedule realism. See precise completion dates and run real-time CFO cash flow surplus simulations.
-                    </p>
+                    <div className="text-[9px] text-brand-primary/45 uppercase leading-normal">
+                      {goalsHealthSummary.deficit > 0 
+                        ? `${goalsHealthSummary.deficit} target(s) require higher monthly allocation to respect target deadlines.`
+                        : "All savings roadmap deadlines are realistic under current systematic savings values."}
+                    </div>
                   </div>
 
-                  <div className="bg-brand-surface border border-brand-border/40 p-4 rounded-xl space-y-1.5 relative overflow-hidden group hover:border-emerald-500/20 transition-all">
-                    <div className="flex items-center gap-2 text-emerald-600">
-                      <div className="h-6 w-6 rounded-full bg-emerald-50 border border-emerald-150 flex items-center justify-center text-[10px] font-mono font-bold">3</div>
-                      <span className="text-xs font-bold uppercase tracking-wider font-sans">Pillar 3: How</span>
+                  {/* Card 3: Incomes vs Expenses Cash Subtraction Flow */}
+                  <div className="bg-brand-surface border border-brand-border/50 p-4 rounded-xl flex flex-col justify-between space-y-3 shadow-[0_1px_2px_rgba(0,0,0,0.01)] hover:border-brand-primary/15 transition-all">
+                    <div className="space-y-1">
+                      <span className="text-[9px] font-mono font-bold text-brand-primary/40 uppercase tracking-wider block">Monthly Surplus Calculus</span>
+                      <div className="flex justify-between items-baseline pt-1">
+                        <span className="text-base font-bold text-brand-primary">{formatCurrency(totalIncome)}</span>
+                        <span className="text-[9px] text-brand-primary/30 uppercase font-bold">Gross Inflow</span>
+                      </div>
+                      <div className="flex justify-between items-baseline">
+                        <span className="text-xs font-medium text-rose-500">- {formatCurrency(totalExpenses)}</span>
+                        <span className="text-[9px] text-brand-primary/30 uppercase font-bold">debits</span>
+                      </div>
                     </div>
-                    <h4 className="text-[11px] font-bold text-brand-primary uppercase tracking-tight">Funding Engines</h4>
-                    <p className="text-[10px] text-brand-primary/50 leading-relaxed uppercase">
-                      Map the monthly cash inflow (recurring salary/incomes) and systematic wealth auto-save mandates (SIPs) that power Pillars 1 & 2.
-                    </p>
+                    <div className="border-t border-brand-border/30 pt-2 flex justify-between items-center">
+                      <span className="text-[9px] text-brand-primary/45 uppercase font-medium">Free Surplus cash</span>
+                      <button 
+                        onClick={() => {
+                          setGoalsSubTab('surplus');
+                          setAllocationMessage(null);
+                        }}
+                        className="text-[9px] font-bold uppercase tracking-wider text-brand-accent hover:text-brand-accent/80 transition-all flex items-center gap-0.5 leading-none"
+                      >
+                        Allocate Cash <ChevronRight className="w-3 h-3 shrink-0" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
 
               {/* Improved High-UX Sub-tab Switcher with explicit step labeling */}
-              <div className="grid grid-cols-3 gap-2 bg-brand-bg/50 p-1 rounded-2xl border border-brand-border max-w-2xl mx-auto">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 bg-brand-bg/60 p-1.5 rounded-2xl border border-brand-border max-w-5xl mx-auto">
                 <button 
                   onClick={() => setGoalsSubTab('strategy')}
                   className={cn(
-                    "flex flex-col items-center justify-center py-2.5 px-3 rounded-xl transition-all font-sans",
+                    "flex items-center gap-3 py-2 px-4 rounded-xl transition-all font-sans border text-left",
                     goalsSubTab === 'strategy' 
-                      ? "bg-brand-primary text-brand-surface shadow-md border border-brand-primary" 
-                      : "text-brand-primary/40 hover:text-brand-primary border border-transparent hover:bg-brand-primary/5"
+                      ? "bg-brand-primary text-brand-surface shadow-md border-brand-primary" 
+                      : "text-brand-primary/45 hover:text-brand-primary border-transparent hover:bg-brand-primary/5"
                   )}
                 >
-                  <span className="text-[8px] font-mono font-black uppercase tracking-widest opacity-60">Pillar 1: WHAT</span>
-                  <span className="text-[10px] font-bold uppercase tracking-wider mt-0.5">TARGET BALANCES</span>
+                  <Target className={cn("w-4 h-4 shrink-0", goalsSubTab === 'strategy' ? "text-brand-surface" : "text-brand-primary/45")} />
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider block leading-none">1. Goals & Progress</span>
+                    <span className={cn("text-[7.5px] font-bold uppercase tracking-widest block leading-none mt-1", goalsSubTab === 'strategy' ? "text-brand-surface/75" : "text-brand-primary/35")}>What are my targets?</span>
+                  </div>
                 </button>
 
                 <button 
                   onClick={() => setGoalsSubTab('timeline')}
                   className={cn(
-                    "flex flex-col items-center justify-center py-2.5 px-3 rounded-xl transition-all font-sans",
+                    "flex items-center gap-3 py-2 px-4 rounded-xl transition-all font-sans border text-left",
                     goalsSubTab === 'timeline' 
-                      ? "bg-brand-primary text-brand-surface shadow-md border border-brand-primary" 
-                      : "text-brand-primary/40 hover:text-brand-primary border border-transparent hover:bg-brand-primary/5"
+                      ? "bg-brand-primary text-brand-surface shadow-md border-brand-primary" 
+                      : "text-brand-primary/45 hover:text-brand-primary border-transparent hover:bg-brand-primary/5"
                   )}
                 >
-                  <span className="text-[8px] font-mono font-black uppercase tracking-widest opacity-60">Pillar 2: WHEN</span>
-                  <span className="text-[10px] font-bold uppercase tracking-wider mt-0.5">TIMELINE ROADMAP</span>
+                  <Calendar className={cn("w-4 h-4 shrink-0", goalsSubTab === 'timeline' ? "text-brand-surface" : "text-brand-primary/45")} />
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider block leading-none">2. Achievement Timelines</span>
+                    <span className={cn("text-[7.5px] font-bold uppercase tracking-widest block leading-none mt-1", goalsSubTab === 'timeline' ? "text-brand-surface/75" : "text-brand-primary/35")}>When will I get there?</span>
+                  </div>
+                </button>
+
+                <button 
+                  onClick={() => {
+                    setGoalsSubTab('surplus');
+                    setAllocationMessage(null);
+                  }}
+                  className={cn(
+                    "flex items-center gap-3 py-2 px-4 rounded-xl transition-all font-sans border text-left",
+                    goalsSubTab === 'surplus' 
+                      ? "bg-brand-primary text-brand-surface shadow-md border-brand-primary" 
+                      : "text-brand-primary/45 hover:text-brand-primary border-transparent hover:bg-brand-primary/5"
+                  )}
+                >
+                  <Zap className={cn("w-4 h-4 shrink-0", goalsSubTab === 'surplus' ? "text-brand-surface" : "text-brand-primary/45")} />
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider block leading-none">3. Surplus Cash Allocator</span>
+                    <span className={cn("text-[7.5px] font-bold uppercase tracking-widest block leading-none mt-1", goalsSubTab === 'surplus' ? "text-brand-surface/75" : "text-brand-primary/35")}>Where does spare money go?</span>
+                  </div>
                 </button>
 
                 <button 
                   onClick={() => setGoalsSubTab('mandates')}
                   className={cn(
-                    "flex flex-col items-center justify-center py-2.5 px-3 rounded-xl transition-all font-sans",
+                    "flex items-center gap-3 py-2 px-4 rounded-xl transition-all font-sans border text-left",
                     goalsSubTab === 'mandates' 
-                      ? "bg-brand-primary text-brand-surface shadow-md border border-brand-primary" 
-                      : "text-brand-primary/40 hover:text-brand-primary border border-transparent hover:bg-brand-primary/5"
+                      ? "bg-brand-primary text-brand-surface shadow-md border-brand-primary" 
+                      : "text-brand-primary/45 hover:text-brand-primary border-transparent hover:bg-brand-primary/5"
                   )}
                 >
-                  <span className="text-[8px] font-mono font-black uppercase tracking-widest opacity-60">Pillar 3: HOW</span>
-                  <span className="text-[10px] font-bold uppercase tracking-wider mt-0.5">FUNDING ENGINES</span>
+                  <Coins className={cn("w-4 h-4 shrink-0", goalsSubTab === 'mandates' ? "text-brand-surface" : "text-brand-primary/45")} />
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider block leading-none">4. Recurring Incomes</span>
+                    <span className={cn("text-[7.5px] font-bold uppercase tracking-widest block leading-none mt-1", goalsSubTab === 'mandates' ? "text-brand-surface/75" : "text-brand-primary/35")}>How is it actively funded?</span>
+                  </div>
                 </button>
               </div>
 
             {goalsSubTab === 'strategy' ? (
               <div className="space-y-8 animate-in fade-in slide-in-from-left-4 duration-500">
-                {/* Visual Goals Overview Metric Panel */}
+                {/* Dynamic CFO Budget Stress Shock Sensitivity Tester */}
                 {goals.length > 0 && (
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-brand-surface p-5 border border-brand-border rounded-2xl shadow-[0_1px_3px_rgba(0,0,0,0.01)] font-sans">
-                    <div className="space-y-1">
-                      <p className="text-[9px] font-mono font-bold text-brand-primary/40 uppercase tracking-widest">Total Goal Targets</p>
-                      <h3 className="text-xl font-bold text-brand-primary leading-none">
-                        {formatCurrency(totalGoalTarget)}
-                      </h3>
-                      <p className="text-[10px] text-brand-primary/50">Your active saving & payoff targets combined</p>
+                  <div className="bg-brand-surface border border-brand-border rounded-xl p-5 shadow-sm space-y-4 font-sans">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-3 border-b border-brand-border/40">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className={cn(
+                            "text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded leading-none border",
+                            goalsStressFactor < 1 
+                              ? "bg-rose-500/10 text-rose-500 border-rose-500/20" 
+                              : "bg-brand-primary/10 text-brand-primary border-brand-primary/20"
+                          )}>
+                            {goalsStressFactor < 1 ? "STRESS ACTIVE" : "STANDARD ENVIRONMENT"}
+                          </span>
+                          <span className="text-[10px] font-mono font-bold text-brand-primary/30 uppercase tracking-wider">• Sensitivity Diagnosis</span>
+                        </div>
+                        <h3 className="text-xs font-sans font-black uppercase text-brand-primary tracking-tight leading-none pt-0.5">Budget Compression Sensitivity Tester</h3>
+                        <p className="text-[10px] text-brand-primary/50 uppercase leading-relaxed">
+                          Test the stability of your roadmap against a sudden {Math.round((1 - goalsStressFactor) * 100)}% decrease in systematic saving capability.
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2 bg-brand-bg px-3 py-1.5 border border-brand-border/60 rounded-xl shrink-0">
+                        <span className="text-[9px] font-mono font-bold text-brand-primary/40 uppercase">Stress shock factor:</span>
+                        <span className={cn(
+                          "text-[10px] font-mono font-bold px-2 py-0.5 rounded border",
+                          goalsStressFactor < 1.0 
+                            ? "text-rose-500 bg-rose-500/5 border-rose-500/10 animate-pulse" 
+                            : "text-emerald-500 bg-emerald-500/5 border-emerald-500/10"
+                        )}>
+                          {Math.round(goalsStressFactor * 100)}% of planned outflow
+                        </span>
+                      </div>
                     </div>
-                    <div className="space-y-1 border-t sm:border-t-0 sm:border-l border-brand-border/40 pt-3 sm:pt-0 sm:pl-4">
-                      <p className="text-[9px] font-mono font-bold text-emerald-600 uppercase tracking-widest">Amount Completed</p>
-                      <h3 className="text-xl font-bold text-emerald-600 leading-none">
-                        {formatCurrency(totalGoalCurrent)}
-                      </h3>
-                      <p className="text-[10px] text-emerald-600/70">{totalGoalProgress.toFixed(0)}% of your total milestones reached</p>
-                    </div>
-                    <div className="space-y-1 border-t sm:border-t-0 sm:border-l border-brand-border/40 pt-3 sm:pt-0 sm:pl-4">
-                      <p className="text-[9px] font-mono font-bold text-brand-accent uppercase tracking-widest font-sans">Yet to achieve</p>
-                      <h3 className="text-xl font-bold text-brand-accent leading-none">
-                        {formatCurrency(Math.max(0, totalGoalTarget - totalGoalCurrent))}
-                      </h3>
-                      <p className="text-[10px] text-brand-primary/50">Fund gap remaining to reach full stability</p>
+
+                    <div className="space-y-3">
+                      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+                        <div className="w-full flex-grow space-y-1">
+                          <div className="flex justify-between text-[8px] font-mono font-bold text-brand-primary/40 uppercase">
+                            <span>Severe Crunch (-50%)</span>
+                            <span>Standard Savings Inflow (100%)</span>
+                          </div>
+                          <input 
+                            type="range"
+                            min="0.5"
+                            max="1.0"
+                            step="0.05"
+                            value={goalsStressFactor}
+                            onChange={(e) => setGoalsStressFactor(parseFloat(e.target.value))}
+                            className="w-full accent-brand-accent h-1.5 bg-brand-bg rounded-lg cursor-pointer"
+                          />
+                        </div>
+                      </div>
+
+                      {goalsStressFactor < 1.0 && (
+                        <div className={cn(
+                           "p-3 rounded-xl border flex items-start gap-2.5 transition-all text-[10px]",
+                           vulnerableGoalsCount > 0 
+                             ? "bg-rose-500/[0.02] border-rose-500/20 text-rose-600" 
+                             : "bg-emerald-500/[0.02] border-emerald-500/20 text-emerald-600"
+                        )}>
+                          <ShieldAlert className={cn("w-4 h-4 mt-0.5 shrink-0", vulnerableGoalsCount > 0 ? "text-rose-500" : "text-emerald-500")} />
+                          <div>
+                            {vulnerableGoalsCount > 0 ? (
+                              <>
+                                <p className="font-bold uppercase tracking-wider text-rose-500 text-[9px]">ROADMAP UNDER CRUNCH: {vulnerableGoalsCount} AT-RISK GOAL(S)</p>
+                                <p className="text-[9px] leading-tight text-brand-primary/50 mt-0.5 uppercase">
+                                  Your current planned monthly saves to {vulnerableGoalsCount} targets will be insufficient to hit their assigned timelines. Consider spreading target dates or identifying alternative funding engines.
+                                </p>
+                              </>
+                            ) : (
+                              <>
+                                <p className="font-bold uppercase tracking-wider text-emerald-500 text-[9px]">ROADMAP HIGH RESILIENCE: 0 TARGETS COMPROMISED</p>
+                                <p className="text-[9px] leading-tight text-emerald-600/70 mt-0.5 uppercase">
+                                  Even under a {Math.round((1 - goalsStressFactor) * 100)}% budget compression shock, your planned allocations are strong enough to achieve all milestones before the declared deadlines!
+                                </p>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -2817,6 +3248,19 @@ function MainApp() {
                       <h2 className="text-sm font-sans font-black uppercase tracking-wider text-brand-primary leading-none">Savings Goals</h2>
                       <p className="text-[8px] text-brand-primary/40 font-bold uppercase tracking-widest">Active capital growth targets</p>
                     </div>
+                    {goals.length > 0 && (
+                      <button 
+                        onClick={() => {
+                          setCommandTab('goal');
+                          setEditingGoal(null);
+                          setShowCommandCenter(true);
+                        }}
+                        className="flex items-center gap-1 bg-emerald-650 hover:bg-emerald-600 text-brand-surface px-3 py-1.5 rounded text-[8px] font-bold uppercase tracking-widest shadow-sm transition-all active:scale-95 leading-none"
+                      >
+                        <Plus className="w-3 h-3" />
+                        Add Saving Goal
+                      </button>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2824,6 +3268,7 @@ function MainApp() {
                       <GoalItem 
                         key={goal.id} 
                         goal={goal} 
+                        stressFactor={goalsStressFactor}
                         onEdit={() => { 
                           setEditingGoal(goal); 
                           setCommandTab('goal');
@@ -2848,15 +3293,30 @@ function MainApp() {
                       <h2 className="text-sm font-sans font-black uppercase tracking-wider text-brand-accent leading-none">Debts</h2>
                       <p className="text-[8px] text-brand-primary/40 font-bold uppercase tracking-widest">Active liability management</p>
                     </div>
-                    {goals.some(g => g.type === 'debt') && (
-                      <button 
-                        onClick={() => setActiveTab('insights')}
-                        className="flex items-center gap-1.5 px-3 py-1 bg-brand-accent text-brand-surface rounded text-[8px] font-bold uppercase tracking-widest hover:bg-brand-accent/90 transition-all shadow-sm group leading-none"
-                      >
-                        <Zap className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
-                        Optimize Debts
-                      </button>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {goals.length > 0 && (
+                        <button 
+                          onClick={() => {
+                            setCommandTab('goal');
+                            setEditingGoal(null);
+                            setShowCommandCenter(true);
+                          }}
+                          className="flex items-center gap-1 bg-brand-primary/80 hover:bg-brand-primary text-brand-surface px-3 py-1.5 rounded text-[8px] font-bold uppercase tracking-widest shadow-sm transition-all active:scale-95 leading-none"
+                        >
+                          <Plus className="w-3 h-3" />
+                          Add Debt
+                        </button>
+                      )}
+                      {goals.some(g => g.type === 'debt') && (
+                        <button 
+                          onClick={() => setActiveTab('insights')}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-accent text-brand-surface rounded text-[8px] font-bold uppercase tracking-widest hover:bg-brand-accent/90 transition-all shadow-sm group leading-none"
+                        >
+                          <Zap className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
+                          Optimize Debts
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2864,6 +3324,7 @@ function MainApp() {
                       <GoalItem 
                         key={goal.id} 
                         goal={goal} 
+                        stressFactor={goalsStressFactor}
                         onEdit={() => { 
                           setEditingGoal(goal); 
                           setCommandTab('goal');
@@ -2905,7 +3366,7 @@ function MainApp() {
                   }}
                 />
               </div>
-            ) : (
+            ) : goalsSubTab === 'mandates' ? (
               <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
                 {/* Income Streams Section */}
                 <div className="space-y-4">
@@ -2947,252 +3408,279 @@ function MainApp() {
                     )}
                   </div>
                 </div>
-
-                {/* SIP Portfolio Section - Conformed with absolute precision to uploaded screenshots */}
-                <div className="space-y-6 pt-6 border-t border-brand-border/30">
-                  {/* Executive Header */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between px-1 gap-3 border-b border-brand-border/40 pb-2">
-                    <div className="space-y-0.5">
-                      <h2 className="text-sm font-sans font-black uppercase tracking-wider text-emerald-600 leading-none">Auto-Save Plan</h2>
-                      <p className="text-[8px] text-brand-primary/40 font-bold uppercase tracking-widest">Systematic wealth accumulation mandates</p>
+              </div>
+            ) : (
+              <div className="space-y-6 animate-in fade-in duration-500">
+                {/* Friendly CFO Strategic Advisor Panel */}
+                <div className="bg-brand-surface border border-brand-border rounded-2xl p-6 shadow-sm space-y-6">
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[8px] font-black uppercase tracking-widest bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 px-2 py-0.5 rounded leading-none">
+                          ACTIVE CAPITAL DEPLOYMENT
+                        </span>
+                        <span className="text-[10px] font-mono font-bold text-brand-primary/30 uppercase tracking-wider">• Priority-First Blueprint</span>
+                      </div>
+                      <h3 className="text-lg font-black tracking-tight text-brand-primary uppercase">Savings & Excess Income Allocator</h3>
+                      <p className="text-xs text-brand-primary/50 max-w-3xl leading-relaxed">
+                        Determine the best use of your monthly net savings (Total Inflow - Total Expenses) across your goals. Allocate your extra cash according to high-priority order or split it proportionally.
+                      </p>
                     </div>
-                    <button 
-                      onClick={() => {
-                        setCommandTab('sip');
-                        setEditingSip(null);
-                        setShowCommandCenter(true);
-                      }}
-                      className="flex items-center gap-1.5 px-3 py-1 bg-brand-primary text-brand-surface rounded text-[8px] font-bold uppercase tracking-widest hover:bg-brand-primary/90 transition-all shadow-sm leading-none"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      New Auto-Save
-                    </button>
-                  </div>
-
-                  {/* Dynamic Screenshot-inspired SIP Portfolio Dashboard Overview Box */}
-                  {(() => {
-                    const activeSips = sips.filter(s => s.status === 'active');
                     
-                    let dailySum = 0;
-                    let weeklySum = 0;
-                    let fortnightlySum = 0;
-                    let monthlySum = 0;
-                    let quarterlySum = 0;
-                    let totalMonthlyEquivalent = 0;
-
-                    activeSips.forEach(s => {
-                      const amt = s.amount;
-                      const freq = (s.frequency || 'monthly') as string;
-                      
-                      if (freq === 'daily') {
-                        dailySum += amt;
-                        totalMonthlyEquivalent += amt * 30;
-                      } else if (freq === 'weekly') {
-                        weeklySum += amt;
-                        totalMonthlyEquivalent += amt * 4.33;
-                      } else if (freq === 'fortnightly' || freq === '15-days') {
-                        fortnightlySum += amt;
-                        totalMonthlyEquivalent += amt * 2;
-                      } else if (freq === 'quarterly') {
-                        quarterlySum += amt;
-                        totalMonthlyEquivalent += amt / 3;
-                      } else {
-                        monthlySum += amt;
-                        totalMonthlyEquivalent += amt;
-                      }
-                    });
-
-                    const formatSipAmountCompactList = (val: number) => {
-                      if (val === 0) return '₹0';
-                      if (val >= 1000) {
-                        const kValue = val / 1000;
-                        return `₹${kValue.toFixed(1).replace(/\.0$/, '')}k`;
-                      }
-                      return `₹${val}`;
-                    };
-
-                    const formatMainApproxAmount = (val: number) => {
-                      return new Intl.NumberFormat('en-IN', {
-                        style: 'currency',
-                        currency: 'INR',
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2
-                      }).format(val);
-                    };
-
-                    return (
-                      <div className="bg-gradient-to-br from-brand-primary/[0.01] to-brand-primary/[0.03] border border-brand-border/60 rounded-2xl p-6 shadow-sm space-y-5">
-                        <div className="space-y-1">
-                          <p className="text-[9px] font-mono font-bold text-brand-primary/40 uppercase tracking-widest">Contributions this month</p>
-                          <div className="flex items-baseline gap-2">
-                            <h3 className="text-3xl font-sans font-black text-brand-primary tracking-tight">
-                              {formatMainApproxAmount(totalMonthlyEquivalent)}
-                            </h3>
-                            <span className="text-xs font-semibold text-brand-primary/40 uppercase">approx.</span>
-                          </div>
-                        </div>
-
-                        {/* Responsive 3x2 Matrix matching Screenshot */}
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-y-4 gap-x-6 pt-3 border-t border-brand-border/30">
-                          <div className="space-y-0.5">
-                            <span className="block text-[8px] font-mono font-bold text-brand-primary/30 uppercase tracking-widest">Active Plans</span>
-                            <span className="text-base font-sans font-black text-brand-primary leading-tight select-all">
-                              {activeSips.length}
-                            </span>
-                          </div>
-                          
-                          <div className="space-y-0.5 md:border-l md:border-brand-border/30 md:pl-6">
-                            <span className="block text-[8px] font-mono font-bold text-brand-primary/30 uppercase tracking-widest">Daily Cycle</span>
-                            <span className="text-base font-sans font-black text-brand-primary leading-tight">
-                              {formatSipAmountCompactList(dailySum)}
-                            </span>
-                          </div>
-
-                          <div className="space-y-0.5 border-l border-brand-border/30 pl-6 md:border-l md:border-brand-border/30 md:pl-6">
-                            <span className="block text-[8px] font-mono font-bold text-brand-primary/30 uppercase tracking-widest">Weekly Cycle</span>
-                            <span className="text-base font-sans font-black text-brand-primary leading-tight">
-                              {formatSipAmountCompactList(weeklySum)}
-                            </span>
-                          </div>
-
-                          <div className="space-y-0.5 border-t border-brand-border/30 pt-4">
-                            <span className="block text-[8px] font-mono font-bold text-brand-primary/30 uppercase tracking-widest font-sans">Fortnightly (15-days)</span>
-                            <span className="text-base font-sans font-black text-brand-primary leading-tight">
-                              {formatSipAmountCompactList(fortnightlySum)}
-                            </span>
-                          </div>
-
-                          <div className="space-y-0.5 border-t border-brand-border/30 pt-4 md:border-l md:border-brand-border/30 md:pl-6">
-                            <span className="block text-[8px] font-mono font-bold text-brand-primary/30 uppercase tracking-widest">Monthly Cycle</span>
-                            <span className="text-base font-sans font-black text-brand-primary leading-tight">
-                              {formatSipAmountCompactList(monthlySum)}
-                            </span>
-                          </div>
-
-                          <div className="space-y-0.5 border-t border-brand-border/30 pt-4 border-l border-brand-border/30 pl-6 md:border-l md:border-brand-border/30 md:pl-6">
-                            <span className="block text-[8px] font-mono font-bold text-brand-primary/30 uppercase tracking-widest font-sans">Quarterly Cycle</span>
-                            <span className="text-base font-sans font-black text-brand-primary leading-tight">
-                              {formatSipAmountCompactList(quarterlySum)}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  {/* Filter Toolbar Section with Full Grouping Capabilities */}
-                  <div className="bg-brand-bg/40 p-3 rounded-2xl border border-brand-border/60 space-y-3">
-                    <div className="flex flex-col md:flex-row gap-3">
-                      {/* Search Bar */}
-                      <div className="flex-1 relative">
-                        <input 
-                          type="text" 
-                          value={sipSearchQuery}
-                          onChange={(e) => setSipSearchQuery(e.target.value)}
-                          placeholder="SEARCH MANDATES..." 
-                          className="w-full bg-brand-surface border border-brand-border/60 rounded-xl py-1.5 pl-4 pr-10 text-[10px] uppercase font-mono font-extrabold text-brand-primary outline-none focus:border-brand-primary/40 transition-all placeholder:text-brand-primary/20"
-                        />
-                        {sipSearchQuery && (
-                          <button 
-                            onClick={() => setSipSearchQuery('')}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] font-bold text-rose-500 font-mono uppercase"
-                          >
-                            Clear
-                          </button>
+                    {/* Strategy Switcher */}
+                    <div className="flex gap-1.5 p-1 bg-brand-bg rounded-xl border border-brand-border self-start shrink-0">
+                      <button
+                        onClick={() => {
+                          setAllocatorStrategy('cascade');
+                          setAllocationMessage(null);
+                        }}
+                        className={cn(
+                          "px-3 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all leading-none",
+                          allocatorStrategy === 'cascade'
+                            ? "bg-brand-primary text-brand-surface shadow-sm"
+                            : "text-brand-primary/45 hover:text-brand-primary"
                         )}
-                      </div>
+                      >
+                        Priority-First Flow
+                      </button>
+                      <button
+                        onClick={() => {
+                          setAllocatorStrategy('prorata');
+                          setAllocationMessage(null);
+                        }}
+                        className={cn(
+                          "px-3 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all leading-none",
+                          allocatorStrategy === 'prorata'
+                            ? "bg-brand-primary text-brand-surface shadow-sm"
+                            : "text-brand-primary/45 hover:text-brand-primary"
+                        )}
+                      >
+                        Balanced Split
+                      </button>
+                    </div>
+                  </div>
 
-                      {/* Status Pills Filter */}
-                      <div className="flex gap-1 bg-brand-surface p-1 rounded-xl border border-brand-border/60">
-                        {(['all', 'active', 'paused'] as const).map(p => (
-                          <button 
-                            key={p} 
-                            onClick={() => setSipFilterStatus(p)}
-                            className={cn(
-                              "px-3 py-1 rounded-lg text-[8px] font-mono font-extrabold uppercase tracking-widest transition-all leading-none",
-                              sipFilterStatus === p 
-                                ? "bg-brand-primary text-brand-surface shadow-sm font-black" 
-                                : "text-brand-primary/40 hover:text-brand-primary hover:bg-brand-primary/5"
-                            )}
-                          >
-                            {p}
-                          </button>
-                        ))}
+                  {/* Input Controls & Information Snapshots */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-2">
+                    <div className="bg-brand-bg/40 border border-brand-border p-4 rounded-xl space-y-3">
+                      <span className="text-[9px] font-mono uppercase tracking-widest text-brand-primary/45 font-bold block">1. Available Net Surplus</span>
+                      <div className="space-y-1">
+                        <h4 className="text-3xl font-mono font-black text-brand-primary">{formatCurrency(Math.max(0, balance))}</h4>
+                        <span className="text-[8.5px] font-mono text-brand-primary/30 uppercase tracking-wide leading-none">Actual Monthly Savings Built</span>
+                      </div>
+                      <div className="h-px bg-brand-border/30 my-1" />
+                      <div className="flex justify-between text-[10px] font-sans">
+                        <span className="text-brand-primary/40">Total Income:</span>
+                        <span className="font-mono text-brand-primary/60 font-bold">{formatCurrency(totalIncome)}</span>
+                      </div>
+                      <div className="flex justify-between text-[10px] font-sans border-t border-brand-border/20 pt-1">
+                        <span className="text-brand-primary/40">Total Expenses:</span>
+                        <span className="font-mono text-brand-primary/60 font-bold">{formatCurrency(totalExpenses)}</span>
                       </div>
                     </div>
 
-                    {/* Frequency Pills Filtering Bar */}
-                    <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
-                      <span className="text-[7.5px] font-mono font-bold text-brand-primary/30 uppercase tracking-widest whitespace-nowrap">Frequency:</span>
-                      <div className="flex gap-1">
-                        {(['all', 'daily', 'weekly', 'fortnightly', 'monthly', 'quarterly'] as const).map(f => (
-                          <button 
-                            key={f} 
-                            onClick={() => setSipFilterFrequency(f)}
-                            className={cn(
-                              "px-2.5 py-1 rounded-md text-[8px] font-sans font-bold uppercase transition-all whitespace-nowrap leading-none border",
-                              sipFilterFrequency === f 
-                                ? "bg-brand-primary text-brand-surface border-brand-primary shadow-sm" 
-                                : "bg-brand-surface text-brand-primary/40 border-brand-border/40 hover:text-brand-primary hover:border-brand-border"
-                            )}
-                          >
-                            {f === 'fortnightly' ? '15-days' : f}
-                          </button>
-                        ))}
+                    <div className="bg-brand-bg/40 border border-brand-border p-4 rounded-xl space-y-3">
+                      <span className="text-[9px] font-mono uppercase tracking-widest text-brand-primary/45 font-bold block">2. Custom Amount to Allocate</span>
+                      <div className="space-y-2">
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono text-brand-primary/40 font-bold">₹</span>
+                          <input
+                            type="number"
+                            placeholder={Math.max(0, balance).toString()}
+                            value={customSurplusInput}
+                            onChange={(e) => {
+                              setCustomSurplusInput(e.target.value);
+                              setAllocationMessage(null);
+                            }}
+                            className="w-full bg-brand-surface border border-brand-border rounded-xl px-7 py-2 text-sm text-brand-primary font-mono focus:outline-none focus:border-brand-primary/35 text-left placeholder:text-brand-primary/30 font-bold"
+                          />
+                        </div>
+                        <p className="text-[8.5px] text-brand-primary/35 uppercase tracking-wide leading-relaxed">
+                          Enter custom value to simulate savings of a different amount. Defaults to actual net surplus if empty.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="bg-brand-bg/40 border border-brand-border p-4 rounded-xl flex flex-col justify-between space-y-3">
+                      <div>
+                        <span className="text-[9px] font-mono uppercase tracking-widest text-brand-primary/45 font-bold block">3. Selected Distribution Method</span>
+                        <p className="text-[9.5px] text-brand-primary/55 font-sans leading-relaxed mt-2 uppercase">
+                          {allocatorStrategy === 'cascade' 
+                            ? "Priority-First flow: Fully funds your highest-impact goals sequentially. Priority order: Debt Payoff, Emergency Reserve, High Priority Accumulations, followed by Medium and Low priority." 
+                            : "Balanced Split flow: Distributes surplus proportionally to all active milestones based on their remaining target gaps and priorities (Debt gets 4x leverage, Safety/High gets 3x, Medium gets 2x, Low gets 1x)."}
+                        </p>
+                      </div>
+                      <div className="text-[8px] font-mono uppercase text-brand-accent bg-brand-accent/5 px-2.5 py-1 rounded border border-brand-accent/15 tracking-wider self-start font-bold">
+                        {allocatorStrategy === 'cascade' ? 'Priority Sequence Active' : 'Balanced Split Active'}
                       </div>
                     </div>
                   </div>
 
-                  {/* Render Core Grid List */}
-                  {(() => {
-                    const filteredSips = sips.filter(sip => {
-                      const matchesSearch = sip.name.toLowerCase().includes(sipSearchQuery.toLowerCase()) || 
-                        (sip.schemeSubcategory && sip.schemeSubcategory.toLowerCase().includes(sipSearchQuery.toLowerCase()));
-                      
-                      const matchesStatus = sipFilterStatus === 'all' 
-                        ? true 
-                        : sipFilterStatus === 'active' 
-                          ? sip.status === 'active' 
-                          : sip.status === 'paused';
-                      
-                      const matchesFrequency = sipFilterFrequency === 'all'
-                        ? true
-                        : sipFilterFrequency === 'fortnightly'
-                          ? ((sip.frequency as string) === 'fortnightly' || (sip.frequency as string) === '15-days')
-                          : sip.frequency === sipFilterFrequency;
-                          
-                      return matchesSearch && matchesStatus && matchesFrequency;
-                    });
+                  {/* Allocation Table / List */}
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center border-b border-brand-border/40 pb-2">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-brand-primary">SURPLUS DEPLOYMENT BLUEPRINT</h4>
+                      <span className="text-[9px] font-mono text-brand-primary/35">Computed across {computedAllocations.filter(item => item.suggestedAmount > 0).length} receiving targets</span>
+                    </div>
 
-                    return (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {filteredSips.map(sip => (
-                          <SIPItem 
-                            key={sip.id} 
-                            sip={sip} 
-                            transactions={transactions}
-                            onLogPayment={(s) => {
-                              setEditingSip(s);
-                              setEditingTransaction(null);
-                              setCommandTab('transaction');
-                              setShowCommandCenter(true);
-                            }}
-                            onEdit={() => { 
-                              setEditingSip(sip); 
-                              setCommandTab('sip');
-                              setShowCommandCenter(true); 
-                            }} 
-                            onDelete={() => handleDeleteSIP(sip.id!)}
-                          />
-                        ))}
-                        {filteredSips.length === 0 && (
-                          <div className="col-span-full py-12 text-center border border-dashed border-brand-border rounded-xl bg-brand-surface/30">
-                            <p className="data-label text-brand-primary/25">No automated plans match your filters</p>
-                          </div>
-                        )}
+                    {computedAllocations.length === 0 ? (
+                      <div className="text-center py-12 border border-dashed border-brand-border rounded-xl bg-brand-surface/20">
+                        <p className="text-xs font-mono text-brand-primary/30 uppercase tracking-widest font-bold">No active allocations available to display</p>
+                        <p className="text-[9.5px] text-brand-primary/25 mt-1 uppercase max-w-md mx-auto">Please ensure you have a positive surplus of funds and active goal targets with outstanding funding gaps.</p>
                       </div>
-                    );
-                  })()}
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="hidden md:grid grid-cols-12 gap-4 px-3 text-[9px] font-mono text-brand-primary/30 uppercase tracking-wider font-bold">
+                          <span className="col-span-4">Goal Name / Class</span>
+                          <span className="col-span-2 text-center">Remaining Gap</span>
+                          <span className="col-span-3 text-center">Calculated Allocation</span>
+                          <span className="col-span-3 text-right">Resulting Progress Goal</span>
+                        </div>
+
+                        <div className="space-y-2.5 max-h-[350px] overflow-y-auto pr-1">
+                          {computedAllocations.map((item, idx) => {
+                            const isAllocated = item.suggestedAmount > 0;
+                            const isDebt = item.goal.type === 'debt';
+                            const targetGap = item.goal.targetAmount - item.goal.currentAmount;
+                            const currentPct = (item.goal.currentAmount / item.goal.targetAmount) * 100;
+                            
+                            return (
+                              <div 
+                                key={item.goal.id || idx}
+                                className={cn(
+                                  "grid grid-cols-1 md:grid-cols-12 gap-3 md:gap-4 items-center p-3.5 border rounded-xl transition-all hover:shadow-[0_2px_8px_rgba(0,0,0,0.015)]",
+                                  isAllocated 
+                                    ? "bg-brand-surface border-emerald-500/20 shadow-sm" 
+                                    : "bg-brand-surface/40 border-brand-border/45 opacity-60"
+                                )}
+                              >
+                                {/* Name and Priority / Type Class */}
+                                <div className="col-span-1 md:col-span-4 flex items-center gap-3">
+                                  <div className={cn(
+                                    "p-2 rounded-lg border",
+                                    isDebt 
+                                      ? "bg-rose-500/5 border-rose-500/15 text-rose-500" 
+                                      : "bg-emerald-500/5 border-emerald-500/15 text-emerald-500"
+                                  )}>
+                                    <Target className="w-4 h-4" />
+                                  </div>
+                                  <div className="space-y-0.5">
+                                    <h4 className="text-xs font-bold text-brand-primary truncate">{item.goal.name}</h4>
+                                    <div className="flex gap-1.5 items-center">
+                                      <span className="text-[7.5px] font-mono uppercase bg-brand-bg border border-brand-border px-1.5 rounded text-brand-primary/40 font-bold">
+                                        {item.goal.type}
+                                      </span>
+                                      <span className={cn(
+                                        "text-[7px] font-mono font-bold uppercase tracking-wider px-1.5 rounded border leading-none",
+                                        item.goal.priority === 'high' 
+                                          ? "bg-rose-500/5 text-rose-500 border-rose-500/10" 
+                                          : item.goal.priority === 'low'
+                                            ? "bg-brand-primary/5 text-brand-primary/45 border-brand-border"
+                                            : "bg-amber-500/5 text-amber-500 border-amber-500/10"
+                                      )}>
+                                        {item.goal.priority || 'medium'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Outstanding gap remaining */}
+                                <div className="col-span-1 md:col-span-2 text-left md:text-center">
+                                  <span className="md:hidden text-[8px] font-mono text-brand-primary/30 uppercase block font-bold mb-0.5">Remaining Gap</span>
+                                  <span className="text-xs font-mono font-bold text-brand-primary/70">{formatCurrency(targetGap)}</span>
+                                </div>
+
+                                {/* Allocation amount with badge */}
+                                <div className="col-span-1 md:col-span-3 text-left md:text-center">
+                                  <span className="md:hidden text-[8px] font-mono text-brand-primary/30 uppercase block font-bold mb-0.5">CFO Allocation</span>
+                                  {isAllocated ? (
+                                    <div className="inline-flex flex-col items-center md:items-center">
+                                      <span className="text-sm font-mono font-black text-emerald-600 tracking-tight flex items-center gap-1">
+                                        + {formatCurrency(item.suggestedAmount)}
+                                      </span>
+                                      <span className="text-[7.5px] font-mono uppercase text-emerald-600 bg-emerald-500/5 border border-emerald-500/10 px-1.5 py-0.5 rounded mt-0.5 font-bold">
+                                        Surplus Addition
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-xs font-mono text-brand-primary/30 italic">Capped / Sequenced</span>
+                                  )}
+                                </div>
+
+                                {/* Progress bar results */}
+                                <div className="col-span-1 md:col-span-3 flex flex-col items-start md:items-end gap-1 font-sans">
+                                  <span className="md:hidden text-[8px] font-mono text-brand-primary/30 uppercase block font-bold mb-0.5">Future Milestone Progress</span>
+                                  <div className="flex items-center gap-1.5 text-[10px] font-bold">
+                                    <span className="font-mono text-brand-primary/40">{currentPct.toFixed(0)}%</span>
+                                    <ArrowRight className="w-3 h-3 text-brand-primary/30" />
+                                    <span className="font-bold text-emerald-600 font-mono">{item.newProgress.toFixed(0)}%</span>
+                                  </div>
+
+                                  <div className="h-1.5 w-full bg-brand-bg rounded-lg overflow-hidden border border-brand-border/40 p-[1px] max-w-[125px]">
+                                    <div className="flex h-full rounded-lg overflow-hidden">
+                                      <div 
+                                        className="h-full bg-brand-primary/20" 
+                                        style={{ width: `${Math.min(100, currentPct)}%` }} 
+                                      />
+                                      {isAllocated && (
+                                        <div 
+                                          className="h-full bg-emerald-500/80 animate-pulse" 
+                                          style={{ width: `${Math.min(100, item.newProgress) - Math.min(100, currentPct)}%` }} 
+                                        />
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Action buttons with real simulation results */}
+                        <div className="pt-4 mt-6 border-t border-brand-border/40 space-y-4">
+                          {allocationMessage && (
+                            <div className={cn(
+                              "p-4 rounded-xl border text-[11px] font-mono leading-relaxed uppercase font-bold",
+                              allocationMessage.includes('Successfully')
+                                ? "bg-emerald-500/5 border-emerald-500/20 text-emerald-655"
+                                : "bg-brand-primary/5 border-brand-border text-brand-primary/80"
+                            )}>
+                              {allocationMessage}
+                            </div>
+                          )}
+
+                          <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+                            <div className="text-[9px] text-brand-primary/45 font-mono max-w-lg leading-relaxed uppercase">
+                              * EXECUTION OF STRATEGIC ALLOCATIONS WRITES SECURELY TO THE FIREBASE LEDGER AND AUTO-GENERATES physical CASH FLOW OUTFLOW TRANSACTIONS IN THE RECORD HISTORY FOR TRANSACTIONS STABILITY.
+                            </div>
+                            
+                            <button
+                              onClick={handleExecuteAllocations}
+                              disabled={isApplyingAllocations || computedAllocations.filter(item => item.suggestedAmount > 0).length === 0}
+                              className={cn(
+                                "w-full sm:w-auto px-6 py-3.5 rounded-xl text-[9px] font-black uppercase tracking-widest shadow-sm transition-all text-center leading-none flex items-center justify-center gap-2",
+                                isApplyingAllocations || computedAllocations.filter(item => item.suggestedAmount > 0).length === 0
+                                  ? "bg-brand-primary/10 text-brand-primary/30 border border-transparent cursor-not-allowed"
+                                  : "bg-emerald-600 text-brand-surface hover:bg-emerald-755 border border-emerald-700 hover:scale-[1.02] active:scale-95"
+                              )}
+                            >
+                              {isApplyingAllocations ? (
+                                <>
+                                  <div className="animate-spin rounded-full h-3.5 w-3.5 border-2 border-brand-surface border-t-transparent inline-block" />
+                                  APPLYING ALLOCATIONS...
+                                </>
+                              ) : (
+                                <>
+                                  <Check className="w-4 h-4" />
+                                  EXECUTE ADV-ALLOCATION
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -3227,7 +3715,6 @@ function MainApp() {
                   monthlyIncome={estimatedMonthlyIncome}
                   monthlyFixedExpenses={estimatedFixedCosts}
                   monthlyGoalCommitments={monthlyGoalCommitments}
-                  sipMandates={sipMandates}
                   liquidAssets={liquidAssets}
                   incomeShock={stressTest.incomeShock}
                   expenseShock={stressTest.expenseShock}
@@ -3349,7 +3836,6 @@ function MainApp() {
               setShowCommandCenter(false);
               setEditingGoal(null);
               setEditingTransaction(null);
-              setEditingSip(null);
               setEditingIncomeStream(null);
             }} 
             userId={user.uid}
@@ -3360,9 +3846,6 @@ function MainApp() {
             editingTransaction={editingTransaction}
             avgDailySpend={avgDailySpend}
             onDeleteGoal={handleDeleteGoal}
-            sips={sips}
-            onDeleteSIP={handleDeleteSIP}
-            editingSip={editingSip}
             editingIncomeStream={editingIncomeStream}
           />
         )}
@@ -3553,27 +4036,21 @@ function CommandCenter({
   editingTransaction,
   avgDailySpend,
   onDeleteGoal,
-  sips,
-  onDeleteSIP,
-  editingSip,
   editingIncomeStream
 }: { 
   onClose: () => void, 
   userId: string, 
   transactions: Transaction[], 
   goals: Goal[],
-  initialTab: 'transaction' | 'goal' | 'sip' | 'income',
+  initialTab: 'transaction' | 'goal' | 'income',
   editingGoal: Goal | null,
   editingTransaction: Transaction | null,
   avgDailySpend: number,
   onDeleteGoal: (id: string) => Promise<void>,
-  sips: SIP[],
-  onDeleteSIP: (id: string) => Promise<void>,
-  editingSip: SIP | null,
   editingIncomeStream: IncomeStream | null
 }) {
-  const [activeTab, setActiveTab] = useState<'transaction' | 'goal' | 'sip' | 'income'>(
-    editingGoal ? 'goal' : editingTransaction ? 'transaction' : editingSip ? 'sip' : editingIncomeStream ? 'income' : initialTab
+  const [activeTab, setActiveTab] = useState<'transaction' | 'goal' | 'income'>(
+    editingGoal ? 'goal' : editingTransaction ? 'transaction' : editingIncomeStream ? 'income' : initialTab
   );
 
   return (
@@ -3592,14 +4069,14 @@ function CommandCenter({
               <div className="absolute top-0 right-0 w-20 h-20 bg-brand-accent/5 rounded-full blur-2xl -mr-10 -mt-10 group-hover/header:bg-brand-accent/10 transition-all" />
               <div className="flex items-center gap-3 relative z-10">
                 <div className="w-8 h-8 rounded-lg bg-brand-primary flex items-center justify-center text-brand-surface shadow-lg transform hover:rotate-6 transition-all duration-500">
-                  {activeTab === 'transaction' ? <Plus className="w-4 h-4 text-brand-accent" /> : activeTab === 'goal' ? <Target className="w-4 h-4 text-brand-accent" /> : <Calendar className="w-4 h-4 text-brand-accent" />}
+                  {activeTab === 'transaction' ? <Plus className="w-4 h-4 text-brand-accent" /> : activeTab === 'goal' ? <Target className="w-4 h-4 text-brand-accent" /> : <ArrowUpRight className="w-4 h-4 text-brand-accent" />}
                 </div>
                 <div className="space-y-0.5">
                   <h3 className="text-[11px] font-bold text-brand-primary uppercase tracking-widest leading-none">
-                    {activeTab === 'transaction' ? 'Quick Add' : activeTab === 'goal' ? 'Savings Goals' : activeTab === 'income' ? 'Income Mandate' : 'SIP Manager'}
+                    {activeTab === 'transaction' ? 'Quick Add' : activeTab === 'goal' ? 'Savings Goals' : 'Income Mandate'}
                   </h3>
                   <p className="text-[8px] font-mono font-bold text-brand-primary/30 uppercase tracking-[0.25em] leading-none">
-                    {activeTab === 'sip' ? 'SYSTEMATIC INVESTMENTS' : 'Update your history'}
+                    Update your history
                   </p>
                 </div>
               </div>
@@ -3620,8 +4097,6 @@ function CommandCenter({
                   transactions={transactions} 
                   goals={goals} 
                   editingTransaction={editingTransaction} 
-                  sips={sips}
-                  editingSip={editingSip}
                 />
               )}
               {activeTab === 'income' && (
@@ -3639,15 +4114,6 @@ function CommandCenter({
                 onDeleteGoal={onDeleteGoal}
               />
               )}
-              {activeTab === 'sip' && (
-                <SIPModalContent 
-                  onClose={onClose} 
-                  userId={userId} 
-                  sip={editingSip} 
-                  onDeleteSIP={onDeleteSIP}
-                  goals={goals}
-                />
-              )}
             </div>
 
             {/* Unified Navigation at bottom of flex container */}
@@ -3655,8 +4121,6 @@ function CommandCenter({
               <div className="flex gap-1.5 flex-wrap justify-center pb-1">
                 {[
                   { id: 'transaction', label: 'ADD', icon: Plus },
-                  { id: 'income', label: 'INFLOW', icon: ArrowUpRight },
-                  { id: 'sip', label: 'SIP', icon: Calendar },
                   { id: 'goal', label: 'GOALS', icon: Target },
                 ].map((t) => (
                   <button
@@ -3686,15 +4150,14 @@ function CommandCenter({
   );
 }
 
-function TransactionForm({ onClose, userId, transactions, goals, editingTransaction, sips, editingSip }: { onClose: () => void, userId: string, transactions: Transaction[], goals: Goal[], editingTransaction: Transaction | null, sips: SIP[], editingSip: SIP | null }) {
-  const [amount, setAmount] = useState(editingTransaction?.amount.toString() || editingSip?.amount.toString() || '');
-  const [category, setCategory] = useState(editingTransaction?.category || (editingSip ? 'Investments & EMI' : 'Dining & Delivery'));
-  const [subcategory, setSubcategory] = useState(editingTransaction?.subcategory || (editingSip ? `SIP:${editingSip.name}:${editingSip.id}:${editingSip.amount}:${editingSip.linkedGoalId || ''}` : 'Swiggy'));
-  const [description, setDescription] = useState(editingTransaction?.description || editingSip?.name || '');
+function TransactionForm({ onClose, userId, transactions, goals, editingTransaction }: { onClose: () => void, userId: string, transactions: Transaction[], goals: Goal[], editingTransaction: Transaction | null }) {
+  const [amount, setAmount] = useState(editingTransaction?.amount.toString() || '');
+  const [category, setCategory] = useState(editingTransaction?.category || 'Dining & Delivery');
+  const [subcategory, setSubcategory] = useState(editingTransaction?.subcategory || 'Swiggy');
+  const [description, setDescription] = useState(editingTransaction?.description || '');
   const [date, setDate] = useState(editingTransaction?.date ? new Date(editingTransaction.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
   const [type, setType] = useState<TransactionType>(editingTransaction?.type || 'expense');
-  const [manualGoalId, setManualGoalId] = useState<string | null>(editingTransaction?.linkedGoalId || editingSip?.linkedGoalId || null);
-  const [sipId, setSipId] = useState<string | null>(editingTransaction?.sipId || editingSip?.id || null);
+  const [manualGoalId, setManualGoalId] = useState<string | null>(editingTransaction?.linkedGoalId || null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const currentCategories = type === 'expense' || type === 'refund' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
@@ -3710,50 +4173,18 @@ function TransactionForm({ onClose, userId, transactions, goals, editingTransact
       subs.push(`GOAL:${g.name}:${g.id}`);
     });
 
-    // Inject active SIPs into subcategories
-    if (category === 'Investments & EMI' || category === 'Investments') {
-      const activeSips = sips.filter(s => s.status === 'active');
-      activeSips.forEach(s => {
-        subs.push(`SIP:${s.name}:${s.id}:${s.amount}:${s.linkedGoalId || ''}`);
-      });
-    }
-
     if (subs.length > 0 && !subs.includes(subcategory)) {
       setSubcategory(subs[0]);
     }
-  }, [category, type, goals, sips]);
+  }, [category, type, goals]);
 
-  // Handle goals/SIPs within subcategory selection
+  // Handle goals within subcategory selection
   useEffect(() => {
     if (subcategory.startsWith('GOAL:')) {
       const parts = subcategory.split(':');
       setManualGoalId(parts[2]);
-      setSipId(null);
-    } else if (subcategory.startsWith('SIP:')) {
-      const parts = subcategory.split(':');
-      const sId = parts[2];
-      setSipId(sId);
-      
-      // Intelligent amount prediction for schemes
-      const sip = sips.find(s => s.id === sId);
-      if (sip && sip.schemeType === 'gold_scheme') {
-        const sipTransactions = transactions.filter(t => t.sipId === sId);
-        const installmentIndex = sipTransactions.length;
-        
-        if (installmentIndex === 0 && sip.firstInstallmentAmount) {
-          setAmount(sip.firstInstallmentAmount.toString());
-        } else if (installmentIndex >= (sip.totalInstallments || 12) - 1) {
-          setAmount('0'); // Last month free
-        } else {
-          setAmount(sip.amount.toString());
-        }
-      } else {
-        setAmount(parts[3]);
-      }
-      setManualGoalId(parts[4] || null);
     } else if (!editingTransaction) {
       setManualGoalId(null);
-      setSipId(null);
     }
   }, [subcategory]);
 
@@ -3802,10 +4233,6 @@ function TransactionForm({ onClose, userId, transactions, goals, editingTransact
       const parts = subcategory.split(':');
       finalSubcategory = parts[1]; // Use goal name as subcategory
       if (!description) finalDescription = `Contribution to ${parts[1]}`;
-    } else if (subcategory.startsWith('SIP:')) {
-      const parts = subcategory.split(':');
-      finalSubcategory = 'SIP Installment';
-      if (!description) finalDescription = parts[1];
     } else {
       if (!description) finalDescription = subcategory.toUpperCase();
     }
@@ -3863,19 +4290,30 @@ function TransactionForm({ onClose, userId, transactions, goals, editingTransact
         }
       }
 
+      // Preserve dynamic local hours, minutes, and seconds so transactions are not set to UTC midnight (which translates to 5:30 IST for all users)
+      const [yr, mo, dy] = date.split('-').map(Number);
+      const now = new Date();
+      let finalDateObj: Date;
+
+      if (editingTransaction?.date) {
+        const origDate = new Date(editingTransaction.date);
+        finalDateObj = new Date(yr, mo - 1, dy, origDate.getHours(), origDate.getMinutes(), origDate.getSeconds());
+      } else {
+        finalDateObj = new Date(yr, mo - 1, dy, now.getHours(), now.getMinutes(), now.getSeconds());
+      }
+
       const transactionData = {
         amount: amountNum,
         category,
         subcategory: finalSubcategory,
         description: finalDescription,
         type,
-        date: new Date(date).toISOString(),
+        date: finalDateObj.toISOString(),
         userId,
         isMandatory: classification.isMandatory,
         isRecurring: classification.isRecurring,
         isAvoidable: classification.isAvoidable,
-        linkedGoalId: newGoalId,
-        sipId
+        linkedGoalId: newGoalId
       };
 
       if (editingTransaction?.id) {
@@ -3962,7 +4400,7 @@ function TransactionForm({ onClose, userId, transactions, goals, editingTransact
                 onChange={(e) => {
                   const newCat = e.target.value;
                   setCategory(newCat);
-                  const currentCats = type === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
+                  const currentCats = type === 'expense' || type === 'refund' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
                   const firstSub = (currentCats as any)[newCat]?.[0] || 'Other';
                   setSubcategory(firstSub);
                 }}
@@ -3986,7 +4424,7 @@ function TransactionForm({ onClose, userId, transactions, goals, editingTransact
                 )}
               >
                 {(() => {
-                  const currentCats = type === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
+                  const currentCats = type === 'expense' || type === 'refund' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
                   const baseSubs = (currentCats as any)[category] || [];
                   const goalSubs = goals
                     .filter(g => g.type === goalTypeMap[category])
@@ -4462,272 +4900,5 @@ function GoalModalContent({ onClose, userId, goal, onDeleteGoal }: { onClose: ()
   );
 }
 
-function SIPModalContent({ onClose, userId, sip, onDeleteSIP, goals }: { onClose: () => void, userId: string, sip: SIP | null, onDeleteSIP: (id: string) => Promise<void>, goals: Goal[] }) {
-  const [name, setName] = useState(sip?.name || '');
-  const [amount, setAmount] = useState(sip?.amount.toString() || '');
-  const [category, setCategory] = useState(sip?.category || 'Mutual Fund');
-  const [dayOfMonth, setDayOfMonth] = useState(sip?.dayOfMonth.toString() || '1');
-  const [startDate, setStartDate] = useState(sip?.startDate || new Date().toISOString().split('T')[0]);
-  const [status, setStatus] = useState<'active' | 'paused' | 'stopped'>(sip?.status || 'active');
-  const [linkedGoalId, setLinkedGoalId] = useState(sip?.linkedGoalId || '');
-  const [totalInstallments, setTotalInstallments] = useState(sip?.totalInstallments?.toString() || '12');
-  const [schemeType, setSchemeType] = useState<'standard' | 'gold_scheme'>(sip?.schemeType || 'standard');
-  const [firstInstallmentAmount, setFirstInstallmentAmount] = useState(sip?.firstInstallmentAmount?.toString() || '');
-  const [frequency, setFrequency] = useState<'daily' | 'weekly' | 'fortnightly' | 'monthly' | 'quarterly'>(sip?.frequency || 'monthly');
-  const [schemeSubcategory, setSchemeSubcategory] = useState(sip?.schemeSubcategory || '');
-  const [mandateType, setMandateType] = useState<'standard' | 'step-up' | 'amc-sip'>(sip?.mandateType || 'standard');
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (isSubmitting) return;
-    setIsSubmitting(true);
-    try {
-      const sipData = {
-        name,
-        amount: parseFloat(amount),
-        category,
-        dayOfMonth: parseInt(dayOfMonth),
-        startDate,
-        status,
-        userId,
-        linkedGoalId: linkedGoalId || null,
-        totalInstallments: parseInt(totalInstallments),
-        firstInstallmentAmount: firstInstallmentAmount ? parseFloat(firstInstallmentAmount) : null,
-        schemeType,
-        frequency,
-        schemeSubcategory,
-        mandateType
-      };
-
-      if (sip?.id) {
-        await updateDoc(doc(db, 'sips', sip.id), sipData);
-      } else {
-        await addDoc(collection(db, 'sips'), sipData);
-      }
-      onClose();
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, 'sips');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-6 pb-8 px-1">
-      <div className="space-y-4">
-        <div className="group/input space-y-2">
-          <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">SIP Identity</label>
-          <input 
-            autoFocus
-            type="text" 
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g., QUANT SMALL CAP FUND"
-            className="w-full bg-brand-surface border border-brand-border rounded-lg py-2.5 px-4 font-sans font-bold text-sm text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none uppercase tracking-tight"
-            required
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div className="group/input space-y-2">
-            <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Monthly Auto-Debet</label>
-            <div className="relative">
-              <span className="absolute left-4 top-1/2 -translate-y-1/2 font-mono font-bold text-brand-primary/10 group-focus-within/input:text-brand-accent transition-colors text-base">₹</span>
-              <input 
-                type="number" 
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="0.00"
-                className="w-full bg-brand-surface border border-brand-border rounded-lg py-2.5 pl-8 pr-4 font-mono font-bold text-sm text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none"
-                required
-              />
-            </div>
-          </div>
-          <div className="group/input space-y-2">
-            <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Frequency</label>
-            <select 
-              value={frequency}
-              onChange={(e) => setFrequency(e.target.value as any)}
-              className="w-full h-10 bg-brand-surface border border-brand-border rounded-lg px-4 text-[9px] font-mono font-bold text-brand-primary outline-none appearance-none cursor-pointer focus:border-brand-accent/30 transition-all uppercase"
-            >
-              <option value="daily">DAILY</option>
-              <option value="weekly">WEEKLY</option>
-              <option value="fortnightly">FORTNIGHTLY (15-DAYS)</option>
-              <option value="monthly">MONTHLY</option>
-              <option value="quarterly">QUARTERLY</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div className="group/input space-y-2">
-            <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Cycle Date</label>
-            <input 
-              type="number" 
-              min="1"
-              max="31"
-              value={dayOfMonth}
-              onChange={(e) => setDayOfMonth(e.target.value)}
-              placeholder="e.g. 5"
-              className="w-full bg-brand-surface border border-brand-border rounded-lg py-2.5 px-4 font-mono font-bold text-sm text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none"
-              required
-              disabled={frequency === 'daily' || frequency === 'weekly'}
-            />
-          </div>
-          <div className="group/input space-y-2">
-            <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Mandate Type</label>
-            <select 
-              value={mandateType}
-              onChange={(e) => setMandateType(e.target.value as any)}
-              className="w-full h-10 bg-brand-surface border border-brand-border rounded-lg px-4 text-[9px] font-mono font-bold text-brand-primary outline-none appearance-none cursor-pointer focus:border-brand-accent/30 transition-all uppercase"
-            >
-              <option value="standard">Standard SIP</option>
-              <option value="step-up">Step-up (+10% p.a.)</option>
-              <option value="amc-sip">Direct AMC SIP</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="group/input space-y-2">
-          <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Scheme Asset Subclass (Subcategory)</label>
-          <input 
-            type="text" 
-            value={schemeSubcategory}
-            onChange={(e) => setSchemeSubcategory(e.target.value)}
-            placeholder="e.g. ELSS, Flexi Cap, Small Cap, Liquid, Focused"
-            className="w-full bg-brand-surface border border-brand-border rounded-lg py-2.5 px-4 font-sans font-bold text-sm text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none uppercase tracking-tight"
-          />
-          <div className="flex gap-1.5 flex-wrap pt-1.5 pl-1 select-none">
-            {['ELSS Tax Saver', 'Small Cap', 'Liquid Debt', 'Flexi Cap', 'Large Cap', 'Contra Fund'].map(pill => (
-              <button 
-                type="button" 
-                key={pill}
-                onClick={() => setSchemeSubcategory(pill)}
-                className={cn(
-                  "px-2.5 py-1 rounded-lg text-[8px] font-mono font-bold tracking-wider border uppercase transition-all duration-150 leading-none",
-                  schemeSubcategory.toUpperCase() === pill.toUpperCase()
-                    ? "bg-brand-primary text-brand-surface border-brand-primary"
-                    : "bg-brand-bg/50 text-brand-primary/40 border-brand-border/60 hover:text-brand-primary hover:border-brand-border"
-                )}
-              >
-                {pill}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div className="group/input space-y-2">
-            <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Category</label>
-            <select 
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="w-full h-10 bg-brand-bg/30 border border-brand-border rounded-lg px-4 text-[9px] font-mono font-bold text-brand-primary outline-none appearance-none cursor-pointer focus:bg-brand-surface transition-all uppercase"
-            >
-              <option value="Mutual Fund">MUTUAL FUND</option>
-              <option value="Stocks">STOCKS / ETF</option>
-              <option value="Gold">DIGITAL GOLD</option>
-              <option value="PPF/EPF">PPF / EPF</option>
-              <option value="Jewellery Scheme">JEWELLERY SCHEME</option>
-            </select>
-          </div>
-          <div className="group/input space-y-2">
-            <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Scheme Type</label>
-            <select 
-              value={schemeType}
-              onChange={(e) => setSchemeType(e.target.value as any)}
-              className="w-full h-10 bg-brand-bg/30 border border-brand-border rounded-lg px-4 text-[9px] font-mono font-bold text-brand-primary outline-none appearance-none cursor-pointer focus:bg-brand-surface transition-all uppercase"
-            >
-              <option value="standard">STANDARD SIP</option>
-              <option value="gold_scheme">GOLD SCHEME (V2)</option>
-            </select>
-          </div>
-        </div>
-
-        {schemeType === 'gold_scheme' && (
-          <div className="grid grid-cols-2 gap-3 animate-in fade-in slide-in-from-top-1">
-            <div className="group/input space-y-2">
-              <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Tenure (Months)</label>
-              <input 
-                type="number" 
-                value={totalInstallments}
-                onChange={(e) => setTotalInstallments(e.target.value)}
-                className="w-full bg-brand-surface border border-brand-border rounded-lg py-2.5 px-4 font-mono font-bold text-sm text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none"
-                required
-              />
-            </div>
-            <div className="group/input space-y-2">
-              <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Initial Pay (Discounted)</label>
-              <input 
-                type="number" 
-                value={firstInstallmentAmount}
-                onChange={(e) => setFirstInstallmentAmount(e.target.value)}
-                className="w-full bg-brand-surface border border-brand-border rounded-lg py-2.5 px-4 font-mono font-bold text-sm text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none"
-                placeholder="7500"
-              />
-            </div>
-          </div>
-        )}
-
-        <div className="group/input space-y-2">
-          <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Status</label>
-          <select 
-            value={status}
-            onChange={(e) => setStatus(e.target.value as any)}
-            className="w-full h-10 bg-brand-bg/30 border border-brand-border rounded-lg px-4 text-[9px] font-mono font-bold text-brand-primary outline-none appearance-none cursor-pointer focus:bg-brand-surface transition-all uppercase"
-          >
-            <option value="active">ACTIVE</option>
-            <option value="paused">PAUSED</option>
-            <option value="stopped">STOPPED</option>
-          </select>
-        </div>
-
-        <div className="group/input space-y-2">
-          <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Link to Goal</label>
-          <select 
-            value={linkedGoalId}
-            onChange={(e) => setLinkedGoalId(e.target.value)}
-            className="w-full h-10 bg-brand-bg/30 border border-brand-border rounded-lg px-4 text-[9px] font-mono font-bold text-brand-primary outline-none appearance-none cursor-pointer focus:bg-brand-surface transition-all uppercase"
-          >
-            <option value="">NO LINKED GOAL</option>
-            {goals.filter(g => g.type === 'investment' || g.type === 'savings' || g.type === 'gold').map(g => (
-              <option key={g.id} value={g.id}>{g.name.toUpperCase()}</option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      <div className="flex gap-3">
-        {sip?.id && (
-          <button
-            type="button"
-            onClick={async () => {
-              if (!window.confirm('Delete this SIP configuration? Historial transactions remain but auto-reconciliation will stop.')) return;
-              setIsSubmitting(true);
-              try {
-                await onDeleteSIP(sip.id);
-                onClose();
-              } catch (error) {
-                handleFirestoreError(error, OperationType.DELETE, 'sips');
-              } finally {
-                setIsSubmitting(false);
-              }
-            }}
-            className="py-4 px-6 bg-rose-500/10 text-rose-500 rounded-lg font-bold text-[9px] uppercase tracking-widest border border-rose-500/20 active:scale-95 transition-all"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
-        )}
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="flex-1 py-4 bg-brand-primary text-brand-surface rounded-lg font-bold text-[9px] uppercase tracking-[0.4em] shadow-lg active:scale-[0.98] transition-all border border-white/10 hover:bg-brand-primary/95"
-        >
-          {isSubmitting ? 'SAVING...' : sip ? 'UPDATE SIP' : 'CREATE SIP'}
-        </button>
-      </div>
-    </form>
-  );
-}
 
