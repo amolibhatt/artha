@@ -9,7 +9,7 @@
         "category": { "type": "string", "description": "Category (e.g., Food, Rent, Salary)" },
         "date": { "type": "string", "format": "date-time", "description": "ISO date string" },
         "description": { "type": "string", "description": "Optional note" },
-        "type": { "type": "string", "enum": ["income", "expense"], "description": "Type of transaction" },
+        "type": { "type": "string", "enum": ["income", "expense", "refund"], "description": "Type of transaction" },
         "userId": { "type": "string", "description": "Owner UID" },
         "subcategory": { "type": "string" },
         "isMandatory": { "type": "boolean" },
