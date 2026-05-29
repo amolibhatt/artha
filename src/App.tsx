@@ -9,6 +9,7 @@ import {
   Plus, 
   ShieldCheck,
   ShieldAlert,
+  Award,
   Plane,
   TrendingUp, 
   TrendingDown, 
@@ -83,6 +84,7 @@ import { useFinancialEngine } from './hooks/useFinancialEngine';
 import { IncomeStreamItem } from './components/IncomeStreamItem';
 import { GoalItem } from './components/GoalItem';
 import { GoalTimeline } from './components/GoalTimeline';
+import { SavingsMastery } from './components/SavingsMastery';
 
 // Lazy load heavy analytical components
 const StrategyInsights = React.lazy(() => import('./components/StrategyInsights').then(m => ({ default: m.StrategyInsights })));
@@ -90,6 +92,7 @@ const DebtOptimization = React.lazy(() => import('./components/DebtOptimization'
 const StressTestConsole = React.lazy(() => import('./components/StressTestConsole').then(m => ({ default: m.StressTestConsole })));
 
 const getContributionDelta = (amount: number, type: TransactionType, category: string, isForcedLink: boolean = false) => {
+  if (type === 'refund') return -amount;
   if (isForcedLink) return amount;
   if (type === 'income') return amount;
   if (type === 'expense') {
@@ -98,7 +101,6 @@ const getContributionDelta = (amount: number, type: TransactionType, category: s
       return amount;
     }
   }
-  if (type === 'refund') return -amount;
   return 0;
 };
 
@@ -202,7 +204,7 @@ export default function App() {
 
 function MainApp() {
   const [activeTab, setActiveTab] = useState<'home' | 'history' | 'insights' | 'goals'>('home');
-  const [goalsSubTab, setGoalsSubTab] = useState<'strategy' | 'timeline' | 'mandates' | 'surplus'>('strategy');
+  const [goalsSubTab, setGoalsSubTab] = useState<'strategy' | 'timeline' | 'mandates' | 'surplus' | 'mastery'>('strategy');
   const [allocatorStrategy, setAllocatorStrategy] = useState<'cascade' | 'prorata'>('cascade');
   const [customSurplusInput, setCustomSurplusInput] = useState<string>('');
   const [isApplyingAllocations, setIsApplyingAllocations] = useState(false);
@@ -447,6 +449,22 @@ function MainApp() {
     savingsRate,
     incomeCoverage
   } = useFinancialEngine(transactions, goals, 0, stressTest, [], incomeStreams);
+
+  // Dynamic Gamification System (XP & Level compilation)
+  const xpFromGoalsCount = goals.length * 50; 
+  const xpFromGoalCompletion = goals.filter(g => g.currentAmount >= g.targetAmount && g.targetAmount > 0).length * 200;
+  const savingTransactionsCount = transactions.filter(
+    t => t.linkedGoalId || t.category === 'Savings' || t.category === 'Investments & EMI' || t.category === 'Debt Repayment'
+  ).length;
+  const xpFromTransactions = savingTransactionsCount * 30;
+  const xpFromIncomeStreams = incomeStreams.filter(i => i.status === 'active').length * 40;
+  const hasActivePrepayment = goals.filter(g => g.type === 'debt').some(d => d.currentAmount > 0);
+  const xpFromPrepayment = hasActivePrepayment ? 120 : 0;
+  const isStressed = (stressTest.incomeShock !== 1 || stressTest.expenseShock !== 1);
+  const xpFromStressAuditing = isStressed ? 80 : 0;
+  const totalXP = xpFromGoalsCount + xpFromGoalCompletion + xpFromTransactions + xpFromIncomeStreams + xpFromPrepayment + xpFromStressAuditing;
+  const xpPerLevel = 400;
+  const currentLevel = Math.floor(totalXP / xpPerLevel) + 1;
 
   // Allocation Hierarchy - Phase-wise sequence (Stabilization -> Acceleration -> Optimization)
   const stabilizationAllocValue = estimatedFixedCosts + goals.filter(g => g.type === 'debt' || g.name.toLowerCase().includes('emergency')).reduce((acc, g) => {
@@ -760,7 +778,7 @@ function MainApp() {
   const filteredTransactions = transactions.filter(t => {
     // 1. Type filter
     if (filter === 'Expenses' && t.type === 'income') return false;
-    if (filter === 'Income' && t.type !== 'income') return false;
+    if (filter === 'Income' && t.type !== 'income' && t.type !== 'refund') return false;
 
     // 2. Search query filter
     if (searchQuery) {
@@ -1169,6 +1187,14 @@ function MainApp() {
                 {currentPhase}
               </div>
             </div>
+            <div className="h-6 w-[1px] bg-brand-border" />
+            <div className="flex flex-col items-end cursor-pointer group" onClick={() => { setActiveTab('goals'); setGoalsSubTab('mastery'); }}>
+              <p className="terminal-text !text-brand-primary/20">Capital Mastery</p>
+              <div className="flex items-center gap-1.5 px-3 py-0.5 bg-brand-primary/5 hover:bg-brand-accent/10 border border-brand-primary/10 hover:border-brand-accent/20 rounded-full text-[9px] font-bold uppercase tracking-widest mt-0.5 transition-all">
+                <Sparkles className="w-2.5 h-2.5 text-brand-accent group-hover:rotate-12 transition-transform" />
+                <span>Level {currentLevel}</span>
+              </div>
+            </div>
             <button 
               onClick={() => logout()}
               className="p-2 text-brand-primary/20 hover:text-rose-500 transition-colors"
@@ -1178,7 +1204,14 @@ function MainApp() {
             </button>
           </div>
 
-          <div className="lg:hidden flex items-center gap-4">
+          <div className="lg:hidden flex items-center gap-3">
+             <div 
+               className="flex items-center gap-1 bg-brand-primary/5 px-2.5 py-1 rounded-full border border-brand-primary/10 text-[8.5px] font-bold uppercase tracking-widest cursor-pointer"
+               onClick={() => { setActiveTab('goals'); setGoalsSubTab('mastery'); }}
+             >
+               <Sparkles className="w-2.5 h-2.5 text-brand-accent animate-pulse" />
+               <span>Lvl {currentLevel}</span>
+             </div>
              <div className="flex flex-col items-end">
                 <p className="terminal-text !text-[7px]">Pulse</p>
                 <div className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-pulse" />
@@ -1510,10 +1543,10 @@ function MainApp() {
                 <div className="space-y-3">
                   <div className="flex items-center gap-1.5 text-[9px] font-mono font-bold text-brand-primary/40 uppercase tracking-widest">
                     <Sparkles className="w-3.5 h-3.5 text-brand-accent" />
-                    <span>AI CFO Pulse Briefing</span>
+                    <span>AI Financial Summary</span>
                   </div>
                   <p className="text-sm font-sans font-medium text-brand-primary/80 leading-relaxed">
-                    {insights[0] || "Your active strategist is compiling raw cash flows. Your strategic savings roadmap will automatically form here as transactions are added."}
+                    {insights[0] || "Compiling your cash flows. Your custom savings roadmap will automatically form here as transactions are added."}
                   </p>
                 </div>
                 <div className="pt-2">
@@ -1521,7 +1554,7 @@ function MainApp() {
                     onClick={() => setActiveTab('insights')}
                     className="inline-flex items-center gap-1.5 text-[9px] font-black hover:text-brand-accent text-brand-primary uppercase tracking-widest hover:gap-3 transition-all font-mono"
                   >
-                    <span>Analyze Strategic Scenarios</span>
+                    <span>See Detailed Insights</span>
                     <ArrowRight className="w-3.5 h-3.5 text-brand-accent" />
                   </button>
                 </div>
@@ -2980,19 +3013,19 @@ function MainApp() {
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
                       <span className="text-[8px] font-black uppercase tracking-widest bg-brand-accent/10 border border-brand-accent/20 px-2.5 py-0.5 rounded leading-none text-brand-accent">
-                        INTEGRATED CFO DIAGNOSIS
+                        SAVINGS SUMMARY
                       </span>
-                      <span className="text-[10px] font-mono font-bold text-brand-primary/30 uppercase tracking-wider">• Roadmap & Cash Routing</span>
+                      <span className="text-[10px] font-mono font-bold text-brand-primary/30 uppercase tracking-wider">• Plan & Progress</span>
                     </div>
                     <h2 className="text-xl font-black text-brand-primary tracking-tight uppercase leading-none">Your Savings & Goals Dashboard</h2>
                     <p className="text-xs text-brand-primary/55 max-w-2xl leading-relaxed mt-1">
-                      Translate your net surplus into reality. Track life milestones, project precise achievement dates, and deploy monthly savings surplus elements strategically.
+                      See your savings goals and how much progress you are making each month. Track target dates and watch your money grow.
                     </p>
                   </div>
                   <div className="bg-brand-surface/70 border border-brand-border/60 px-4 py-2.5 rounded-xl flex items-center gap-2.5 shrink-0 shadow-sm">
                     <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse animate-duration-1000" />
                     <div className="space-y-0.5 text-left">
-                      <span className="text-[8px] font-mono font-bold text-brand-primary/40 uppercase block leading-none">Monthly Cash Surplus</span>
+                      <span className="text-[8px] font-mono font-bold text-brand-primary/40 uppercase block leading-none">Extra Monthly Savings</span>
                       <span className="text-base font-mono font-black text-brand-primary tracking-tight leading-none">
                         {formatCurrency(Math.max(0, balance))}/mo
                       </span>
@@ -3085,7 +3118,7 @@ function MainApp() {
               </div>
 
               {/* Improved High-UX Sub-tab Switcher with explicit step labeling */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 bg-brand-bg/60 p-1.5 rounded-2xl border border-brand-border max-w-5xl mx-auto">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 bg-brand-bg/60 p-1.5 rounded-2xl border border-brand-border max-w-5xl mx-auto">
                 <button 
                   onClick={() => setGoalsSubTab('strategy')}
                   className={cn(
@@ -3150,6 +3183,22 @@ function MainApp() {
                   <div className="space-y-0.5">
                     <span className="text-[10px] font-bold uppercase tracking-wider block leading-none">4. Recurring Incomes</span>
                     <span className={cn("text-[7.5px] font-bold uppercase tracking-widest block leading-none mt-1", goalsSubTab === 'mandates' ? "text-brand-surface/75" : "text-brand-primary/35")}>How is it actively funded?</span>
+                  </div>
+                </button>
+
+                <button 
+                  onClick={() => setGoalsSubTab('mastery')}
+                  className={cn(
+                    "flex items-center gap-3 py-2 px-4 rounded-xl transition-all font-sans border text-left",
+                    goalsSubTab === 'mastery' 
+                      ? "bg-brand-primary text-brand-surface shadow-md border-brand-primary" 
+                      : "text-brand-primary/45 hover:text-brand-primary border-transparent hover:bg-brand-primary/5"
+                  )}
+                >
+                  <Award className={cn("w-4 h-4 shrink-0", goalsSubTab === 'mastery' ? "text-brand-surface" : "text-brand-primary/45")} />
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider block leading-none">5. Savings Mastery</span>
+                    <span className={cn("text-[7.5px] font-bold uppercase tracking-widest block leading-none mt-1", goalsSubTab === 'mastery' ? "text-brand-surface/75" : "text-brand-primary/35")}>Quests & Achievements</span>
                   </div>
                 </button>
               </div>
@@ -3408,6 +3457,18 @@ function MainApp() {
                     )}
                   </div>
                 </div>
+              </div>
+            ) : goalsSubTab === 'mastery' ? (
+              <div className="animate-in fade-in duration-500">
+                <SavingsMastery
+                  goals={goals}
+                  transactions={transactions}
+                  incomeStreams={incomeStreams}
+                  balance={balance}
+                  incomeShock={stressTest.incomeShock}
+                  expenseShock={stressTest.expenseShock}
+                  survivalMonths={runwayMonths}
+                />
               </div>
             ) : (
               <div className="space-y-6 animate-in fade-in duration-500">
@@ -4232,9 +4293,17 @@ function TransactionForm({ onClose, userId, transactions, goals, editingTransact
     if (subcategory.startsWith('GOAL:')) {
       const parts = subcategory.split(':');
       finalSubcategory = parts[1]; // Use goal name as subcategory
-      if (!description) finalDescription = `Contribution to ${parts[1]}`;
+      if (!description) {
+        finalDescription = type === 'refund' 
+          ? `Refund: ${parts[1]}` 
+          : `Contribution to ${parts[1]}`;
+      }
     } else {
-      if (!description) finalDescription = subcategory.toUpperCase();
+      if (!description) {
+        finalDescription = type === 'refund' 
+          ? `Refund: ${subcategory.toUpperCase()}` 
+          : subcategory.toUpperCase();
+      }
     }
 
     if (isNaN(amountNum) || amountNum <= 0 || isSubmitting) return;
@@ -4476,18 +4545,16 @@ function TransactionForm({ onClose, userId, transactions, goals, editingTransact
           </div>
         </div>
 
-        {(category === 'Other' || subcategory === 'Other') && (
-          <div className="group/input space-y-2">
-            <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Notes</label>
-            <input 
-              type="text" 
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder={subcategory.toUpperCase()}
-              className="w-full bg-brand-surface border border-brand-border rounded-lg py-2.5 px-4 font-sans font-bold text-sm text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none uppercase tracking-tight"
-            />
-          </div>
-        )}
+        <div className="group/input space-y-2">
+          <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Notes / Description</label>
+          <input 
+            type="text" 
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder={subcategory.startsWith('GOAL:') ? `Contribution to ${subcategory.split(':')[1]}`.toUpperCase() : subcategory.toUpperCase() || 'OPTIONAL TRANSACTION NOTE'}
+            className="w-full bg-brand-surface border border-brand-border rounded-lg py-2.5 px-4 font-sans font-bold text-sm text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none uppercase tracking-tight"
+          />
+        </div>
 
       </div>
 
@@ -4562,7 +4629,7 @@ function GoalModalContent({ onClose, userId, goal, onDeleteGoal }: { onClose: ()
   const templates = [
     { name: 'Home Loan', target: 5000000, type: 'debt' as GoalType, interestRate: 8.5, tenureMonths: 240, emi: 45000 },
     { name: 'Emergency Fund', target: 500000, type: 'savings' as GoalType },
-    { name: 'Gold Reserve (SGB)', target: 200000, type: 'gold' as GoalType, isScheme: true, maturityValue: 240000 },
+    { name: 'Gold Jewelry Saving', target: 150000, type: 'gold' as GoalType, isScheme: false },
     { name: 'Growth Seed', target: 1000000, type: 'investment' as GoalType },
     { name: 'Global Travel', target: 400000, type: 'lifestyle' as GoalType }
   ];
@@ -4583,8 +4650,8 @@ function GoalModalContent({ onClose, userId, goal, onDeleteGoal }: { onClose: ()
         type,
         userId,
         deadline: deadline || null,
-        interestRate: interestRate ? parseFloat(interestRate) : 8.5,
-        tenureMonths: tenureMonths ? parseInt(tenureMonths) : 240,
+        interestRate: interestRate ? parseFloat(interestRate) : (type === 'debt' ? 8.5 : null),
+        tenureMonths: tenureMonths ? parseInt(tenureMonths) : (type === 'debt' ? 240 : null),
         emi: emi ? parseFloat(emi) : (type === 'debt' ? 0 : null),
         startDate: startDate || null,
         priority,
@@ -4638,11 +4705,11 @@ function GoalModalContent({ onClose, userId, goal, onDeleteGoal }: { onClose: ()
                   setName(tmp.name);
                   setTargetAmount(tmp.target.toString());
                   setType(tmp.type);
-                  setIsScheme(tmp.isScheme || false);
-                  if (tmp.maturityValue) setMaturityValue(tmp.maturityValue.toString());
-                  if (tmp.interestRate) setInterestRate(tmp.interestRate.toString());
-                  if (tmp.tenureMonths) setTenureMonths(tmp.tenureMonths.toString());
-                  if (tmp.emi) setEmi(tmp.emi.toString());
+                  setIsScheme((tmp as any).isScheme || false);
+                  if ((tmp as any).maturityValue) setMaturityValue((tmp as any).maturityValue.toString());
+                  if ((tmp as any).interestRate) setInterestRate((tmp as any).interestRate.toString());
+                  if ((tmp as any).tenureMonths) setTenureMonths((tmp as any).tenureMonths.toString());
+                  if ((tmp as any).emi) setEmi((tmp as any).emi.toString());
                 }}
                 className="flex-shrink-0 px-4 py-3 rounded-xl border border-brand-border bg-brand-bg/50 hover:border-brand-accent/40 hover:bg-brand-surface transition-all text-left min-w-[140px] group"
               >
@@ -4789,86 +4856,95 @@ function GoalModalContent({ onClose, userId, goal, onDeleteGoal }: { onClose: ()
         </div>
 
         {type !== 'debt' && (
-          <div className="grid grid-cols-2 gap-3 animate-in fade-in slide-in-from-top-2">
-            <div className="space-y-2">
-              <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Target Deadline</label>
-              <div className="relative">
-                <input 
-                  type="date"
-                  value={deadline}
-                  onChange={(e) => setDeadline(e.target.value)}
-                  className="w-full bg-brand-surface border border-brand-border rounded-lg py-2 px-3 font-mono font-bold text-xs text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none"
-                />
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3 animate-in fade-in slide-in-from-top-2">
+              <div className="space-y-2">
+                <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Target Deadline</label>
+                <div className="relative">
+                  <input 
+                    type="date"
+                    value={deadline}
+                    onChange={(e) => setDeadline(e.target.value)}
+                    className="w-full bg-brand-surface border border-brand-border rounded-lg py-2 px-3 font-mono font-bold text-xs text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none"
+                  />
+                </div>
+                <p className="px-1 text-[7px] font-medium text-brand-primary/40 leading-tight">Expected completion date</p>
               </div>
-              <p className="px-1 text-[7px] font-medium text-brand-primary/40 leading-tight">Expected completion date</p>
-            </div>
-            <div className="space-y-2">
-              <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Monthly Savings Target</label>
-              <div className="relative group">
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-mono font-bold text-brand-primary/10 group-focus-within/input:text-brand-accent transition-colors text-xs">₹</span>
-                <input 
-                  type="number"
-                  value={monthlyContribution}
-                  onChange={(e) => setMonthlyContribution(e.target.value)}
-                  className="w-full bg-brand-surface border border-brand-border rounded-lg py-2 pl-7 pr-3 font-mono font-bold text-sm text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none"
-                  placeholder="0"
-                />
+              <div className="space-y-2">
+                <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Monthly Savings Target</label>
+                <div className="relative group">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-mono font-bold text-brand-primary/10 group-focus-within/input:text-brand-accent transition-colors text-xs">₹</span>
+                  <input 
+                    type="number"
+                    value={monthlyContribution}
+                    onChange={(e) => setMonthlyContribution(e.target.value)}
+                    className="w-full bg-brand-surface border border-brand-border rounded-lg py-2 pl-7 pr-3 font-mono font-bold text-sm text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none"
+                    placeholder="0"
+                  />
+                </div>
+                <p className="px-1 text-[7px] font-medium text-brand-primary/40 leading-tight">Amount allocated monthly</p>
               </div>
-              <p className="px-1 text-[7px] font-medium text-brand-primary/40 leading-tight">Amount allocated monthly</p>
             </div>
-          </div>
-        )}
 
-        <div className="pt-2">
-          <div className="flex items-center justify-between p-4 bg-brand-bg/30 border border-brand-border rounded-2xl group transition-all">
-            <div className="flex items-center gap-3">
-              <div className={cn(
-                "p-2 rounded-lg transition-colors",
-                isScheme ? "bg-brand-accent/10 text-brand-accent" : "bg-brand-primary/5 text-brand-primary/40"
-              )}>
-                <RefreshCcw className="w-4 h-4" />
+            {/* Interest Compounding Selector for RDs, Fixed Income, iWish */}
+            <div className="space-y-3 pt-3 border-t border-brand-border/40 animate-in fade-in slide-in-from-top-1">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <span className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary">Interest Yield Scheme</span>
+                  <p className="text-[7.5px] text-brand-primary/40 font-bold uppercase tracking-widest">Enable Interest Yield for iWish / RDs</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsScheme(!isScheme)}
+                  className={cn(
+                    "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
+                    isScheme ? "bg-brand-accent" : "bg-brand-border/60"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+                      isScheme ? "translate-x-4" : "translate-x-0"
+                    )}
+                  />
+                </button>
               </div>
-              <div className="space-y-0.5">
-                <p className="text-[10px] font-bold text-brand-primary uppercase tracking-tight">Scheme Mode</p>
-                <p className="text-[8px] text-brand-primary/40 font-mono uppercase tracking-widest leading-none">Handle maturity bonus</p>
-              </div>
-            </div>
-            <button 
-              type="button"
-              onClick={() => setIsScheme(!isScheme)}
-              className={cn(
-                "w-10 h-5 rounded-full relative transition-all duration-300 border",
-                isScheme ? "bg-brand-accent border-brand-accent" : "bg-brand-bg border-brand-border"
+
+              {isScheme && (
+                <div className="grid grid-cols-2 gap-3 pt-1 animate-in fade-in slide-in-from-top-1 duration-300">
+                  <div className="space-y-1.5">
+                    <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/45 pl-1">Interest Rate (%)</label>
+                    <div className="relative group">
+                      <input 
+                        type="number"
+                        step="0.05"
+                        value={interestRate}
+                        onChange={(e) => setInterestRate(e.target.value)}
+                        className="w-full bg-brand-surface border border-brand-border rounded-lg py-2 px-3 font-mono font-bold text-xs text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none"
+                        placeholder="7.2"
+                      />
+                    </div>
+                    <p className="text-[6.5px] font-mono text-brand-primary/35">Annual rate (e.g. 7.1%)</p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/45 pl-1">Tenure (In Months)</label>
+                    <div className="relative group">
+                      <input 
+                        type="number"
+                        value={tenureMonths}
+                        onChange={(e) => setTenureMonths(e.target.value)}
+                        className="w-full bg-brand-surface border border-brand-border rounded-lg py-2 px-3 font-mono font-bold text-xs text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none"
+                        placeholder="12"
+                      />
+                    </div>
+                    <p className="text-[6.5px] font-mono text-brand-primary/35">Lock-in months (if no deadline)</p>
+                  </div>
+                </div>
               )}
-            >
-              <div className={cn(
-                "absolute top-1 w-2.5 h-2.5 bg-white rounded-full transition-all duration-300",
-                isScheme ? "left-6" : "left-1"
-              )} />
-            </button>
-          </div>
-        </div>
-
-        {isScheme && (
-          <div className="space-y-4 pt-1 animate-in fade-in slide-in-from-top-2">
-            <div className="space-y-2">
-              <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/40 pl-1">Estimated Maturity Value</label>
-              <div className="relative group">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 font-mono font-bold text-brand-primary/10 group-focus-within/input:text-brand-accent transition-colors text-xs">₹</span>
-                <input 
-                  type="number"
-                  value={maturityValue}
-                  onChange={(e) => setMaturityValue(e.target.value)}
-                  className="w-full bg-brand-surface border border-brand-border rounded-lg py-2.5 pl-8 pr-4 font-mono font-bold text-lg text-brand-primary focus:ring-2 focus:ring-brand-accent/5 focus:border-brand-accent/30 transition-all outline-none"
-                  placeholder="e.g. 120000"
-                />
-              </div>
-              <p className="px-1 text-[8px] font-medium text-brand-primary/40 leading-relaxed italic">
-                Difference between Target and Maturity will be logged as system alpha.
-              </p>
             </div>
           </div>
         )}
+
       </div>
 
       <div className="flex flex-col gap-3">

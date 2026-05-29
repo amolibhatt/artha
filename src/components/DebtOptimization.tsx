@@ -115,7 +115,7 @@ export function DebtOptimization({ goals }: DebtOptimizationProps) {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 relative z-10 border-b border-brand-border/40 pb-2.5">
         <div className="space-y-0.5">
           <h3 className="text-xs font-black uppercase tracking-wider text-brand-primary">Debt Payoff Plan</h3>
-          <p className="text-[8px] font-bold text-brand-primary/30 uppercase tracking-widest">Amortization interest multiplier saving calculator</p>
+          <p className="text-[8px] font-bold text-brand-primary/30 uppercase tracking-widest">See how much interest you save by paying extra early</p>
         </div>
         
         <div className="flex gap-1.5 flex-wrap">
@@ -141,7 +141,7 @@ export function DebtOptimization({ goals }: DebtOptimizationProps) {
           <div className="lg:col-span-7 space-y-4">
             <div className="grid grid-cols-2 gap-3 bg-brand-bg/30 p-3 rounded-lg border border-brand-border/30">
               <div className="space-y-0.5">
-                <p className="text-[8px] font-bold uppercase tracking-wider text-brand-primary/45">Outstanding Pool</p>
+                <p className="text-[8px] font-bold uppercase tracking-wider text-brand-primary/45">Remaining Loan Balance</p>
                 <p className="text-sm font-mono font-bold text-brand-primary">{formatCurrency(selectedLoan.targetAmount - selectedLoan.currentAmount)}</p>
               </div>
               <div className="space-y-0.5 text-right">
@@ -153,14 +153,14 @@ export function DebtOptimization({ goals }: DebtOptimizationProps) {
                 <p className="text-sm font-mono font-bold text-brand-primary">{formatCurrency(impact.emi)}</p>
               </div>
               <div className="space-y-0.5 text-right pt-2 border-t border-brand-border/25">
-                <p className="text-[8px] font-bold uppercase tracking-wider text-brand-primary/45">Base Tenure</p>
+                <p className="text-[8px] font-bold uppercase tracking-wider text-brand-primary/45">Original Months Left</p>
                 <p className="text-sm font-mono font-bold text-brand-primary">{impact.normalMonths} Mo</p>
               </div>
             </div>
 
             <div className="space-y-1.5 p-3 bg-brand-bg/60 rounded-lg border border-brand-border/40">
               <div className="flex justify-between items-baseline">
-                <p className="text-[9px] font-mono font-bold text-brand-primary/40 uppercase tracking-widest">Extra Monthly Payoff</p>
+                <p className="text-[9px] font-mono font-bold text-brand-primary/40 uppercase tracking-widest">Extra Monthly Payment</p>
                 <span className="text-xs font-mono font-bold text-brand-accent">{formatCurrency(prepayment)}</span>
               </div>
               <input 
@@ -174,7 +174,7 @@ export function DebtOptimization({ goals }: DebtOptimizationProps) {
               />
               <div className="flex justify-between items-center text-[7px] font-mono font-bold text-brand-primary/25 uppercase tracking-wider">
                 <span>Low</span>
-                <span>Incremental prepayment target</span>
+                <span>Move slider to adjust how much you pay extra</span>
                 <span>High</span>
               </div>
             </div>
@@ -182,11 +182,11 @@ export function DebtOptimization({ goals }: DebtOptimizationProps) {
             <div className="p-3 bg-brand-primary text-brand-surface rounded-lg border border-white/5 shadow-sm relative overflow-hidden">
               <div className="relative z-10 flex justify-between items-center text-[10px] leading-none">
                 <div>
-                  <p className="text-[8px] font-bold uppercase tracking-wider text-white/40">Accelerated Freedom</p>
+                  <p className="text-[8px] font-bold uppercase tracking-wider text-white/40">Fully Paid Off By</p>
                   <p className="text-sm font-mono font-bold text-brand-surface tracking-tight mt-1">{impact.payoffDate}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-[8px] font-bold uppercase tracking-wider text-white/40">Timeline Cut</p>
+                  <p className="text-[8px] font-bold uppercase tracking-wider text-white/40">Time Saved</p>
                   <p className="text-sm font-mono font-bold text-brand-accent mt-1">-{impact.monthsSaved} Months</p>
                 </div>
               </div>
@@ -195,7 +195,7 @@ export function DebtOptimization({ goals }: DebtOptimizationProps) {
 
           <div className="lg:col-span-5 bg-brand-primary text-brand-surface p-4 rounded-lg flex flex-col justify-between space-y-4 shadow-md border border-white/5">
             <div className="space-y-3">
-              <p className="text-[8px] font-bold uppercase tracking-widest text-white/40 text-center">Interest Savings Matrix</p>
+              <p className="text-[8px] font-bold uppercase tracking-widest text-white/40 text-center">How Much You Save on Interest</p>
               
               <div className="flex items-center justify-between gap-2 border-b border-white/5 pb-2.5 text-center">
                 <div className="space-y-0.5 text-left">
@@ -206,14 +206,14 @@ export function DebtOptimization({ goals }: DebtOptimizationProps) {
                   <ArrowRight className="w-3 h-3 text-brand-accent" />
                 </div>
                 <div className="space-y-0.5 text-right">
-                  <p className="text-[7px] font-bold text-brand-accent uppercase tracking-wider">Strategic Prepay ({impact.payoffDate})</p>
+                  <p className="text-[7px] font-bold text-brand-accent uppercase tracking-wider">Paying Extra Early ({impact.payoffDate})</p>
                   <p className="text-sm font-mono font-bold text-brand-surface leading-none">{formatCurrency(impact.totalInterestWithPrepayment)}</p>
                 </div>
               </div>
 
               <div className="flex items-center justify-between pt-1">
                 <div className="space-y-0.5">
-                  <p className="text-[8px] font-bold uppercase tracking-widest text-brand-accent">Total Net Savings</p>
+                  <p className="text-[8px] font-bold uppercase tracking-widest text-brand-accent">Total Interest Saved</p>
                   <p className="text-lg font-mono font-black text-brand-accent leading-none">{formatCurrency(impact.interestSaved)}</p>
                 </div>
                 

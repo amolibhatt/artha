@@ -46,7 +46,7 @@ export function StressTestConsole({
             <ShieldAlert className="w-4 h-4 text-brand-primary/45" />
             <h3 className="text-xs font-black uppercase tracking-wider text-brand-primary">Financial Stress Test</h3>
           </div>
-          <p className="text-[8px] font-bold text-brand-primary/30 uppercase tracking-widest">Crisis simulation & cash flow vulnerability shocks</p>
+          <p className="text-[8px] font-bold text-brand-primary/30 uppercase tracking-widest">See how your savings survive if you lose your job or prices go up</p>
         </div>
         
         <div className={cn(
@@ -56,7 +56,7 @@ export function StressTestConsole({
           "bg-rose-500/10 text-rose-500 border-rose-500/20"
         )}>
           {survivalStatus === 'STABLE' ? <CheckCircle2 className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
-          <span>{survivalStatus} PROTOCOL ACTIVE</span>
+          <span>{survivalStatus} STATUS</span>
         </div>
       </div>
 
@@ -66,7 +66,7 @@ export function StressTestConsole({
           <div className="space-y-3 bg-brand-bg/40 p-3 rounded-lg border border-brand-border/30">
             <div className="space-y-1.5">
               <div className="flex justify-between items-baseline">
-                <p className="text-[9px] font-mono font-bold text-brand-primary/40 uppercase tracking-widest">Income Continuity</p>
+                <p className="text-[9px] font-mono font-bold text-brand-primary/40 uppercase tracking-widest">Your Income</p>
                 <span className={cn(
                   "text-xs font-mono font-bold",
                   incomeShock < 1 ? "text-rose-500" : "text-emerald-500"
@@ -84,13 +84,13 @@ export function StressTestConsole({
               <div className="flex justify-between items-center text-[7px] font-mono font-bold text-brand-primary/25 uppercase tracking-wider">
                 <span>Total Loss (0%)</span>
                 <span>Normal (100%)</span>
-                <span>Incr. (150%)</span>
+                <span>Gain (150%)</span>
               </div>
             </div>
 
             <div className="space-y-1.5 pt-2 border-t border-brand-border/30">
               <div className="flex justify-between items-baseline">
-                <p className="text-[9px] font-mono font-bold text-brand-primary/40 uppercase tracking-widest">Expense Inflation</p>
+                <p className="text-[9px] font-mono font-bold text-brand-primary/40 uppercase tracking-widest">Your Spending</p>
                 <span className={cn(
                   "text-xs font-mono font-bold",
                   expenseShock > 1 ? "text-rose-500" : "text-emerald-500"
@@ -116,7 +116,7 @@ export function StressTestConsole({
           <div className="p-3 bg-brand-bg/60 rounded-lg border border-brand-border/40 flex gap-2 items-start text-[10px]">
             <Info className="w-3.5 h-3.5 text-brand-primary/30 shrink-0 mt-0.5" />
             <p className="text-brand-primary/60 font-sans font-medium leading-normal">
-              Tests your cash pool resistance to sudden liquidity stress.
+              Tests how long your emergency savings last during hard times.
               {isDrowning ? " You are in net cash bleeding mode." : " Your current cash reserves absorb this shock level safely."}
             </p>
           </div>
@@ -127,7 +127,7 @@ export function StressTestConsole({
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-0.5">
-                <p className="text-[8px] font-bold uppercase tracking-widest text-white/40">Adjusted Cash Flow</p>
+                <p className="text-[8px] font-bold uppercase tracking-widest text-white/40">Spare Cash Under Stress</p>
                 <p className={cn(
                   "text-base font-mono font-bold tabular-nums leading-none",
                   isDrowning ? "text-rose-400" : "text-brand-accent"
@@ -136,7 +136,7 @@ export function StressTestConsole({
                 </p>
               </div>
               <div className="space-y-0.5 text-right font-sans">
-                <p className="text-[8px] font-bold uppercase tracking-widest text-white/40">Continuity Mode</p>
+                <p className="text-[8px] font-bold uppercase tracking-widest text-white/40">Monthly Status</p>
                 <p className="text-sm font-black text-white uppercase leading-none">
                   {isDrowning ? "DEFICIT" : "SURPLUS"}
                 </p>
@@ -152,8 +152,8 @@ export function StressTestConsole({
 
             <div className="pt-1 flex justify-between items-center">
               <div className="space-y-0.5">
-                <p className="text-[8px] font-bold uppercase tracking-widest text-white/30">Cushion Lifetime</p>
-                <p className="text-[9px] text-white/45 leading-none font-medium">Safe operational weeks remaining</p>
+                <p className="text-[8px] font-bold uppercase tracking-widest text-white/30">How Long Your Buffer Lasts</p>
+                <p className="text-[9px] text-white/45 leading-none font-medium">Months of costs fully covered</p>
               </div>
               <div className="flex items-baseline gap-1 bg-white/5 px-2.5 py-1 rounded border border-white/5 font-mono">
                 <span className="text-2xl font-black leading-none">
@@ -168,7 +168,7 @@ export function StressTestConsole({
             "py-1.5 rounded text-[8px] font-bold uppercase tracking-wider text-center border font-sans",
             isDrowning ? "bg-rose-500 text-white border-rose-600 shadow-sm" : "bg-emerald-500/10 text-emerald-500 border-white/10"
           )}>
-            {isDrowning ? "Emergency Cash Liquidation Required" : "System Shield Holding"}
+            {isDrowning ? "Warning: Savings shrinking too fast!" : "You are safe and secure"}
           </div>
         </div>
       </div>

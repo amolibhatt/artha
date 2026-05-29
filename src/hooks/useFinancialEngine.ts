@@ -56,7 +56,11 @@ export function useFinancialEngine(
   // Derived Business Metrics
   const adjustedIncome = totalIncome * (stressTest.incomeShock || 1);
   const adjustedExpenses = totalExpenses * (stressTest.expenseShock || 1);
-  const balance = totalIncome - totalExpenses;
+  const balance = useMemo(() => {
+    const rawExp = transactions.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.amount, 0);
+    const rawRef = transactions.filter(t => t.type === 'refund').reduce((acc, t) => acc + t.amount, 0);
+    return totalIncome - (rawExp - rawRef);
+  }, [totalIncome, transactions]);
 
   const activeDailyPace = spentThisMonth / Math.max(1, today.getDate());
   const projectedMonthlyBurn = activeDailyPace * 30;

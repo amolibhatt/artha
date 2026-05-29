@@ -52,6 +52,37 @@ export function GoalItem({ goal, onEdit, onDelete, stressFactor = 1 }: GoalItemP
   };
   const todayForStress = new Date();
   const monthsRemaining = goal.deadline ? getMonthsBetween(todayForStress, new Date(goal.deadline)) : 0;
+  
+  // Real-time compound interest calculation for Savings / Investment / Gold schemes like iWish RDs
+  const savingsProjection = (() => {
+    if (goal.type === 'debt' || !goal.interestRate || goal.interestRate <= 0) return null;
+    
+    const r = goal.interestRate / 100 / 12; // Monthly interest rate
+    const P = goal.currentAmount;
+    const PMT = goal.monthlyContribution || 0;
+    
+    // Remaining months of compound accumulation
+    const months = monthsRemaining > 0 ? monthsRemaining : (goal.tenureMonths || 12);
+    
+    // RD Monthly Compound Interest Formula: P * (1 + r)^n + PMT * [((1 + r)^n - 1) / r] * (1 + r)
+    // PMT is added regularly. We assume beginning-of-period or end-of-period compounding. 
+    // Let's use the standard standard recurring deposit equation:
+    const principalCompounded = P * Math.pow(1 + r, months);
+    const contributionsCompounded = PMT > 0 ? PMT * ((Math.pow(1 + r, months) - 1) / r) * (1 + r) : 0;
+    
+    const projectedMaturity = principalCompounded + contributionsCompounded;
+    const totalDepositedByHand = P + (PMT * months);
+    const freeInterest = Math.max(0, projectedMaturity - totalDepositedByHand);
+    
+    return {
+      months,
+      projectedMaturity,
+      totalDepositedByHand,
+      freeInterest,
+      r
+    };
+  })();
+
   const isLoanPayoff = goal.type === 'debt';
   const requiredMonthly = monthsRemaining > 0 && !isLoanPayoff && !isCompleted
     ? Math.ceil(remainingValue / monthsRemaining)
@@ -82,7 +113,7 @@ export function GoalItem({ goal, onEdit, onDelete, stressFactor = 1 }: GoalItemP
         <div className="absolute top-0 left-0 right-0 bg-brand-accent/[0.04] py-1 border-b border-brand-accent/25 flex items-center gap-1 text-brand-accent px-4 animate-pulse">
           <ShieldAlert className="w-3 h-3 shrink-0" />
           <span className="text-[7.5px] font-black uppercase tracking-wider">
-            STRESS SHOCK RISK (STRESSED SAVE: {formatCurrency(stressedContribution)}/MO vs REQUIRED {formatCurrency(requiredMonthly)}/MO)
+            SAVINGS SHOCK RISK (STRESSED SAVINGS: {formatCurrency(stressedContribution)}/MO • NEEDS: {formatCurrency(requiredMonthly)}/MO)
           </span>
         </div>
       )}
@@ -162,6 +193,44 @@ export function GoalItem({ goal, onEdit, onDelete, stressFactor = 1 }: GoalItemP
             </div>
           </div>
         </div>
+
+        {/* Interest Compounding Scheme Insights for iWish/RDs */}
+        {savingsProjection && savingsProjection.freeInterest > 0 && (
+          <div className="bg-brand-bg/85 border border-emerald-500/10 rounded-xl p-3.5 space-y-2 font-sans relative overflow-hidden">
+            <div className="absolute top-0 right-0 h-10 w-10 pointer-events-none opacity-5">
+              <Landmark className="w-full h-full text-brand-primary" />
+            </div>
+            
+            <div className="flex items-center justify-between text-[8px] font-black uppercase tracking-wider text-brand-primary/50">
+              <span className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                {goal.isScheme ? 'iWish RD System' : 'Compounding Saver'} ({goal.interestRate}% p.a.)
+              </span>
+              <span className="text-emerald-600 bg-emerald-500/[0.06] px-1.5 py-0.5 rounded font-black">
+                +{formatCurrency(savingsProjection.freeInterest)} interest
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 pt-1 border-t border-brand-border/30">
+              <div>
+                <p className="text-[7px] text-brand-primary/40 uppercase tracking-widest font-black leading-none">Your Out-of-Pocket</p>
+                <p className="text-xs font-mono font-bold text-brand-primary mt-1">
+                  {formatCurrency(savingsProjection.totalDepositedByHand)}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-[7px] text-emerald-600/60 uppercase tracking-widest font-black leading-none">Projected Maturity</p>
+                <p className="text-xs font-mono font-black text-emerald-600 mt-1">
+                  {formatCurrency(savingsProjection.projectedMaturity)}
+                </p>
+              </div>
+            </div>
+
+            <p className="text-[7.5px] text-brand-primary/35 leading-normal">
+              *Compounding interest saves you <span className="font-bold text-brand-primary/60">{formatCurrency(savingsProjection.freeInterest)}</span> in out-of-pocket savings to reach this milestone over {savingsProjection.months} months.
+            </p>
+          </div>
+        )}
 
         {/* Beautiful animated progress bar */}
         <div className="space-y-1">

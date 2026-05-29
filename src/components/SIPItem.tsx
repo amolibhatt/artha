@@ -179,7 +179,7 @@ export function SIPItem({ sip, onEdit, onDelete, transactions, onLogPayment }: S
           </div>
           
           <div className="space-y-1 border-x border-brand-border/50">
-            <span className="block text-[8px] font-mono font-semibold text-brand-primary/30 uppercase tracking-widest leading-none">Next instalment</span>
+            <span className="block text-[8px] font-mono font-semibold text-brand-primary/30 uppercase tracking-widest leading-none">Next Payment</span>
             <span className="block font-sans font-extrabold text-xs text-brand-primary/95 leading-tight truncate px-1">
               {nextInstallmentStr}
             </span>
@@ -203,12 +203,12 @@ export function SIPItem({ sip, onEdit, onDelete, transactions, onLogPayment }: S
               className="px-3 py-1.5 bg-brand-primary text-brand-surface rounded-xl text-[9px] font-bold uppercase tracking-widest hover:bg-brand-primary/90 transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
             >
               <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-              <span>Log Installment</span>
+              <span>Mark as Paid</span>
             </button>
           ) : isFulfilled ? (
             <div className="flex items-center gap-1 text-[9px] font-bold text-emerald-600 uppercase tracking-widest leading-none">
               <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>Fulfilled This Month</span>
+              <span>Paid This Month</span>
             </div>
           ) : (
             <div className="flex items-center gap-1 text-[9px] font-bold text-brand-primary/30 uppercase tracking-widest leading-none">

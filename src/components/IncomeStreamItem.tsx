@@ -41,7 +41,7 @@ export function IncomeStreamItem({ stream, onEdit, onDelete }: IncomeStreamItemP
 
       <div className="flex items-center justify-between sm:justify-end gap-4 border-t sm:border-t-0 pt-3 sm:pt-0 border-brand-border/40">
         <div className="text-left sm:text-right">
-          <p className="text-xs font-mono font-bold text-brand-primary/30 uppercase tracking-widest pl-0.5">Baseline mandate</p>
+          <p className="text-xs font-mono font-bold text-brand-primary/30 uppercase tracking-widest pl-0.5">Monthly Amount</p>
           <p className="text-base font-mono font-bold text-brand-primary">{formatCurrency(stream.amount)}</p>
         </div>
         <div className="flex items-center gap-1.5">

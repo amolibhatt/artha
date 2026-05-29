@@ -75,9 +75,9 @@ export function GoalTimeline({ goals, onEditGoal, isLoading }: GoalTimelineProps
     let isLoanPayoff = g.type === 'debt';
     let label = 'SAVINGS GOAL';
 
-    if (g.type === 'gold') label = 'GOLD COLLECTION';
-    else if (g.type === 'debt') label = 'LIABILITY RECOVERY';
-    else if (g.type === 'investment') label = 'GROWTH MILESTONE';
+    if (g.type === 'gold') label = 'GOLD SAVINGS';
+    else if (g.type === 'debt') label = 'LOAN PAYOFF';
+    else if (g.type === 'investment') label = 'INVESTMENT GOAL';
     
     // 1. Calculate Target Date (Deadline)
     if (isLoanPayoff) {
@@ -175,15 +175,15 @@ export function GoalTimeline({ goals, onEditGoal, isLoading }: GoalTimelineProps
   const getCFOAestheticBadge = () => {
     if (timelineDeficit === 0 && scheduleDeficitGoals.length === 0) {
       return {
-        label: "OPTIMAL ACCELERATION",
+        label: "ALL ON TRACK",
         style: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
-        desc: "All timelines are fully funded and on track. Excess surplus can be allocated to debt prepayments or system alpha."
+        desc: "All your goals are fully funded and on track. Any extra money can be used to pay off loans early."
       };
     }
     return {
-      label: "TIMELINE DEFICIT",
+      label: "SAVINGS GAP",
       style: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-      desc: `Capital shortfalls detected on ${scheduleDeficitGoals.length} goal(s). Adjust monthly allocations or stretch deadlines.`
+      desc: `You need to save a bit more each month to reach ${scheduleDeficitGoals.length} of your goal deadlines.`
     };
   };
 
@@ -201,16 +201,16 @@ export function GoalTimeline({ goals, onEditGoal, isLoading }: GoalTimelineProps
               <span className={cn("text-[8px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded border leading-none", statusBadge.style)}>
                 {statusBadge.label}
               </span>
-              <span className="text-[10px] font-mono font-bold text-brand-primary/30 uppercase tracking-wider">• Timeline Feasibility Diagnosis</span>
+              <span className="text-[10px] font-mono font-bold text-brand-primary/30 uppercase tracking-wider">• Saving Timeline Check</span>
             </div>
-            <h3 className="text-base font-black text-brand-primary tracking-tight uppercase mt-1">Timeline Health check</h3>
+            <h3 className="text-base font-black text-brand-primary tracking-tight uppercase mt-1">Timeline Health Check</h3>
             <p className="text-xs text-brand-primary/55 max-w-2xl">{statusBadge.desc}</p>
           </div>
 
           <div className="flex items-center gap-1.5 md:self-start">
-            <span className="text-[10px] font-mono font-bold text-brand-primary/40 uppercase">Calculus engine:</span>
+            <span className="text-[10px] font-mono font-bold text-brand-primary/40 uppercase">Calculator details:</span>
             <span className="flex items-center gap-1 text-[9px] font-bold text-emerald-500 bg-emerald-500/5 px-2.5 py-0.5 rounded-full border border-emerald-500/15">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" /> LIVE CFO SOLVER
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" /> AUTOMATIC CALCULATION
             </span>
           </div>
         </div>
@@ -218,38 +218,38 @@ export function GoalTimeline({ goals, onEditGoal, isLoading }: GoalTimelineProps
         {/* Allocation Metrics */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-5">
           <div className="space-y-1">
-            <span className="text-[10px] font-mono font-bold text-brand-primary/40 uppercase tracking-wider block">Planned Savings Outflow</span>
+            <span className="text-[10px] font-mono font-bold text-brand-primary/40 uppercase tracking-wider block">Your Monthly Goal Savings</span>
             <div className="flex items-baseline gap-1.5">
               <span className="text-xl font-bold text-brand-primary font-sans">{formatCurrency(totalPlannedInflow)}</span>
               <span className="text-xs font-mono text-brand-primary/30">/mo</span>
             </div>
-            <p className="text-[9px] text-brand-primary/40">Total current systematic saving rate committed</p>
+            <p className="text-[9px] text-brand-primary/40">Total money you are actively saving for your goals each month</p>
           </div>
 
           <div className="space-y-1 border-t sm:border-t-0 sm:border-l border-brand-border/40 pt-4 sm:pt-0 sm:pl-6">
-            <span className="text-[10px] font-mono font-bold text-brand-primary/40 uppercase tracking-wider block">Required Savings to Hit Deadlines</span>
+            <span className="text-[10px] font-mono font-bold text-brand-primary/40 uppercase tracking-wider block">Needed Monthly to Meet Deadlines</span>
             <div className="flex items-baseline gap-1.5">
               <span className="text-xl font-bold text-brand-primary font-sans">{formatCurrency(totalRequiredInflow)}</span>
               <span className="text-xs font-mono text-brand-primary/30">/mo</span>
             </div>
-            <p className="text-[9px] text-brand-primary/40 flex items-center gap-1">Needed to fulfill target dates on time</p>
+            <p className="text-[9px] text-brand-primary/40 flex items-center gap-1">Total monthly saving needed to meet all deadlines</p>
           </div>
 
           <div className="space-y-1 border-t sm:border-t-0 sm:border-l border-brand-border/45 pt-4 sm:pt-0 sm:pl-6">
-            <span className="text-[10px] font-mono font-bold text-brand-accent uppercase tracking-wider block font-sans">Monthly Savings Deficit Gap</span>
+            <span className="text-[10px] font-mono font-bold text-brand-accent uppercase tracking-wider block font-sans">Your Monthly Savings Shortfall</span>
             <div className="flex items-baseline gap-1.5">
               <span className={cn(
                 "text-xl font-bold font-sans",
                 timelineDeficit > 0 ? "text-brand-accent" : "text-emerald-500"
               )}>
-                {timelineDeficit > 0 ? formatCurrency(timelineDeficit) : "No Deficit"}
+                {timelineDeficit > 0 ? formatCurrency(timelineDeficit) : "No Shortfall"}
               </span>
               <span className="text-xs font-mono text-brand-primary/30">/mo</span>
             </div>
             <p className="text-[9px] text-brand-primary/40">
               {timelineDeficit > 0 
-                ? "Shortfall to resolve on tab 3 (Surplus Allocator)" 
-                : "Roadmap is fully funded and operating safely!"}
+                ? "Extra money needed each month to hit your target dates" 
+                : "All your goals are fully funded and on track!"}
             </p>
           </div>
         </div>
@@ -263,7 +263,7 @@ export function GoalTimeline({ goals, onEditGoal, isLoading }: GoalTimelineProps
           <div className="flex items-center justify-between px-1">
             <div className="space-y-0.5">
               <h4 className="text-xs font-bold text-brand-primary uppercase tracking-wider font-sans">Chronological Roadmap</h4>
-              <p className="text-[9px] text-brand-primary/40 uppercase font-black tracking-widest leading-none">Milestones sequenced by target completion date</p>
+              <p className="text-[9px] text-brand-primary/40 uppercase font-black tracking-widest leading-none">List of your goals in order of their target dates</p>
             </div>
             <span className="text-[10px] font-mono font-medium text-brand-primary/40">
               {goals.length} target milestones
@@ -337,7 +337,6 @@ export function GoalTimeline({ goals, onEditGoal, isLoading }: GoalTimelineProps
 
                         <h5 className="text-base font-bold text-brand-primary tracking-tight mt-1.5 flex items-center gap-1.5 uppercase">
                           {goal.name}
-                          {goal.isScheme && <Sparkles className="w-3.5 h-3.5 text-amber-400" />}
                         </h5>
                       </div>
 
@@ -345,8 +344,8 @@ export function GoalTimeline({ goals, onEditGoal, isLoading }: GoalTimelineProps
                       <div className="text-left sm:text-right font-sans font-medium text-xs text-brand-primary/50">
                         {goal.isCompleted ? (
                           <div className="space-y-0.5">
-                            <p className="text-[9px] text-emerald-500 font-bold uppercase tracking-wider">Maturity Status</p>
-                            <p className="text-base font-bold text-emerald-500">PAID & ACHIEVED</p>
+                            <p className="text-[9px] text-emerald-500 font-bold uppercase tracking-wider">Status</p>
+                            <p className="text-base font-bold text-emerald-500">COMPLETED!</p>
                           </div>
                         ) : (
                           <div className="space-y-0.5">
@@ -395,7 +394,7 @@ export function GoalTimeline({ goals, onEditGoal, isLoading }: GoalTimelineProps
                     <div className="pt-3 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-1 text-[11px] flex-grow">
                         <div>
-                          <span className="text-brand-primary/40 text-[9px] uppercase font-bold tracking-wider">Current Outflow</span>
+                          <span className="text-brand-primary/40 text-[9px] uppercase font-bold tracking-wider">Current Monthly Saving</span>
                           <p className="font-bold text-brand-primary">
                             {formatCurrency(goal.plannedSave)}<span className="text-brand-primary/40 font-normal">/mo</span>
                           </p>
@@ -403,7 +402,7 @@ export function GoalTimeline({ goals, onEditGoal, isLoading }: GoalTimelineProps
 
                         {!goal.isCompleted && goal.targetDate && (
                           <div>
-                            <span className="text-brand-primary/40 text-[9px] uppercase font-bold tracking-wider">Required Save Outflow</span>
+                            <span className="text-brand-primary/40 text-[9px] uppercase font-bold tracking-wider">Required Monthly Saving</span>
                             <p className="font-bold text-brand-primary">
                               {formatCurrency(goal.requiredMonthly)}<span className="text-brand-primary/40 font-normal">/mo</span>
                             </p>
@@ -412,7 +411,7 @@ export function GoalTimeline({ goals, onEditGoal, isLoading }: GoalTimelineProps
 
                         {!goal.isCompleted && (
                           <div className="col-span-2 md:col-span-1">
-                            <span className="text-brand-primary/40 text-[9px] uppercase font-bold tracking-wider">Expected Completion</span>
+                            <span className="text-brand-primary/40 text-[9px] uppercase font-bold tracking-wider">Estimated Completion</span>
                             <p className={cn(
                               "font-bold",
                               goal.simulatedAchievementDate && goal.targetDate && goal.simulatedAchievementDate > goal.targetDate
@@ -433,7 +432,7 @@ export function GoalTimeline({ goals, onEditGoal, isLoading }: GoalTimelineProps
 
                       {/* Allocation actions / edit trigger */}
                       <div className="flex items-center gap-2 md:self-end">
-                        {!goal.isCompleted && !goal.isScheme && (
+                        {!goal.isCompleted && (
                           <button
                             type="button"
                             onClick={() => {
@@ -449,7 +448,7 @@ export function GoalTimeline({ goals, onEditGoal, isLoading }: GoalTimelineProps
                                 : "bg-brand-bg border-brand-border text-brand-primary/60 hover:bg-brand-primary/5 hover:text-brand-primary"
                             )}
                           >
-                            Simulate Surplus
+                            Try Extra Saving
                           </button>
                         )}
                         <button
@@ -457,7 +456,7 @@ export function GoalTimeline({ goals, onEditGoal, isLoading }: GoalTimelineProps
                           onClick={() => onEditGoal(goal)}
                           className="px-3 py-1.5 bg-brand-bg border border-brand-border hover:bg-brand-primary/5 text-brand-primary/60 hover:text-brand-primary rounded-lg text-[8.5px] font-bold uppercase tracking-wider transition-all leading-none"
                         >
-                          Configure Timeline
+                          Change Settings
                         </button>
                       </div>
                     </div>
@@ -474,8 +473,8 @@ export function GoalTimeline({ goals, onEditGoal, isLoading }: GoalTimelineProps
                           <div className="bg-indigo-500/[0.02] p-4 border border-indigo-500/10 rounded-xl space-y-3 font-sans">
                             <div className="flex justify-between items-center text-[11px]">
                               <div>
-                                <h6 className="font-bold text-indigo-600 uppercase text-[9px] tracking-wide">CFO Surplus Simulator</h6>
-                                <p className="text-[8px] text-brand-primary/40 uppercase font-bold tracking-wider mt-0.5">Allocating extra buffer flow to speed timeline</p>
+                                <h6 className="font-bold text-indigo-600 uppercase text-[9px] tracking-wide">Extra Savings Simulator</h6>
+                                <p className="text-[8px] text-brand-primary/40 uppercase font-bold tracking-wider mt-0.5">Add extra cash each month to see how much faster you hit your goal</p>
                               </div>
                               <span className="font-mono font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-2.5 py-1 rounded text-xs select-none">
                                 +{formatCurrency(simulationSurplus)}/mo
@@ -496,7 +495,7 @@ export function GoalTimeline({ goals, onEditGoal, isLoading }: GoalTimelineProps
                               <div className="flex items-center gap-1.5 p-2 bg-indigo-50 border border-indigo-100/50 rounded-lg text-[10px] text-indigo-700 leading-none font-bold">
                                 <Sparkles className="w-3.5 h-3.5 text-indigo-600 animate-pulse flex-shrink-0" />
                                 <span>
-                                  Accelerates target fulfillment date from {goal.expectedAchievementDate.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })} to {goal.simulatedAchievementDate.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}!
+                                  Speeds up your completion date from {goal.expectedAchievementDate.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })} to {goal.simulatedAchievementDate.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}!
                                 </span>
                               </div>
                             )}
@@ -514,7 +513,7 @@ export function GoalTimeline({ goals, onEditGoal, isLoading }: GoalTimelineProps
         {/* Right Column: McKinsey Strategic CFO Timeline Advisor */}
         <div className="space-y-6">
           <div className="bg-brand-surface border border-brand-border rounded-2xl p-5 space-y-4 font-sans shadow-sm">
-            <h4 className="text-xs font-bold text-brand-primary uppercase tracking-wider">CFO Scheduling Analysis</h4>
+            <h4 className="text-xs font-bold text-brand-primary uppercase tracking-wider">Timeline Advice</h4>
             <div className="h-px bg-brand-border/40" />
 
             <div className="space-y-4">
@@ -524,9 +523,9 @@ export function GoalTimeline({ goals, onEditGoal, isLoading }: GoalTimelineProps
                   <div className="flex items-start gap-2 text-brand-accent">
                     <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
                     <div>
-                      <p className="text-[10px] font-bold uppercase tracking-wider">Timeline Shortfalls Detected</p>
+                      <p className="text-[10px] font-bold uppercase tracking-wider">You Have a Saving Gap</p>
                       <p className="text-[9px] leading-tight text-brand-primary/50 mt-0.5">
-                        Your budgeted monthly cash allocations to the following goals are insufficient to successfully hit their target deadlines:
+                        Your current monthly savings for these goals won't be enough to hit your target deadlines:
                       </p>
                     </div>
                   </div>
@@ -545,9 +544,9 @@ export function GoalTimeline({ goals, onEditGoal, isLoading }: GoalTimelineProps
                 <div className="p-3 bg-emerald-50 dark:bg-emerald-950/10 border border-emerald-100 rounded-xl flex items-start gap-2.5 text-emerald-600">
                   <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
                   <div>
-                    <p className="text-[10px] font-bold uppercase tracking-wider">System Goals Stable</p>
+                    <p className="text-[10px] font-bold uppercase tracking-wider">All Goals On Track</p>
                     <p className="text-[9px] leading-tight text-emerald-600/70 mt-0.5 uppercase">
-                      All your sequenced goals are fully funded according to your defined target dates! Optimal allocation model is active.
+                      All your goals are fully funded based on your target dates! Great job.
                     </p>
                   </div>
                 </div>
@@ -556,7 +555,7 @@ export function GoalTimeline({ goals, onEditGoal, isLoading }: GoalTimelineProps
               {/* Dynamic sequence recommendations */}
               <div className="space-y-4 pt-3 border-t border-brand-border/40">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-mono font-bold text-brand-primary/40 uppercase tracking-wider block">Priority Sequencing Strategy</span>
+                  <span className="text-[10px] font-mono font-bold text-brand-primary/40 uppercase tracking-wider block">Saving Plan Options</span>
                   <div className="flex bg-brand-bg p-0.5 rounded-lg border border-brand-border h-[26px]">
                     <button 
                       onClick={() => setSequencingStrategy('cascade')}
@@ -567,7 +566,7 @@ export function GoalTimeline({ goals, onEditGoal, isLoading }: GoalTimelineProps
                           : "text-brand-primary/40 hover:text-brand-primary/70"
                       )}
                     >
-                      Waterfall
+                      One by One
                     </button>
                     <button 
                       onClick={() => setSequencingStrategy('dilution')}
@@ -578,7 +577,7 @@ export function GoalTimeline({ goals, onEditGoal, isLoading }: GoalTimelineProps
                           : "text-brand-primary/40 hover:text-brand-primary/70"
                       )}
                     >
-                      Pro-Rata
+                      Spread Out
                     </button>
                   </div>
                 </div>
@@ -587,19 +586,19 @@ export function GoalTimeline({ goals, onEditGoal, isLoading }: GoalTimelineProps
                   <div className="space-y-3 p-3 bg-brand-bg border border-brand-border/60 rounded-xl animate-in fade-in duration-300">
                     <p className="text-[9.5px] font-bold text-emerald-600 uppercase tracking-wider flex items-center gap-1 leading-none">
                       <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
-                      Waterfall Priority Sequence (CFO Preferred)
+                      One-by-One Priority Saving (Highly Recommended)
                     </p>
                     <p className="text-[9px] leading-relaxed text-brand-primary/50 uppercase">
-                      Channel cash flows sequentially down your priority stack. High priority targets achieve absolute 100% security first.
+                      Focus on one goal at a time. High priority loans or savings get fully funded first.
                     </p>
                     <div className="space-y-2 text-[10px] uppercase">
                       <div className="flex items-start gap-2 text-brand-primary/80">
                         <span className="text-emerald-500 font-bold shrink-0">[1]</span>
-                        <span>High-cost liabilities prepaid at maximum velocity.</span>
+                        <span>High-interest loans get paid off much faster.</span>
                       </div>
                       <div className="flex items-start gap-2 text-brand-primary/80">
                         <span className="text-emerald-500 font-bold shrink-0">[2]</span>
-                        <span>First milestone (e.g., emergency reserve) achieved months faster.</span>
+                        <span>Your most important goals are reached months earlier.</span>
                       </div>
                     </div>
                   </div>
@@ -607,19 +606,19 @@ export function GoalTimeline({ goals, onEditGoal, isLoading }: GoalTimelineProps
                   <div className="space-y-3 p-3 bg-rose-500/[0.01] border border-rose-500/20 rounded-xl animate-in fade-in duration-300">
                     <p className="text-[9.5px] font-bold text-rose-500 uppercase tracking-wider flex items-center gap-1 leading-none">
                       <span className="h-1.5 w-1.5 rounded-full bg-rose-500 shrink-0 animate-pulse" />
-                      Pro-Rata Dilution Vector (Low Resilience)
+                      Spread-Out Saving (Not Recommended)
                     </p>
                     <p className="text-[9px] leading-relaxed text-brand-primary/50 uppercase">
-                      Splitting available monthly saves equally across all timelines stretches high priority milestones out, exposing them to liquidity crunches.
+                      Splitting your savings equally across all goals takes longer and delays critical goals.
                     </p>
                     <div className="space-y-2 text-[10px] uppercase text-rose-500/70">
                       <div className="flex items-start gap-2">
                         <span className="font-bold shrink-0">[!]</span>
-                        <span>Critical milestones delayed by up to 50% compared to sequential saving.</span>
+                        <span>Important goals are delayed by months.</span>
                       </div>
                       <div className="flex items-start gap-2">
                         <span className="font-bold shrink-0">[!]</span>
-                        <span>Capital dilution of short-term goals leaves you vulnerable to emergency shocks.</span>
+                        <span>Leaves you with smaller emergency savings for a longer time.</span>
                       </div>
                     </div>
                   </div>
@@ -631,7 +630,7 @@ export function GoalTimeline({ goals, onEditGoal, isLoading }: GoalTimelineProps
                       1
                     </div>
                     <p className="mt-0.5">
-                      <span className="font-bold text-brand-primary uppercase">Debt paydowns</span> should always take absolute priority over wealth targets if Interest rate is &gt; 10.5%. Keep Sinking Funds active.
+                      <span className="font-bold text-brand-primary uppercase">Paying off loans</span> should always take absolute priority over savings targets if the interest rate is high. Keep saving funds active.
                     </p>
                   </div>
 
@@ -640,7 +639,7 @@ export function GoalTimeline({ goals, onEditGoal, isLoading }: GoalTimelineProps
                       2
                     </div>
                     <p className="mt-0.5">
-                      <span className="font-bold text-brand-primary uppercase">High priority timelines</span> are sorted chronologically. Stretch medium and low priority targets to cover any system deficit of <span className="font-mono font-bold text-brand-accent">{formatCurrency(timelineDeficit)}/mo</span>.
+                      <span className="font-bold text-brand-primary uppercase">High priority goals</span> are sorted chronologically. Stretch medium and low priority targets to cover any saving gap of <span className="font-mono font-bold text-brand-accent">{formatCurrency(timelineDeficit)}/mo</span>.
                     </p>
                   </div>
                   
@@ -675,10 +674,10 @@ export function GoalTimeline({ goals, onEditGoal, isLoading }: GoalTimelineProps
           <div className="bg-brand-surface border border-brand-border rounded-2xl p-5 space-y-3 font-sans shadow-sm uppercase text-[9px] text-brand-primary/50">
             <div className="flex items-center gap-1 pb-1 text-brand-primary/60 font-black tracking-wider border-b border-brand-border/40">
               <Compass className="w-3.5 h-3.5 text-brand-accent" />
-              <span>CFO Trade-off Principle</span>
+              <span>Priority Rule</span>
             </div>
             <p className="leading-relaxed italic">
-              "SEQUENCE OVER PARALLEL EXECUTION. IT IS BETTER TO COMPLETE TWO HIGH-PRIORITY MILESTONES ON-TIME THAN TO DELAY FIVE SIMULTANEOUSLY. UNDER BUDGET CONSTRAINT, EXTEND THE LIFESTYLE TARGET DEADLINES FIRST TO PROTECT STABLE ASSET ACCUMULATION TYPE GOALS."
+              "FOCUS ON ONE THING AT A TIME. IT IS BETTER TO FINISH COMFORTABLY TODAY THAN TO FALL SHORT ON EVERYTHING. IF MONEY IS TIGHT, DELAY LIFESTYLE LUXURY DEADLINES TO KEEP YOUR CORE SAVINGS SECURE."
             </p>
           </div>
         </div>

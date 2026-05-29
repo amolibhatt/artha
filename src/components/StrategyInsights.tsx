@@ -172,23 +172,23 @@ export function StrategyInsights({
         <div className="space-y-0.5 max-w-md">
           <div className="flex items-center gap-1.5">
             <div className="w-1.5 h-1.5 rounded-full bg-brand-primary" />
-            <span className="text-[8px] font-bold text-brand-primary/45 uppercase tracking-wider">Strategic Framework</span>
+            <span className="text-[8px] font-bold text-brand-primary/45 uppercase tracking-wider">Financial Overview</span>
           </div>
-          <h2 className="text-base font-sans font-black uppercase tracking-tight text-brand-primary">LTV Growth & Allocation</h2>
+          <h2 className="text-base font-sans font-black uppercase tracking-tight text-brand-primary">Where Your Money Goes</h2>
           <p className="text-[10px] text-brand-primary/50 font-normal leading-normal">
-            Automated capital allocation audit. Primary objective: optimize debt payoff velocity, run cost control checks, and secure liquidity thresholds.
+            A simple, clear breakdown of your monthly money flow. Our goal is to help you pay off loans faster, cut unnecessary spends, and plan your savings safely.
           </p>
         </div>
         <div className="flex gap-2 shrink-0">
           <div className="px-3 py-1.5 bg-brand-surface border border-brand-border/60 rounded-lg flex flex-col justify-center min-w-[100px] shadow-[0_1px_2px_rgba(0,0,0,0.01)]">
-            <p className="text-[7px] font-bold text-brand-primary/40 uppercase tracking-widest">Wastage Pool</p>
+            <p className="text-[7px] font-bold text-brand-primary/40 uppercase tracking-widest">Extra Spends</p>
             <div className="flex items-center gap-1 mt-0.5">
                <div className={cn("w-1 h-1 rounded-full", leakAudit > 0 ? "bg-rose-500 animate-pulse" : "bg-emerald-500")} />
                <p className="text-xs font-mono font-bold text-brand-primary">{leakAudit > 0 ? 'ALERT' : 'CLEAN'}</p>
             </div>
           </div>
           <div className="px-3 py-1.5 bg-brand-primary rounded-lg flex flex-col justify-center min-w-[110px] shadow-sm text-brand-surface">
-            <p className="text-[7px] font-bold text-white/35 uppercase tracking-widest">Surplus Ceiling</p>
+            <p className="text-[7px] font-bold text-white/35 uppercase tracking-widest">Spare Cash Left Over</p>
             <p className="text-xs font-mono font-bold text-brand-accent mt-0.5 leading-none">{formatCurrency(strategicSpendingCeiling)}</p>
           </div>
         </div>
@@ -197,7 +197,7 @@ export function StrategyInsights({
       {/* Efficiency & Velocity Dashboard */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="bg-brand-surface p-3 border border-brand-border/60 rounded-xl space-y-2 relative overflow-hidden">
-          <p className="text-[8px] font-bold text-brand-primary/40 uppercase tracking-widest">Cap. Efficiency</p>
+          <p className="text-[8px] font-bold text-brand-primary/40 uppercase tracking-widest">Budget Health</p>
           <div className="flex items-baseline justify-between">
             <h4 className="text-lg font-mono font-bold text-brand-primary leading-none">{efficiencyScore.toFixed(0)}%</h4>
             <span className={cn(
@@ -238,10 +238,10 @@ export function StrategyInsights({
         </div>
 
         <div className="bg-brand-surface p-3 border border-brand-border/60 rounded-xl space-y-2 relative overflow-hidden">
-          <p className="text-[8px] font-bold text-brand-primary/40 uppercase tracking-widest">Bills Quotient</p>
+          <p className="text-[8px] font-bold text-brand-primary/40 uppercase tracking-widest">Necessary Bills</p>
           <div className="flex items-baseline justify-between">
             <h4 className="text-lg font-mono font-bold text-brand-primary leading-none">{fixedRatio.toFixed(0)}%</h4>
-            <p className="text-[8px] font-mono opacity-30">MANDATORY</p>
+            <p className="text-[8px] font-mono opacity-30">MUST PAY</p>
           </div>
           <div className="h-1 w-full bg-brand-bg rounded-full overflow-hidden p-0.5 border border-brand-border/40">
             <motion.div 
@@ -253,7 +253,7 @@ export function StrategyInsights({
         </div>
 
         <div className="bg-brand-surface p-3 border border-brand-border/60 rounded-xl space-y-2 relative overflow-hidden">
-          <p className="text-[8px] font-bold text-brand-primary/40 uppercase tracking-widest">Avoidable Leakage</p>
+          <p className="text-[8px] font-bold text-brand-primary/40 uppercase tracking-widest">Avoidable Spends</p>
           <div className="flex items-baseline justify-between">
             <h4 className={cn(
               "text-lg font-mono font-bold leading-none",
@@ -270,7 +270,7 @@ export function StrategyInsights({
           </div>
           <div className="flex items-center gap-1.5 text-[8px] leading-none text-brand-primary/30 font-bold uppercase tracking-wider">
             <div className={cn("w-1 h-1 rounded-full", leakAudit > 0 ? "bg-rose-500 animate-pulse" : "bg-emerald-500")} />
-            <span>Avoidable bills total</span>
+            <span>Total of avoidable spends</span>
           </div>
         </div>
       </div>
@@ -279,9 +279,9 @@ export function StrategyInsights({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
          <div className="bg-brand-surface border border-brand-border/60 rounded-xl px-3.5 py-2.5 flex items-center justify-between">
            <div className="space-y-0.5">
-             <p className="text-[8px] font-bold text-brand-primary/40 uppercase tracking-widest">Net Savings Rate</p>
+             <p className="text-[8px] font-bold text-brand-primary/40 uppercase tracking-widest">Savings Rate</p>
              <h4 className="text-base font-mono font-bold text-brand-primary">{savingsRate.toFixed(1)}%</h4>
-             <p className="text-[7px] font-medium text-brand-primary/30 uppercase tracking-widest">Ratio of retained capitalization</p>
+             <p className="text-[7px] font-medium text-brand-primary/30 uppercase tracking-widest">How much of your income is saved</p>
            </div>
            <span className={cn(
              "px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider border leading-none",
@@ -292,9 +292,9 @@ export function StrategyInsights({
          </div>
          <div className="bg-brand-surface border border-brand-border/60 rounded-xl px-3.5 py-2.5 flex items-center justify-between">
            <div className="space-y-0.5">
-             <p className="text-[8px] font-bold text-brand-primary/40 uppercase tracking-widest">Income Multiplier Scale</p>
+             <p className="text-[8px] font-bold text-brand-primary/40 uppercase tracking-widest">Emergency Backup</p>
              <h4 className="text-base font-mono font-bold text-brand-primary">{incomeCoverage.toFixed(1)}x</h4>
-             <p className="text-[7px] font-medium text-brand-primary/30 uppercase tracking-widest">Income coverage factors</p>
+             <p className="text-[7px] font-medium text-brand-primary/30 uppercase tracking-widest">Months your backup covers monthly costs</p>
            </div>
            <span className={cn(
              "px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider border leading-none",
@@ -312,25 +312,25 @@ export function StrategyInsights({
             <Compass className="w-4 h-4 text-brand-accent" />
             <div className="space-y-0.5">
               <h3 className="text-xs font-sans font-black uppercase tracking-wider text-brand-surface leading-none">Monthly Money Breakdown</h3>
-              <p className="text-[8px] text-white/30 font-bold uppercase tracking-widest">Optimized capital partition strategy</p>
+              <p className="text-[8px] text-white/30 font-bold uppercase tracking-widest">How your income is split this month</p>
             </div>
           </div>
           
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
             <div className="space-y-0.5">
-              <p className="text-[8px] font-bold text-white/30 uppercase tracking-widest">Base Revenue</p>
+              <p className="text-[8px] font-bold text-white/30 uppercase tracking-widest">Monthly Income</p>
               <p className="text-sm font-mono font-bold tracking-tight">{formatCurrency(estimatedMonthlyIncome)}</p>
             </div>
             <div className="space-y-0.5">
-              <p className="text-[8px] font-bold text-white/30 uppercase tracking-widest">Bills & Commit.</p>
+              <p className="text-[8px] font-bold text-white/30 uppercase tracking-widest">Fixed Bills</p>
               <p className="text-sm font-mono font-bold text-rose-400 tracking-tight">-{formatCurrency(estimatedFixedCosts)}</p>
             </div>
             <div className="space-y-0.5">
-              <p className="text-[8px] font-bold text-white/30 uppercase tracking-widest">Goal Sinking</p>
+              <p className="text-[8px] font-bold text-white/30 uppercase tracking-widest">Savings Goals</p>
               <p className="text-sm font-mono font-bold text-brand-accent tracking-tight">-{formatCurrency(monthlyGoalCommitments)}</p>
             </div>
             <div className="space-y-0.5 border-t sm:border-t-0 sm:border-l border-white/10 pt-1 sm:pt-0 sm:pl-3">
-              <p className="text-[8px] font-bold text-brand-accent uppercase tracking-widest">Fluid Spending Power</p>
+              <p className="text-[8px] font-bold text-brand-accent uppercase tracking-widest">Spending Money</p>
               <p className="text-base font-mono font-black text-brand-surface tracking-tight">{formatCurrency(strategicSpendingCeiling)}</p>
             </div>
           </div>
@@ -344,15 +344,15 @@ export function StrategyInsights({
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1.5 text-[8px] font-bold uppercase tracking-wider text-white/50 border-t border-white/5">
             <div className="flex items-center gap-1.5">
               <div className="w-1.5 h-1.5 bg-rose-500 rounded-full shrink-0" />
-              <span>01_BILLS: Rent, EMI & insurance.</span>
+              <span>01_BILLS: Rent, loans & insurance.</span>
             </div>
             <div className="flex items-center gap-1.5">
               <div className="w-1.5 h-1.5 bg-brand-accent rounded-full shrink-0" />
-              <span>02_GOALS: Sinking asset targets.</span>
+              <span>02_GOALS: Your active savings targets.</span>
             </div>
             <div className="flex items-center gap-1.5">
               <div className="w-1.5 h-1.5 bg-white/40 rounded-full shrink-0" />
-              <span>03_SPENDING: Guilt-free fluid funds.</span>
+              <span>03_SPENDING: Guilt-free daily money.</span>
             </div>
           </div>
         </div>
@@ -363,7 +363,7 @@ export function StrategyInsights({
         <div className="flex items-center justify-between border-b border-brand-border pb-1 px-0.5">
           <div className="space-y-0.5">
             <h3 className="text-xs font-sans font-black uppercase tracking-wider text-brand-primary leading-none">Prepayment Check</h3>
-            <p className="text-[8px] font-bold text-brand-primary/30 uppercase tracking-widest">Active liabilities payoff optimization</p>
+            <p className="text-[8px] font-bold text-brand-primary/30 uppercase tracking-widest">Active tips to pay off your loans early</p>
           </div>
         </div>
 
@@ -395,7 +395,7 @@ export function StrategyInsights({
                     <div className="p-1.5 bg-brand-accent/5 rounded border border-brand-accent/10 flex items-center gap-1.5 text-[9px] leading-snug">
                       <Zap className="w-3 h-3 text-brand-accent shrink-0 animate-pulse" />
                       <p className="text-brand-primary/60">
-                        Check payoff simulation below. Unlocks compounding interest reduction.
+                        Check payoff options below to save on huge interest fees.
                       </p>
                     </div>
                   </div>
@@ -408,7 +408,7 @@ export function StrategyInsights({
                 </div>
                 <div className="space-y-0.5 max-w-xs">
                   <h3 className="text-xs font-bold text-brand-primary">No Active Debt Defined</h3>
-                  <p className="text-[8px] text-brand-primary/45 leading-normal">Declare home loans or liability accounts to audit compounding payoff speed.</p>
+                  <p className="text-[8px] text-brand-primary/45 leading-normal">Add any loans or mortgages to see how paying early can save you massive interest.</p>
                 </div>
               </div>
             )}
@@ -416,9 +416,9 @@ export function StrategyInsights({
 
           <div className="sm:col-span-4 bg-brand-accent/5 border border-brand-accent/10 rounded-xl p-3 flex flex-col justify-between space-y-2.5">
             <div className="space-y-1">
-              <h3 className="text-[9px] font-black uppercase tracking-wider text-brand-accent">CFO Prepay Rule</h3>
+              <h3 className="text-[9px] font-black uppercase tracking-wider text-brand-accent">Early Pay Rule</h3>
               <p className="text-[10px] text-brand-primary/60 leading-normal font-sans">
-                Incremental early payments cut long-term compounding interests of multi-year mortgages. Scale prepayments when budget allows.
+                A small extra payment on your loan each month cuts down the total years of interest. Do this whenever you have a little spare cash.
               </p>
             </div>
             <div className="flex items-center gap-1.5 leading-none text-brand-accent">
@@ -432,8 +432,8 @@ export function StrategyInsights({
       {/* Expense Audit */}
       <div className="bg-brand-surface p-3 border border-brand-border/60 rounded-xl space-y-4">
         <div className="space-y-0.5 border-b border-brand-border/40 pb-2">
-          <h3 className="text-xs font-sans font-black uppercase tracking-wider text-brand-primary leading-none">Leakage Checks</h3>
-          <p className="text-[8px] text-brand-primary/30 uppercase tracking-widest">Reassessment of fixed obligations vs discretionary burn</p>
+          <h3 className="text-xs font-sans font-black uppercase tracking-wider text-brand-primary leading-none">Avoidable Spends Checks</h3>
+          <p className="text-[8px] text-brand-primary/30 uppercase tracking-widest">Reviewing what you must pay versus extra spends</p>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
@@ -477,14 +477,14 @@ export function StrategyInsights({
             <div className="bg-brand-bg/40 p-3 rounded-lg border border-brand-border/40 relative overflow-hidden group space-y-2">
               <div className="flex items-center gap-1.5 relative z-10 border-b border-brand-border/40 pb-1.5 leading-none">
                 <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
-                <p className="text-[8px] font-bold text-brand-primary/40 uppercase tracking-widest">Discretionary Leaks</p>
+                <p className="text-[8px] font-bold text-brand-primary/40 uppercase tracking-widest">Avoidable Spending</p>
               </div>
               <div className="space-y-2.5 relative z-10 text-[10px]">
                 {topWaste.length > 0 ? topWaste.map(([cat, amt]) => (
                   <div key={cat} className="flex justify-between items-center border-b border-brand-border/10 pb-1.5 last:border-0 last:pb-0">
                     <div className="space-y-0.5">
                       <p className="font-bold uppercase tracking-tight text-brand-primary leading-none truncate max-w-[100px]">{cat}</p>
-                      <p className="text-[7.5px] font-medium text-brand-primary/30 uppercase tracking-widest pl-0.5">Suboptimal cost center</p>
+                      <p className="text-[7.5px] font-medium text-brand-primary/30 uppercase tracking-widest pl-0.5">Extra money spent</p>
                     </div>
                     <p className="font-mono font-bold text-rose-500 leading-none">{formatCurrency(amt)}</p>
                   </div>
@@ -504,7 +504,7 @@ export function StrategyInsights({
                   <div key={sub.name} className="flex justify-between items-center border-b border-brand-border/10 pb-1.5 last:border-0 last:pb-0">
                     <div className="space-y-0.5">
                       <p className="font-bold uppercase tracking-tight text-brand-primary leading-none truncate max-w-[100px]">{sub.name}</p>
-                      <p className="text-[7.5px] font-medium text-brand-primary/30 uppercase tracking-widest pl-0.5">Repeating debit</p>
+                      <p className="text-[7.5px] font-medium text-brand-primary/30 uppercase tracking-widest pl-0.5">Monthly bill</p>
                     </div>
                     <p className="font-mono font-bold text-brand-primary leading-none">{formatCurrency(sub.amount)}</p>
                   </div>
@@ -527,8 +527,8 @@ export function StrategyInsights({
               <Sparkles className="w-5 h-5 text-brand-accent" />
             </div>
             <div className="space-y-0.5">
-              <h3 className="text-xs font-sans font-black uppercase tracking-wider text-brand-surface leading-none">Artha Strategic Audit</h3>
-              <p className="text-[8px] text-white/30 font-bold uppercase tracking-widest">Compounding growth and timeline advisory</p>
+              <h3 className="text-xs font-sans font-black uppercase tracking-wider text-brand-surface leading-none">Artha Money AI Advisor</h3>
+              <p className="text-[8px] text-white/30 font-bold uppercase tracking-widest">Simple suggestions to save and reach goals faster</p>
             </div>
           </div>
           <button
@@ -537,7 +537,7 @@ export function StrategyInsights({
             className="bg-brand-accent text-brand-primary px-3 py-1.5 rounded text-[8px] font-bold uppercase tracking-widest hover:bg-brand-accent/90 transition-all disabled:opacity-50 flex items-center justify-center gap-1 leading-none shadow-sm shrink-0"
           >
             {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <TrendingUp className="w-3.5 h-3.5" />}
-            {isLoading ? 'Reconstituting...' : 'Trigger CFO Audit'}
+            {isLoading ? 'Thinking...' : 'Get Advisor Tips'}
           </button>
         </div>
 
@@ -546,8 +546,8 @@ export function StrategyInsights({
             <div className="py-12 flex flex-col items-center justify-center gap-3 relative z-10">
               <Loader2 className="w-8 h-8 animate-spin text-brand-accent" />
               <div className="text-center space-y-0.5">
-                <p className="text-xs font-sans font-black uppercase tracking-tight text-white animate-pulse">Running Calculations</p>
-                <p className="text-[8px] text-white/30 font-bold uppercase tracking-widest">Reconciling transaction streams & liabilities</p>
+                <p className="text-xs font-sans font-black uppercase tracking-tight text-white animate-pulse">Checking numbers</p>
+                <p className="text-[8px] text-white/30 font-bold uppercase tracking-widest">Reviewing your transactions and goals</p>
               </div>
             </div>
           ) : strategy ? (
