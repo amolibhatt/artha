@@ -15,6 +15,7 @@ export interface Transaction {
   isAvoidable?: boolean;
   linkedGoalId?: string;
   sipId?: string;
+  relatedTransactionId?: string;
 }
 
 export interface Goal {

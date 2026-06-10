@@ -223,7 +223,7 @@ function MainApp() {
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [editingIncomeStream, setEditingIncomeStream] = useState<IncomeStream | null>(null);
   const [showMobileTip, setShowMobileTip] = useState(false);
-  const [filter, setFilter] = useState<'All' | 'Expenses' | 'Income'>('All');
+  const [filter, setFilter] = useState<'All' | 'Debit' | 'Credit'>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [historySortBy, setHistorySortBy] = useState<'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc'>('date-desc');
   const [historyTimeframe, setHistoryTimeframe] = useState<'all' | '7days' | '30days' | 'this-month' | 'last-month'>('all');
@@ -777,8 +777,8 @@ function MainApp() {
 
   const filteredTransactions = transactions.filter(t => {
     // 1. Type filter
-    if (filter === 'Expenses' && t.type === 'income') return false;
-    if (filter === 'Income' && t.type !== 'income' && t.type !== 'refund') return false;
+    if (filter === 'Debit' && t.type !== 'expense') return false;
+    if (filter === 'Credit' && t.type !== 'income' && t.type !== 'refund') return false;
 
     // 2. Search query filter
     if (searchQuery) {
@@ -1721,10 +1721,10 @@ function MainApp() {
                   >
                     {/* SEARCH, SORT, AND MULTI-FILTERING DECK */}
                     <div className="bg-brand-surface border border-brand-border rounded-xl p-4 space-y-4 shadow-sm">
-                      {/* Top Bar: Search, Quick Tabs, and Toggle */}
-                      <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center">
+                      {/* Top Bar: Balanced Grid structure to avoid wrapping on mobile */}
+                      <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
                         {/* Search Input Box */}
-                        <div className="relative flex-1 group/search">
+                        <div className="relative md:col-span-5 group/search">
                           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-brand-primary/30 group-focus-within/search:text-brand-accent transition-colors" />
                           <input 
                             type="text"
@@ -1743,11 +1743,11 @@ function MainApp() {
                           )}
                         </div>
 
-                        {/* Quick filter tabs & Toggle Deck */}
-                        <div className="flex flex-wrap items-center gap-2">
-                          {/* Flow type tabs */}
-                          <div className="flex bg-brand-bg p-1 rounded-xl border border-brand-border h-[38px] min-w-[180px]">
-                            {(['All', 'Expenses', 'Income'] as const).map(f => (
+                        {/* Debit/Credit Quick Filters and Toggles Row */}
+                        <div className="md:col-span-7 flex flex-row items-center gap-2">
+                          {/* Flow type tabs - renamed to Debit/Credit matching transactions */}
+                          <div className="flex-1 min-w-[150px] flex bg-brand-bg p-1 rounded-xl border border-brand-border h-[38px]">
+                            {(['All', 'Debit', 'Credit'] as const).map(f => (
                               <button 
                                 key={f} 
                                 onClick={() => setFilter(f)} 
@@ -1772,13 +1772,13 @@ function MainApp() {
                               <button
                                 onClick={() => setShowHistoryFilters(!showHistoryFilters)}
                                 className={cn(
-                                  "h-[38px] px-3 border rounded-xl flex items-center justify-center gap-1.5 text-[9px] font-mono font-bold uppercase transition-all whitespace-nowrap active:scale-95 cursor-pointer shadow-sm relative",
+                                  "h-[38px] px-3.5 border rounded-xl flex items-center justify-center gap-1.5 text-[9px] font-mono font-bold uppercase transition-all whitespace-nowrap active:scale-95 cursor-pointer shadow-sm relative shrink-0",
                                   showHistoryFilters 
                                     ? "bg-brand-primary text-brand-surface border-brand-primary" 
                                     : "bg-brand-surface border-brand-border text-brand-primary/60 hover:text-brand-primary hover:border-brand-primary/20"
                                 )}
                               >
-                                <SlidersHorizontal className="w-3 h-3 shrink-0" />
+                                <SlidersHorizontal className="w-3.5 h-3.5 shrink-0" />
                                 <span className="hidden sm:inline">Advanced</span>
                                 {activeAdvCount > 0 && (
                                   <span className="w-4 h-4 rounded-full bg-brand-accent text-brand-surface text-[8px] font-bold font-mono flex items-center justify-center animate-pulse line-none">
@@ -1799,7 +1799,7 @@ function MainApp() {
                                 setHistorySelectedCategory('All');
                                 setHistorySelectedTag('all');
                               }}
-                              className="h-[38px] px-2.5 bg-rose-500/5 hover:bg-rose-500/10 border border-rose-500/10 text-[8.5px] font-mono font-bold text-rose-500 rounded-xl uppercase transition-all hover:border-rose-500/30 active:scale-95 whitespace-nowrap"
+                              className="h-[38px] px-3 bg-rose-500/5 hover:bg-rose-500/10 border border-rose-500/10 text-[8.5px] font-mono font-bold text-rose-500 rounded-xl uppercase transition-all hover:border-rose-500/30 active:scale-95 whitespace-nowrap shrink-0"
                               title="Clear all active ledger queries"
                             >
                               Reset
@@ -1934,7 +1934,7 @@ function MainApp() {
                               )}
                               {filter !== 'All' && (
                                 <span className="px-1.5 py-0.2 bg-brand-primary/5 border border-brand-border text-brand-primary/60 text-[8px] font-mono font-bold rounded">
-                                  Type: {filter}
+                                  Type: {filter === 'Debit' ? 'Debit (Outflow)' : 'Credit (Inflow)'}
                                 </span>
                               )}
                               {historySelectedCategory !== 'All' && (
@@ -2436,6 +2436,62 @@ function MainApp() {
                                             )}
                                           </div>
                                         </div>
+
+                                        {/* Refund Tracking Protocols */}
+                                        {t.type === 'expense' && (() => {
+                                          const categoryRefunds = transactions.filter(r => r.type === 'refund' && r.relatedTransactionId === t.id);
+                                          const totalRefunded = categoryRefunds.reduce((sum, r) => sum + r.amount, 0);
+                                          return (
+                                            <div className="pt-2.5 border-t border-brand-border/20 mt-1 space-y-2">
+                                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-brand-primary/[0.01] p-2.5 rounded-lg border border-brand-border/10">
+                                                <div className="space-y-0.5 text-left">
+                                                  <span className="text-[7.5px] font-mono font-bold text-sky-500 uppercase tracking-widest block">Refund Tracking Protocol</span>
+                                                  {categoryRefunds.length > 0 ? (
+                                                    <p className="text-[9.5px] font-sans text-brand-primary/80">
+                                                      Recovered <b className="text-emerald-500 font-mono">{formatCurrency(totalRefunded)}</b> of {formatCurrency(t.amount)} original outflow.
+                                                    </p>
+                                                  ) : (
+                                                    <p className="text-[8.5px] font-bold text-brand-primary/40 uppercase tracking-wider">No corresponding credit adjustments logged.</p>
+                                                  )}
+                                                </div>
+                                                
+                                                <button
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setEditingTransaction({
+                                                      amount: Math.max(0, t.amount - totalRefunded),
+                                                      category: t.category,
+                                                      subcategory: t.subcategory || '',
+                                                      description: `Refund: ${t.description || t.subcategory || t.category}`,
+                                                      type: 'refund',
+                                                      userId: user?.uid || '',
+                                                      date: new Date().toISOString(),
+                                                      relatedTransactionId: t.id
+                                                    });
+                                                    setCommandTab('transaction');
+                                                    setShowCommandCenter(true);
+                                                  }}
+                                                  className="px-2.5 py-1 rounded bg-sky-500/5 hover:bg-sky-500/15 text-sky-600 dark:text-sky-400 border border-sky-500/20 text-[8.5px] font-mono font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1 active:scale-95 shrink-0 self-start sm:self-auto shadow-sm"
+                                                >
+                                                  <RefreshCcw className="w-3 h-3 text-sky-500" />
+                                                  Record Refund
+                                                </button>
+                                              </div>
+                                              
+                                              {/* List previous parts of this refund if any */}
+                                              {categoryRefunds.length > 0 && (
+                                                <div className="space-y-1 pl-2 border-l-2 border-emerald-500/30">
+                                                  {categoryRefunds.map(ref => (
+                                                    <div key={ref.id} className="flex items-center justify-between gap-4 text-[8px] font-mono text-brand-primary/60">
+                                                      <span>• {ref.description || 'Refund Stream'} ({new Date(ref.date).toLocaleDateString('en-GB')})</span>
+                                                      <span className="text-emerald-500 font-bold">+{formatCurrency(ref.amount)}</span>
+                                                    </div>
+                                                  ))}
+                                                </div>
+                                              )}
+                                            </div>
+                                          );
+                                        })()}
 
                                         {/* Mobile operations bar inside expanded card (only visible on mobile) */}
                                         <div className="flex sm:hidden items-center justify-end gap-2 pt-2.5 border-t border-brand-border/20 mt-1">
@@ -3802,7 +3858,7 @@ function MainApp() {
                 </div>
                 
                 <div className="pt-6 border-t border-brand-border/30">
-                  <DebtOptimization goals={goals} />
+                  <DebtOptimization goals={goals} monthlySurplus={monthlySurplus} liquidAssets={totalLiquidReserves} />
                 </div>
 
                  {/* Tactical Deletion & Reset Protocol */}
@@ -4068,7 +4124,7 @@ function IncomeStreamForm({ onClose, userId, editingIncomeStream }: { onClose: (
 const EXPENSE_CATEGORIES = {
   'Dining & Delivery': ['Swiggy', 'Zomato', 'Restaurants', 'Cafes', 'Fine Dining', 'Other'],
   'Groceries & Q-Commerce': ['Blinkit', 'Instamart', 'Zepto', 'BigBasket', 'Local Grocery', 'Other'],
-  'Shopping & Lifestyle': ['Myntra', 'Ajio', 'Nykaa', 'Tira', 'Zara', 'H&M', 'Amazon', 'Flipkart', 'Salon', 'Lifestyle', 'Other'],
+  'Shopping & Lifestyle': ['Myntra', 'Ajio', 'Nykaa', 'Tira', 'Zara', 'H&M', 'Amazon', 'Flipkart', 'Fabindia', 'Salon', 'Lifestyle', 'Other'],
   'Transport & Commute': ['Uber', 'Ola', 'Rapido', 'Fuel', 'Public Transport', 'Vehicle Service', 'Other'],
   'Bills & Utilities': ['Electricity', 'Gas', 'Water', 'Internet', 'Mobile Recharge', 'DTH', 'Other'],
   'Housing': ['Rent', 'Maintenance', 'Home Decor', 'Domestic Help', 'Property Tax', 'Other'],
@@ -4371,7 +4427,7 @@ function TransactionForm({ onClose, userId, transactions, goals, editingTransact
         finalDateObj = new Date(yr, mo - 1, dy, now.getHours(), now.getMinutes(), now.getSeconds());
       }
 
-      const transactionData = {
+      const transactionData: any = {
         amount: amountNum,
         category,
         subcategory: finalSubcategory,
@@ -4384,6 +4440,10 @@ function TransactionForm({ onClose, userId, transactions, goals, editingTransact
         isAvoidable: classification.isAvoidable,
         linkedGoalId: newGoalId
       };
+
+      if (editingTransaction?.relatedTransactionId) {
+        transactionData.relatedTransactionId = editingTransaction.relatedTransactionId;
+      }
 
       if (editingTransaction?.id) {
         await updateDoc(doc(db, 'transactions', editingTransaction.id), transactionData);
@@ -4412,52 +4472,103 @@ function TransactionForm({ onClose, userId, transactions, goals, editingTransact
           <p className="text-[10px] font-bold text-rose-600 mt-1">{errorMsg}</p>
         </motion.div>
       )}
-      
-      {smartTemplates.length > 0 && (
-        <div className="space-y-2">
-          <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/30 pl-1">Recent Records</label>
-          <div className="flex gap-1.5 overflow-x-auto pb-2 no-scrollbar">
-            {smartTemplates.slice(0, 5).map((t) => (
-              <button
-                key={t.name}
-                type="button"
-                onClick={() => applyTemplate(t)}
-                className="flex-shrink-0 px-3 py-1.5 bg-brand-surface border border-brand-border rounded-lg text-[9px] font-mono font-bold text-brand-primary/50 hover:bg-brand-primary hover:text-brand-surface transition-all active:scale-95"
-              >
-                {t.name}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
       <div className="bg-brand-bg/80 p-1.5 rounded-xl border border-brand-border shadow-inner flex relative">
-        {(['expense', 'income', 'refund'] as const).map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => {
-              setType(t);
-              const currentCats = (t === 'expense' || t === 'refund') ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
-              const firstCat = Object.keys(currentCats)[0];
-              const firstSub = (currentCats as any)[firstCat][0];
-              setCategory(firstCat);
-              setSubcategory(firstSub);
-            }}
-            className={cn(
-              "flex-1 py-2 rounded-lg text-[9px] font-bold uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-2 relative z-10",
-              type === t 
-                ? "bg-brand-primary text-brand-surface shadow-md" 
-                : "text-brand-primary/30 hover:text-brand-primary/60 hover:bg-brand-primary/5"
-            )}
-          >
-            {t === 'income' && <TrendingUp className="w-3 h-3 text-brand-accent" />}
-            {t === 'expense' && <TrendingDown className="w-3 h-3 text-rose-400" />}
-            {t === 'refund' && <RefreshCcw className="w-3 h-3 text-sky-400" />}
-            {t}
-          </button>
-        ))}
+        <button
+          type="button"
+          onClick={() => {
+            setType('expense');
+            const currentCats = EXPENSE_CATEGORIES;
+            const firstCat = Object.keys(currentCats)[0];
+            const firstSub = (currentCats as any)[firstCat][0];
+            setCategory(firstCat);
+            setSubcategory(firstSub);
+          }}
+          className={cn(
+            "flex-1 py-2 rounded-lg text-[9px] font-bold uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-2 relative z-10",
+            (type === 'expense')
+              ? "bg-brand-primary text-brand-surface shadow-md font-black" 
+              : "text-brand-primary/30 hover:text-brand-primary/60 hover:bg-brand-primary/5"
+          )}
+        >
+          <TrendingDown className="w-3 h-3 text-rose-400" />
+          Debit (Outflow)
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setType('income');
+            const currentCats = INCOME_CATEGORIES;
+            const firstCat = Object.keys(currentCats)[0];
+            const firstSub = (currentCats as any)[firstCat][0];
+            setCategory(firstCat);
+            setSubcategory(firstSub);
+          }}
+          className={cn(
+            "flex-1 py-2 rounded-lg text-[9px] font-bold uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-2 relative z-10",
+            (type === 'income' || type === 'refund')
+              ? "bg-brand-primary text-brand-surface shadow-md font-black" 
+              : "text-brand-primary/30 hover:text-brand-primary/60 hover:bg-brand-primary/5"
+          )}
+        >
+          <TrendingUp className="w-3 h-3 text-brand-accent" />
+          Credit (Inflow)
+        </button>
       </div>
+
+      {/* Inline Selector for Credit Types (Standard Income vs Refund Offset) */}
+      {(type === 'income' || type === 'refund') && (
+        <div className="space-y-2 pt-1 animate-in fade-in slide-in-from-top-1">
+          <label className="text-[8.5px] font-mono font-bold uppercase tracking-widest text-brand-primary/45 pl-1">Credit Flow Type</label>
+          <div className="bg-brand-surface/60 p-1 rounded-xl border border-brand-border/40 grid grid-cols-2 gap-1.5 shadow-sm max-w-[340px]">
+            <button
+              type="button"
+              onClick={() => {
+                setType('income');
+                const currentCats = INCOME_CATEGORIES;
+                const firstCat = Object.keys(currentCats)[0];
+                const firstSub = (currentCats as any)[firstCat][0];
+                setCategory(firstCat);
+                setSubcategory(firstSub);
+              }}
+              className={cn(
+                "py-1.5 rounded-lg text-[8.5px] font-mono font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 focus:outline-none",
+                type === 'income'
+                  ? "bg-brand-accent text-brand-surface font-black"
+                  : "text-brand-primary/40 hover:text-brand-primary"
+              )}
+            >
+              <TrendingUp className="w-3 h-3" />
+              Regular Income
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setType('refund');
+                const currentCats = EXPENSE_CATEGORIES;
+                const firstCat = Object.keys(currentCats)[0];
+                const firstSub = (currentCats as any)[firstCat][0];
+                setCategory(firstCat);
+                setSubcategory(firstSub);
+              }}
+              className={cn(
+                "py-1.5 rounded-lg text-[8.5px] font-mono font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 focus:outline-none",
+                type === 'refund'
+                  ? "bg-brand-accent text-brand-surface font-black"
+                  : "text-brand-primary/40 hover:text-brand-primary"
+              )}
+            >
+              <RefreshCcw className="w-3 h-3" />
+              Refund Offset
+            </button>
+          </div>
+          <p className="text-[7.5px] font-mono text-brand-primary/40 pl-1 leading-normal">
+            {type === 'income' 
+              ? '*Regular Income credit increases cash pool (Earned metrics).' 
+              : '*Refund offsets an expense category directly (lowers your category spend).'}
+          </p>
+        </div>
+      )}
 
       <div className="space-y-4">
         <div className="space-y-2">
